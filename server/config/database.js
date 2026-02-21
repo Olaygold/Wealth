@@ -30,7 +30,7 @@ const connectDB = async () => {
     const models = require('../models');
     
     // Sync database (force: true will drop and recreate)
-    await sequelize.sync({ force: true, logging: console.log });
+    await sequelize.sync({ alter: true, logging: console.log });
     
     console.log('✅ All database tables created successfully');
     
