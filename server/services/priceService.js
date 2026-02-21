@@ -1,3 +1,4 @@
+
 const axios = require('axios');
 const WebSocket = require('ws');
 
@@ -9,9 +10,9 @@ class PriceService {
     this.reconnectTimeout = null;
     this.maxHistoryLength = 100;
     this.io = null;
+    this.useBackupAPI = false; // Flag to use backup API
   }
 
-  // Start price tracking
   startPriceTracking(io) {
     this.io = io;
     console.log('📊 Starting BTC price tracking...');
@@ -22,7 +23,7 @@ class PriceService {
     // Start WebSocket connection for real-time updates
     this.connectWebSocket();
     
-    // Fallback: Poll every 5 seconds if WebSocket fails
+    // Fallback: Poll every 5 seconds
     setInterval(() => {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
         this.getCurrentPrice();
@@ -30,25 +31,67 @@ class PriceService {
     }, 5000);
   }
 
-  // Get current BTC price via REST API
   async getCurrentPrice() {
     try {
-      const response = await axios.get(
-        `${process.env.BINANCE_API_URL}/ticker/price`,
-        { params: { symbol: 'BTCUSDT' } }
-      );
+      let price;
 
-      const price = parseFloat(response.data.price);
+      if (!this.useBackupAPI) {
+        // Try Binance first
+        try {
+          const response = await axios.get(
+            `${process.env.BINANCE_API_URL}/ticker/price`,
+            { 
+              params: { symbol: 'BTCUSDT' },
+              timeout: 5000 
+            }
+          );
+          price = parseFloat(response.data.price);
+        } catch (binanceError) {
+          console.log('⚠️ Binance API unavailable, switching to CoinGecko...');
+          this.useBackupAPI = true;
+          throw binanceError;
+        }
+      }
+
+      if (this.useBackupAPI) {
+        // Use CoinGecko as backup (no geo-restrictions)
+        const response = await axios.get(
+          'https://api.coingecko.com/api/v3/simple/price',
+          { 
+            params: { 
+              ids: 'bitcoin', 
+              vs_currencies: 'usd' 
+            },
+            timeout: 5000 
+          }
+        );
+        price = parseFloat(response.data.bitcoin.usd);
+      }
+
       this.updatePrice(price);
       return price;
     } catch (error) {
       console.error('❌ Error fetching BTC price:', error.message);
-      return this.currentPrice; // Return last known price
+      
+      // Return last known price if available
+      if (this.currentPrice) {
+        return this.currentPrice;
+      }
+      
+      // Fallback to a default price if no price available yet
+      console.log('⚠️ Using fallback price: $45000');
+      this.updatePrice(45000);
+      return 45000;
     }
   }
 
-  // Connect to Binance WebSocket for real-time price
   connectWebSocket() {
+    // Try Binance WebSocket only if not using backup API
+    if (this.useBackupAPI) {
+      console.log('📡 Using polling mode (CoinGecko API)');
+      return;
+    }
+
     const wsUrl = 'wss://stream.binance.com:9443/ws/btcusdt@trade';
     
     try {
@@ -70,64 +113,71 @@ class PriceService {
 
       this.ws.on('error', (error) => {
         console.error('❌ WebSocket error:', error.message);
+        console.log('⚠️ Switching to backup API (CoinGecko)...');
+        this.useBackupAPI = true;
       });
 
       this.ws.on('close', () => {
-        console.log('❌ WebSocket connection closed. Reconnecting...');
-        this.reconnect();
+        console.log('❌ WebSocket connection closed.');
+        if (!this.useBackupAPI) {
+          console.log('🔄 Attempting to reconnect WebSocket...');
+          this.reconnect();
+        }
       });
 
     } catch (error) {
       console.error('❌ Error connecting to WebSocket:', error.message);
-      this.reconnect();
+      console.log('⚠️ Switching to backup API (CoinGecko)...');
+      this.useBackupAPI = true;
     }
   }
 
-  // Reconnect WebSocket
   reconnect() {
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
     }
 
     this.reconnectTimeout = setTimeout(() => {
-      console.log('🔄 Attempting to reconnect WebSocket...');
-      this.connectWebSocket();
-    }, 5000); // Reconnect after 5 seconds
+      if (!this.useBackupAPI) {
+        console.log('🔄 Attempting to reconnect WebSocket...');
+        this.connectWebSocket();
+      }
+    }, 5000);
   }
 
-  // Update price and broadcast
   updatePrice(price) {
     const timestamp = new Date();
     
     this.currentPrice = price;
     
-    // Add to price history
     this.priceHistory.push({
       price,
       timestamp
     });
 
-    // Keep only last N prices
     if (this.priceHistory.length > this.maxHistoryLength) {
       this.priceHistory.shift();
     }
 
-    // Broadcast to all connected clients
     if (this.io) {
       this.io.emit('price_update', {
         price: this.currentPrice,
         timestamp,
-        change24h: this.get24hChange()
+        change24h: null // We can add this later
       });
     }
   }
 
-  // Get 24h price change percentage
   async get24hChange() {
     try {
+      if (this.useBackupAPI) {
+        // CoinGecko doesn't provide 24h data easily, skip for now
+        return null;
+      }
+
       const response = await axios.get(
         `${process.env.BINANCE_API_URL}/ticker/24hr`,
-        { params: { symbol: 'BTCUSDT' } }
+        { params: { symbol: 'BTCUSDT' }, timeout: 5000 }
       );
 
       return {
@@ -143,9 +193,7 @@ class PriceService {
     }
   }
 
-  // Get price at specific time (for round start/end)
   getPriceAtTime(time) {
-    // Find closest price to the given time
     const targetTime = new Date(time).getTime();
     
     let closest = this.priceHistory[0];
@@ -162,17 +210,14 @@ class PriceService {
     return closest?.price || this.currentPrice;
   }
 
-  // Get current price (synchronous)
   getPrice() {
-    return this.currentPrice;
+    return this.currentPrice || 45000; // Default fallback
   }
 
-  // Get price history
   getHistory(limit = 50) {
     return this.priceHistory.slice(-limit);
   }
 
-  // Clean up
   cleanup() {
     if (this.ws) {
       this.ws.close();
@@ -183,6 +228,5 @@ class PriceService {
   }
 }
 
-// Export singleton instance
 const priceService = new PriceService();
 module.exports = priceService;
