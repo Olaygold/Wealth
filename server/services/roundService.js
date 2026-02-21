@@ -27,8 +27,9 @@ class RoundService {
     // Create initial rounds
     await this.initializeRounds();
 
-    // Schedule round checks every 30 seconds
-    cron.schedule('*/30 * * * * *', async () => {
+   
+      // Schedule round checks every 2 minutes (reduce database load)
+cron.schedule('*/2 * * * *', async () => {
       await this.checkAndUpdateRounds();
     });
 
