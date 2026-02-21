@@ -19,7 +19,7 @@ const Bet = sequelize.define('Bet', {
     type: DataTypes.UUID,
     allowNull: false,
     references: {
-      model: 'Rounds',
+      model: 'rounds',
       key: 'id'
     }
   },
