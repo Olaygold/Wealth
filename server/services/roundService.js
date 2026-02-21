@@ -1,3 +1,4 @@
+
 const cron = require('node-cron');
 const { Round, Bet, Wallet, Transaction, User } = require('../models');
 const { Op } = require('sequelize');
@@ -26,8 +27,8 @@ class RoundService {
     // Create initial rounds
     await this.initializeRounds();
 
-    // Schedule round checks every 10 seconds
-    cron.schedule('*/10 * * * * *', async () => {
+    // Schedule round checks every 30 seconds
+    cron.schedule('*/30 * * * * *', async () => {
       await this.checkAndUpdateRounds();
     });
 
@@ -37,29 +38,33 @@ class RoundService {
   // Initialize rounds on server start
   async initializeRounds() {
     try {
-      // Check for active/upcoming rounds
+      // Wait a bit for database to be ready
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      // Check for active or locked rounds
       const activeRound = await Round.findOne({
         where: {
           status: {
-            [Op.in]: ['upcoming', 'active', 'locked']
+            [Op.in]: ['active', 'locked']
           }
         },
         order: [['startTime', 'DESC']]
       });
 
       if (!activeRound) {
-        // Create first round
+        console.log('📊 No active round found. Creating first round...');
         await this.createNewRound();
       } else {
         this.currentRound = activeRound;
-        console.log(`📊 Loaded existing round #${activeRound.roundNumber}`);
+        console.log(`📊 Loaded existing round #${activeRound.roundNumber} (${activeRound.status})`);
       }
 
-      // Ensure next round exists
+      // Ensure we have exactly ONE upcoming round
       await this.ensureNextRound();
 
     } catch (error) {
       console.error('❌ Error initializing rounds:', error.message);
+      console.log('⏳ Will retry creating round on next check...');
     }
   }
 
@@ -109,15 +114,25 @@ class RoundService {
     }
   }
 
-  // Ensure next round exists
+  // Ensure next round exists (ONLY ONE upcoming round)
   async ensureNextRound() {
-    const upcomingRound = await Round.findOne({
-      where: { status: 'upcoming' },
-      order: [['startTime', 'ASC']]
-    });
+    try {
+      // Count how many upcoming rounds exist
+      const upcomingCount = await Round.count({
+        where: { status: 'upcoming' }
+      });
 
-    if (!upcomingRound) {
-      await this.createNewRound();
+      // Only create ONE upcoming round if none exists
+      if (upcomingCount === 0) {
+        console.log('📊 Creating next upcoming round...');
+        await this.createNewRound();
+      } else if (upcomingCount === 1) {
+        console.log('✅ One upcoming round already exists (buffer ready)');
+      } else {
+        console.log(`ℹ️ ${upcomingCount} upcoming rounds exist`);
+      }
+    } catch (error) {
+      console.error('❌ Error ensuring next round:', error.message);
     }
   }
 
@@ -192,7 +207,7 @@ class RoundService {
         });
       }
 
-      // Ensure next round exists
+      // Create next upcoming round IMMEDIATELY when this one starts
       await this.ensureNextRound();
 
     } catch (error) {
@@ -262,6 +277,9 @@ class RoundService {
           result
         });
       }
+
+      // Make sure we have the next round ready
+      await this.ensureNextRound();
 
     } catch (error) {
       await transaction.rollback();
