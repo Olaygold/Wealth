@@ -10,8 +10,7 @@ const Round = sequelize.define('Round', {
   roundNumber: {
     type: DataTypes.INTEGER,
     allowNull: false,
-    unique: true,
-    autoIncrement: true
+    unique: true
   },
   status: {
     type: DataTypes.ENUM('upcoming', 'active', 'locked', 'completed', 'cancelled'),
