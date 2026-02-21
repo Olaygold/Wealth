@@ -2,18 +2,17 @@
 const { Sequelize } = require('sequelize');
 require('dotenv').config();
 
-// Use DATABASE_URL from environment
 const sequelize = new Sequelize(process.env.DATABASE_URL, {
   dialect: 'postgres',
-  logging: false,
+  logging: console.log, // See SQL queries in logs
   dialectOptions: {
     ssl: {
       require: true,
-      rejectUnauthorized: false // Important for Supabase
+      rejectUnauthorized: false
     }
   },
   pool: {
-    max: 5,
+    max: 3,
     min: 0,
     acquire: 30000,
     idle: 10000
@@ -25,12 +24,14 @@ const connectDB = async () => {
     await sequelize.authenticate();
     console.log('✅ PostgreSQL Database connected successfully');
     
-    // FORCE sync in production on first deploy (creates tables)
-    // After first successful deploy, change 'force: true' to 'alter: true'
-    await sequelize.sync({ force: true }); // ⚠️ This DELETES and recreates all tables!
-    console.log('✅ Database synchronized');
+    // FORCE CREATE TABLES (This is the fix!)
+    console.log('🔄 Creating database tables...');
+    await sequelize.sync({ force: true, logging: console.log });
+    console.log('✅ All database tables created successfully');
+    
   } catch (error) {
-    console.error('❌ Unable to connect to database:', error.message);
+    console.error('❌ Database error:', error.message);
+    console.error('Full error:', error);
     process.exit(1);
   }
 };
