@@ -1,3 +1,4 @@
+
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
 const bcrypt = require('bcryptjs');
@@ -34,7 +35,7 @@ const User = sequelize.define('User', {
     allowNull: true
   },
   phoneNumber: {
-    type: DataTypes.STRING(11),
+    type: DataTypes.STRING(20),
     allowNull: true
   },
   isVerified: {
@@ -63,11 +64,8 @@ const User = sequelize.define('User', {
   },
   referredBy: {
     type: DataTypes.UUID,
-    allowNull: true,
-    references: {
-      model: 'Users',
-      key: 'id'
-    }
+    allowNull: true
+    // REMOVED the references - we'll add it AFTER table is created
   },
   lastLogin: {
     type: DataTypes.DATE,
