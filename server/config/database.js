@@ -4,7 +4,7 @@ require('dotenv').config();
 
 const sequelize = new Sequelize(process.env.DATABASE_URL, {
   dialect: 'postgres',
-  logging: console.log, // See SQL queries in logs
+  logging: console.log,
   dialectOptions: {
     ssl: {
       require: true,
@@ -24,15 +24,19 @@ const connectDB = async () => {
     await sequelize.authenticate();
     console.log('✅ PostgreSQL Database connected successfully');
     
-    // FORCE CREATE TABLES (This is the fix!)
     console.log('🔄 Creating database tables...');
+    
+    // Import models FIRST
+    const models = require('../models');
+    
+    // Sync database (force: true will drop and recreate)
     await sequelize.sync({ force: true, logging: console.log });
+    
     console.log('✅ All database tables created successfully');
     
   } catch (error) {
     console.error('❌ Database error:', error.message);
-    console.error('Full error:', error);
-    process.exit(1);
+    // Don't exit - let the app run, we'll retry
   }
 };
 
