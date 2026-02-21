@@ -17,6 +17,9 @@ const io = socketIO(server, {
   }
 });
 
+app.set('trust proxy', 1); // ← ADD THIS LINE!
+
+
 // Connect to Database
 connectDB();
 
