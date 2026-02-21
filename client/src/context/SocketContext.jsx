@@ -1,3 +1,4 @@
+
 import { createContext, useState, useEffect, useContext } from 'react';
 import io from 'socket.io-client';
 
@@ -8,9 +9,10 @@ export const SocketProvider = ({ children }) => {
   const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
-    // Connect to backend socket - UPDATE THIS URL!
+    console.log('Connecting to backend socket...');
+    
     const newSocket = io('https://wealth-f1i2.onrender.com', {
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: 5
@@ -18,22 +20,23 @@ export const SocketProvider = ({ children }) => {
 
     newSocket.on('connect', () => {
       setIsConnected(true);
-      console.log('✅ Socket connected');
+      console.log('✅ Socket connected to backend!');
     });
 
     newSocket.on('disconnect', () => {
       setIsConnected(false);
-      console.log('❌ Socket disconnected');
+      console.log('❌ Socket disconnected from backend');
     });
 
     newSocket.on('connect_error', (error) => {
-      console.error('Socket connection error:', error);
+      console.error('Socket connection error:', error.message);
       setIsConnected(false);
     });
 
     setSocket(newSocket);
 
     return () => {
+      console.log('Cleaning up socket connection');
       newSocket.close();
     };
   }, []);
