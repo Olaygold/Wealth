@@ -1,11 +1,14 @@
+
 const User = require('./User');
 const Wallet = require('./Wallet');
 const Transaction = require('./Transaction');
 const Round = require('./Round');
 const Bet = require('./Bet');
 
+// Define relationships AFTER all models are loaded
+
 // User <-> Wallet (One-to-One)
-User.hasOne(Wallet, { foreignKey: 'userId', as: 'wallet' });
+User.hasOne(Wallet, { foreignKey: 'userId', as: 'wallet', onDelete: 'CASCADE' });
 Wallet.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
 // User <-> Transactions (One-to-Many)
@@ -20,9 +23,9 @@ Bet.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 Round.hasMany(Bet, { foreignKey: 'roundId', as: 'bets' });
 Bet.belongsTo(Round, { foreignKey: 'roundId', as: 'round' });
 
-// User self-referral
-User.hasMany(User, { foreignKey: 'referredBy', as: 'referrals' });
-User.belongsTo(User, { foreignKey: 'referredBy', as: 'referrer' });
+// User self-referral (OPTIONAL - add this later if needed)
+// User.hasMany(User, { foreignKey: 'referredBy', as: 'referrals' });
+// User.belongsTo(User, { foreignKey: 'referredBy', as: 'referrer' });
 
 module.exports = {
   User,
