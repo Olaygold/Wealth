@@ -12,7 +12,7 @@ const Wallet = sequelize.define('Wallet', {
     allowNull: false,
     unique: true,
     references: {
-      model: 'Users',
+      model: 'users',
       key: 'id'
     },
     onDelete: 'CASCADE'
