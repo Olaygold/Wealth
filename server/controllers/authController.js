@@ -1,3 +1,4 @@
+
 const { User, Wallet } = require('../models');
 const { generateToken } = require('../middleware/auth');
 const { 
@@ -97,15 +98,17 @@ const register = async (req, res) => {
     const user = await User.create({
       username,
       email,
-      password, // Will be hashed by beforeCreate hook
+      password,
       fullName,
       phoneNumber,
       referredBy: referrerId
     }, { transaction });
 
-    // Create wallet for user
-    await Wallet.create({
-      userId: user.id
+    // Create wallet for user with initial balance for testing
+    const wallet = await Wallet.create({
+      userId: user.id,
+      nairaBalance: 10000.00, // Give ₦10,000 initial balance for testing
+      cryptoBalance: 0.00
     }, { transaction });
 
     await transaction.commit();
@@ -113,20 +116,29 @@ const register = async (req, res) => {
     // Generate token
     const token = generateToken(user.id);
 
+    // Return user with wallet nested inside
+    const responseData = {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      fullName: user.fullName,
+      phoneNumber: user.phoneNumber,
+      referralCode: user.referralCode,
+      isVerified: user.isVerified,
+      role: user.role,
+      wallet: {
+        id: wallet.id,
+        nairaBalance: parseFloat(wallet.nairaBalance),
+        cryptoBalance: parseFloat(wallet.cryptoBalance),
+        lockedBalance: parseFloat(wallet.lockedBalance)
+      }
+    };
+
     res.status(201).json({
       success: true,
       message: 'Registration successful',
-      data: {
-        user: {
-          id: user.id,
-          username: user.username,
-          email: user.email,
-          fullName: user.fullName,
-          referralCode: user.referralCode,
-          isVerified: user.isVerified
-        },
-        token
-      }
+      user: responseData,
+      token
     });
 
   } catch (error) {
@@ -155,7 +167,7 @@ const login = async (req, res) => {
       });
     }
 
-    // Find user by email or username
+    // Find user by email or username with wallet
     const user = await User.findOne({
       where: {
         [sequelize.Sequelize.Op.or]: [
@@ -165,7 +177,8 @@ const login = async (req, res) => {
       },
       include: [{
         model: Wallet,
-        as: 'wallet'
+        as: 'wallet',
+        attributes: ['id', 'nairaBalance', 'cryptoBalance', 'lockedBalance', 'totalWon', 'totalLost', 'totalDeposited', 'totalWithdrawn']
       }]
     });
 
@@ -200,28 +213,34 @@ const login = async (req, res) => {
     // Generate token
     const token = generateToken(user.id);
 
+    // Return user with wallet nested inside (CRITICAL FIX)
+    const responseData = {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      fullName: user.fullName,
+      phoneNumber: user.phoneNumber,
+      role: user.role,
+      isVerified: user.isVerified,
+      kycStatus: user.kycStatus,
+      referralCode: user.referralCode,
+      wallet: {
+        id: user.wallet.id,
+        nairaBalance: parseFloat(user.wallet.nairaBalance),
+        cryptoBalance: parseFloat(user.wallet.cryptoBalance),
+        lockedBalance: parseFloat(user.wallet.lockedBalance),
+        totalWon: parseFloat(user.wallet.totalWon),
+        totalLost: parseFloat(user.wallet.totalLost),
+        totalDeposited: parseFloat(user.wallet.totalDeposited),
+        totalWithdrawn: parseFloat(user.wallet.totalWithdrawn)
+      }
+    };
+
     res.json({
       success: true,
       message: 'Login successful',
-      data: {
-        user: {
-          id: user.id,
-          username: user.username,
-          email: user.email,
-          fullName: user.fullName,
-          phoneNumber: user.phoneNumber,
-          role: user.role,
-          isVerified: user.isVerified,
-          kycStatus: user.kycStatus,
-          referralCode: user.referralCode
-        },
-        wallet: {
-          nairaBalance: user.wallet.nairaBalance,
-          cryptoBalance: user.wallet.cryptoBalance,
-          lockedBalance: user.wallet.lockedBalance
-        },
-        token
-      }
+      user: responseData,
+      token
     });
 
   } catch (error) {
@@ -242,35 +261,45 @@ const getMe = async (req, res) => {
     const user = await User.findByPk(req.user.id, {
       include: [{
         model: Wallet,
-        as: 'wallet'
+        as: 'wallet',
+        attributes: ['id', 'nairaBalance', 'cryptoBalance', 'lockedBalance', 'totalWon', 'totalLost', 'totalDeposited', 'totalWithdrawn']
       }]
     });
 
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Return user with wallet nested inside (CRITICAL FIX)
+    const responseData = {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      fullName: user.fullName,
+      phoneNumber: user.phoneNumber,
+      role: user.role,
+      isVerified: user.isVerified,
+      kycStatus: user.kycStatus,
+      referralCode: user.referralCode,
+      createdAt: user.createdAt,
+      wallet: {
+        id: user.wallet.id,
+        nairaBalance: parseFloat(user.wallet.nairaBalance),
+        cryptoBalance: parseFloat(user.wallet.cryptoBalance),
+        lockedBalance: parseFloat(user.wallet.lockedBalance),
+        totalWon: parseFloat(user.wallet.totalWon),
+        totalLost: parseFloat(user.wallet.totalLost),
+        totalDeposited: parseFloat(user.wallet.totalDeposited),
+        totalWithdrawn: parseFloat(user.wallet.totalWithdrawn)
+      }
+    };
+
     res.json({
       success: true,
-      data: {
-        user: {
-          id: user.id,
-          username: user.username,
-          email: user.email,
-          fullName: user.fullName,
-          phoneNumber: user.phoneNumber,
-          role: user.role,
-          isVerified: user.isVerified,
-          kycStatus: user.kycStatus,
-          referralCode: user.referralCode,
-          createdAt: user.createdAt
-        },
-        wallet: {
-          nairaBalance: user.wallet.nairaBalance,
-          cryptoBalance: user.wallet.cryptoBalance,
-          lockedBalance: user.wallet.lockedBalance,
-          totalDeposited: user.wallet.totalDeposited,
-          totalWithdrawn: user.wallet.totalWithdrawn,
-          totalWon: user.wallet.totalWon,
-          totalLost: user.wallet.totalLost
-        }
-      }
+      user: responseData
     });
 
   } catch (error) {
@@ -387,20 +416,24 @@ const changePassword = async (req, res) => {
 // @access  Private
 const getReferrals = async (req, res) => {
   try {
-    const user = await User.findByPk(req.user.id, {
-      include: [{
-        model: User,
-        as: 'referrals',
-        attributes: ['id', 'username', 'createdAt']
-      }]
+    const user = await User.findByPk(req.user.id);
+
+    // Count referrals
+    const referralCount = await User.count({
+      where: { referredBy: user.id }
+    });
+
+    const referrals = await User.findAll({
+      where: { referredBy: user.id },
+      attributes: ['id', 'username', 'createdAt']
     });
 
     res.json({
       success: true,
       data: {
         referralCode: user.referralCode,
-        totalReferrals: user.referrals.length,
-        referrals: user.referrals
+        totalReferrals: referralCount,
+        referrals
       }
     });
 
