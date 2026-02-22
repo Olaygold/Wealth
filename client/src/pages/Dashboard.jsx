@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
@@ -211,26 +210,12 @@ const Dashboard = () => {
     setError(null);
     
     try {
-      // Fetch all data in parallel
-      const results = await Promise.allSettled([
+      await Promise.allSettled([
         fetchWalletData(),
         fetchAllRounds(),
         fetchCurrentPrice(),
         fetchMyBets()
       ]);
-
-      // Check if critical data failed
-      const walletResult = results[0];
-      const roundsResult = results[1];
-
-      if (walletResult.status === 'rejected') {
-        console.error('Wallet fetch failed:', walletResult.reason);
-      }
-
-      if (roundsResult.status === 'rejected') {
-        console.error('Rounds fetch failed:', roundsResult.reason);
-      }
-
     } catch (err) {
       console.error('Dashboard init error:', err);
       setError('Failed to load dashboard. Please refresh.');
@@ -247,69 +232,77 @@ const Dashboard = () => {
     toast.success('Data refreshed!');
   };
 
-  // ========== FETCH WALLET DATA ==========
+  // ========== FETCH WALLET DATA (FIXED) ==========
   const fetchWalletData = async () => {
     try {
-      const res = await api.get('/wallet/balance');
-      console.log('✅ Wallet data:', res.data);
+      // api.get returns response.data directly because of your interceptor
+      const data = await api.get('/wallet/balance');
+      console.log('✅ Wallet response:', data);
       
-      // Handle different response structures
-      if (res.data?.data) {
-        setWalletData(res.data.data);
-      } else if (res.data) {
-        setWalletData(res.data);
+      // data is already response.data, so check for nested data
+      if (data?.data) {
+        setWalletData(data.data);
+      } else if (data?.nairaBalance !== undefined) {
+        setWalletData(data);
+      } else {
+        console.log('Wallet data structure:', data);
+        setWalletData(data);
       }
     } catch (err) {
       console.error('❌ Wallet fetch error:', err);
-      // Don't throw - let dashboard still load
     }
   };
 
-  // ========== FETCH ALL ROUNDS ==========
+  // ========== FETCH ALL ROUNDS (FIXED) ==========
   const fetchAllRounds = async () => {
     try {
-      // Try the /rounds/all endpoint first
-      const res = await api.get('/trading/rounds/all');
-      console.log('✅ Rounds data:', res.data);
+      // api.get returns response.data directly
+      const data = await api.get('/trading/rounds/all');
+      console.log('✅ Rounds response:', data);
 
-      if (res.data) {
-        setPreviousRound(res.data.previousRound || null);
-        setCurrentRound(res.data.currentRound || null);
-        setUpcomingRound(res.data.upcomingRound || null);
+      // data is already the response.data
+      if (data) {
+        setPreviousRound(data.previousRound || null);
+        setCurrentRound(data.currentRound || null);
+        setUpcomingRound(data.upcomingRound || null);
 
-        if (res.data.currentRound?.startPrice) {
-          setRoundStartPrice(parseFloat(res.data.currentRound.startPrice));
+        if (data.currentRound?.startPrice) {
+          setRoundStartPrice(parseFloat(data.currentRound.startPrice));
         }
+        
+        console.log('📊 Previous Round:', data.previousRound?.roundNumber || 'None');
+        console.log('📊 Current Round:', data.currentRound?.roundNumber || 'None');
+        console.log('📊 Upcoming Round:', data.upcomingRound?.roundNumber || 'None');
       }
     } catch (err) {
       console.error('❌ Rounds/all fetch error:', err);
       
-      // Fallback: try individual endpoints
+      // Fallback: try current-round endpoint
       try {
-        const currentRes = await api.get('/trading/current-round');
-        console.log('✅ Current round (fallback):', currentRes.data);
+        const data = await api.get('/trading/current-round');
+        console.log('✅ Current round (fallback):', data);
         
-        if (currentRes.data?.round) {
-          setCurrentRound(currentRes.data.round);
-          if (currentRes.data.round?.startPrice) {
-            setRoundStartPrice(parseFloat(currentRes.data.round.startPrice));
+        if (data?.round) {
+          setCurrentRound(data.round);
+          if (data.round?.startPrice) {
+            setRoundStartPrice(parseFloat(data.round.startPrice));
           }
-        } else if (currentRes.data?.data?.round) {
-          setCurrentRound(currentRes.data.data.round);
         }
       } catch (fallbackErr) {
-        console.error('❌ Fallback round fetch also failed:', fallbackErr);
+        console.error('❌ Fallback also failed:', fallbackErr);
       }
     }
   };
 
-  // ========== FETCH CURRENT PRICE ==========
+  // ========== FETCH CURRENT PRICE (FIXED) ==========
   const fetchCurrentPrice = async () => {
     try {
-      const res = await api.get('/trading/current-price');
-      console.log('✅ Price data:', res.data);
+      // api.get returns response.data directly
+      const data = await api.get('/trading/current-price');
+      console.log('✅ Price response:', data);
       
-      const price = res.data?.price || res.data?.data?.price;
+      // data is already response.data
+      const price = data?.price;
       if (price) {
         setCurrentPrice(parseFloat(price));
         setPriceHistory([{
@@ -324,18 +317,19 @@ const Dashboard = () => {
       }
     } catch (err) {
       console.error('❌ Price fetch error:', err);
-      // Set a fallback price
       setCurrentPrice(43250.00);
     }
   };
 
-  // ========== FETCH MY BETS ==========
+  // ========== FETCH MY BETS (FIXED) ==========
   const fetchMyBets = async () => {
     try {
-      const res = await api.get('/trading/my-bets/active');
-      console.log('✅ Active bets:', res.data);
+      // api.get returns response.data directly
+      const data = await api.get('/trading/my-bets/active');
+      console.log('✅ Bets response:', data);
       
-      const bets = res.data?.activeBets || res.data?.data?.activeBets || [];
+      // data is already response.data
+      const bets = data?.activeBets || [];
       setMyActiveBets(bets);
     } catch (err) {
       console.error('❌ Bets fetch error:', err);
@@ -431,7 +425,7 @@ const Dashboard = () => {
     return () => clearInterval(interval);
   }, [currentRound]);
 
-  // ========== PLACE BET ==========
+  // ========== PLACE BET (FIXED) ==========
   const handlePlaceBet = async (prediction) => {
     // Validations
     if (!currentRound) {
@@ -462,13 +456,14 @@ const Dashboard = () => {
     setLoading(true);
 
     try {
-      const response = await api.post('/trading/bet', {
+      // api.post returns response.data directly
+      const data = await api.post('/trading/bet', {
         roundId: currentRound.id,
         prediction: prediction.toLowerCase(),
         amount: betAmount
       });
 
-      console.log('✅ Bet placed:', response.data);
+      console.log('✅ Bet placed:', data);
 
       toast.success(`✅ Bet placed on ${prediction.toUpperCase()}! Good luck! 🍀`, { duration: 4000 });
 
@@ -481,7 +476,7 @@ const Dashboard = () => {
 
     } catch (err) {
       console.error('❌ Bet error:', err);
-      const errorMsg = err.response?.data?.message || err.message || 'Failed to place bet';
+      const errorMsg = err.message || 'Failed to place bet';
       toast.error(errorMsg);
     } finally {
       setLoading(false);
