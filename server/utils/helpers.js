@@ -30,10 +30,9 @@ const calculatePrizePool = (losersPool) => {
 // Calculate individual winner's share
 const calculateWinnerPayout = (userStake, totalWinningStakes, prizePool) => {
   const parsedStake = parseFloat(userStake) || 0;
-  const parsedTotal = parseFloat(totalWinningStakes) || 1; // Prevent division by zero
+  const parsedTotal = parseFloat(totalWinningStakes) || 1;
   const parsedPool = parseFloat(prizePool) || 0;
   
-  // Winner gets their stake back + proportional share of prize pool
   const shareRatio = parsedStake / parsedTotal;
   const prizeShare = parsedPool * shareRatio;
   return roundToTwo(parsedStake + prizeShare);
@@ -114,7 +113,7 @@ const isRoundBettable = (round) => {
 
 // Calculate percentage change
 const calculatePercentageChange = (oldValue, newValue) => {
-  const parsed Old = parseFloat(oldValue) || 0;
+  const parsedOld = parseFloat(oldValue) || 0;
   const parsedNew = parseFloat(newValue) || 0;
   
   if (parsedOld === 0) return 0;
