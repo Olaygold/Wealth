@@ -1,13 +1,13 @@
 
+
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'https://wealth-f1i2.onrender.com/api',
+  baseURL: 'https://wealth-f1i2.onrender.com/api',
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 30000,
-  withCredentials: false
+  timeout: 30000, // 30 second timeout
 });
 
 // Add token to every request
@@ -17,11 +17,11 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
-    console.log('🚀 API Request:', config.method.toUpperCase(), config.url);
+    console.log('API Request:', config.method.toUpperCase(), config.url);
     return config;
   },
   (error) => {
-    console.error('❌ Request error:', error);
+    console.error('Request error:', error);
     return Promise.reject(error);
   }
 );
@@ -29,29 +29,21 @@ api.interceptors.request.use(
 // Handle responses globally
 api.interceptors.response.use(
   (response) => {
-    console.log('✅ API Response:', response.config.url, response.status);
-    console.log('📦 Data:', response.data);
-    return response; // ✅ Return full response, not just data
+    console.log('API Response:', response.config.url, response.data);
+    return response.data;
   },
   (error) => {
-    console.error('❌ API Error:', {
-      url: error.config?.url,
-      status: error.response?.status,
-      message: error.response?.data?.message || error.message
-    });
+    console.error('API Error:', error.response || error.message);
     
     if (error.response?.status === 401) {
-      const isAuthPage = window.location.pathname.includes('/login') || 
-                         window.location.pathname.includes('/register');
-      
-      if (!isAuthPage) {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        window.location.href = '/login';
-      }
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/login';
     }
     
-    return Promise.reject(error);
+    // Return the actual error message from backend
+    const errorMessage = error.response?.data?.message || error.message || 'Network error';
+    return Promise.reject(new Error(errorMessage));
   }
 );
 
