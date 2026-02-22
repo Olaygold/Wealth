@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
@@ -26,10 +26,9 @@ import {
   Info,
   Zap,
   Target,
-  Gift,
   Shield,
-  TrendingUp as TrendUp,
-  RefreshCw
+  RefreshCw,
+  Loader2
 } from 'lucide-react';
 import {
   AreaChart,
@@ -74,7 +73,7 @@ const UserGuideModal = ({ isOpen, onClose }) => {
     {
       icon: <Zap className="w-12 h-12 text-orange-500" />,
       title: "Swipe Between Rounds 👆",
-      content: "• Swipe LEFT to see PREVIOUS round results\n• CENTER shows CURRENT active round\n• Swipe RIGHT to see UPCOMING round",
+      content: "• LEFT slide: Previous round results\n• CENTER slide: Current active round\n• RIGHT slide: Upcoming round",
       tip: "Learn from previous rounds to make better predictions!"
     },
     {
@@ -110,7 +109,6 @@ const UserGuideModal = ({ isOpen, onClose }) => {
             {steps[currentStep].content}
           </p>
           
-          {/* Tip Box */}
           <div className="bg-primary/10 border border-primary/30 rounded-xl p-4 flex items-start gap-3">
             <Info className="text-primary flex-shrink-0 mt-0.5" size={20} />
             <p className="text-sm text-primary">{steps[currentStep].tip}</p>
@@ -167,15 +165,13 @@ const Dashboard = () => {
   const { socket, isConnected } = useSocket();
   const { user } = useAuth();
 
-  // ========== STATES ==========
+  // ========== ALL STATES ==========
   const [currentPrice, setCurrentPrice] = useState(0);
   const [priceHistory, setPriceHistory] = useState([]);
-  const [rounds, setRounds] = useState({
-    previous: null,
-    current: null,
-    upcoming: null
-  });
-  const [activeSlide, setActiveSlide] = useState(1); // 0=previous, 1=current, 2=upcoming
+  const [previousRound, setPreviousRound] = useState(null);
+  const [currentRound, setCurrentRound] = useState(null);
+  const [upcomingRound, setUpcomingRound] = useState(null);
+  const [activeSlide, setActiveSlide] = useState(1);
   const [betAmount, setBetAmount] = useState(1000);
   const [loading, setLoading] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
@@ -183,29 +179,16 @@ const Dashboard = () => {
   const [dataLoading, setDataLoading] = useState(true);
   const [roundStartPrice, setRoundStartPrice] = useState(0);
   const [showGuide, setShowGuide] = useState(false);
-  const [walletBalance, setWalletBalance] = useState(0);
+  const [walletData, setWalletData] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(null);
 
-  // ========== GET WALLET BALANCE ==========
-  const getUserBalance = useCallback(() => {
-    if (!user) return 0;
-    
-    // Try all possible locations for balance
-    const balance = 
-      user?.wallet?.nairaBalance ||
-      user?.wallet?.balance ||
-      user?.nairaBalance ||
-      user?.balance ||
-      0;
-    
-    return parseFloat(balance) || 0;
-  }, [user]);
-
-  // Update wallet balance when user changes
-  useEffect(() => {
-    const balance = getUserBalance();
-    setWalletBalance(balance);
-  }, [user, getUserBalance]);
+  // ========== CALCULATED VALUES ==========
+  const walletBalance = parseFloat(walletData?.nairaBalance || 0);
+  const lockedBalance = parseFloat(walletData?.lockedBalance || 0);
+  const availableBalance = walletBalance - lockedBalance;
+  const priceChange = roundStartPrice > 0 ? ((currentPrice - roundStartPrice) / roundStartPrice) * 100 : 0;
+  const canBet = currentRound?.status === 'active' && timeLeft >= 10;
 
   // ========== CHECK FIRST VISIT FOR GUIDE ==========
   useEffect(() => {
@@ -225,22 +208,38 @@ const Dashboard = () => {
 
   const initDashboard = async () => {
     setDataLoading(true);
+    setError(null);
+    
     try {
-      await Promise.all([
+      // Fetch all data in parallel
+      const results = await Promise.allSettled([
+        fetchWalletData(),
         fetchAllRounds(),
-        fetchMyBets(),
         fetchCurrentPrice(),
-        fetchWalletBalance()
+        fetchMyBets()
       ]);
+
+      // Check if critical data failed
+      const walletResult = results[0];
+      const roundsResult = results[1];
+
+      if (walletResult.status === 'rejected') {
+        console.error('Wallet fetch failed:', walletResult.reason);
+      }
+
+      if (roundsResult.status === 'rejected') {
+        console.error('Rounds fetch failed:', roundsResult.reason);
+      }
+
     } catch (err) {
       console.error('Dashboard init error:', err);
-      toast.error('Failed to load dashboard');
+      setError('Failed to load dashboard. Please refresh.');
     } finally {
       setDataLoading(false);
     }
   };
 
-  // Refresh all data
+  // ========== REFRESH ALL DATA ==========
   const handleRefresh = async () => {
     setRefreshing(true);
     await initDashboard();
@@ -248,51 +247,58 @@ const Dashboard = () => {
     toast.success('Data refreshed!');
   };
 
-  // ========== FETCH WALLET BALANCE ==========
-  const fetchWalletBalance = async () => {
+  // ========== FETCH WALLET DATA ==========
+  const fetchWalletData = async () => {
     try {
       const res = await api.get('/wallet/balance');
+      console.log('✅ Wallet data:', res.data);
+      
+      // Handle different response structures
       if (res.data?.data) {
-        setWalletBalance(parseFloat(res.data.data.nairaBalance) || 0);
+        setWalletData(res.data.data);
+      } else if (res.data) {
+        setWalletData(res.data);
       }
     } catch (err) {
-      console.error('Wallet fetch error:', err);
-      // Fallback to user context
-      setWalletBalance(getUserBalance());
+      console.error('❌ Wallet fetch error:', err);
+      // Don't throw - let dashboard still load
     }
   };
 
   // ========== FETCH ALL ROUNDS ==========
   const fetchAllRounds = async () => {
     try {
+      // Try the /rounds/all endpoint first
       const res = await api.get('/trading/rounds/all');
+      console.log('✅ Rounds data:', res.data);
+
       if (res.data) {
-        setRounds({
-          previous: res.data.previousRound,
-          current: res.data.currentRound,
-          upcoming: res.data.upcomingRound
-        });
-        
+        setPreviousRound(res.data.previousRound || null);
+        setCurrentRound(res.data.currentRound || null);
+        setUpcomingRound(res.data.upcomingRound || null);
+
         if (res.data.currentRound?.startPrice) {
           setRoundStartPrice(parseFloat(res.data.currentRound.startPrice));
         }
       }
     } catch (err) {
-      console.error('Rounds fetch error:', err);
-      // Try alternative endpoint
+      console.error('❌ Rounds/all fetch error:', err);
+      
+      // Fallback: try individual endpoints
       try {
         const currentRes = await api.get('/trading/current-round');
+        console.log('✅ Current round (fallback):', currentRes.data);
+        
         if (currentRes.data?.round) {
-          setRounds(prev => ({
-            ...prev,
-            current: currentRes.data.round
-          }));
+          setCurrentRound(currentRes.data.round);
           if (currentRes.data.round?.startPrice) {
             setRoundStartPrice(parseFloat(currentRes.data.round.startPrice));
           }
+        } else if (currentRes.data?.data?.round) {
+          setCurrentRound(currentRes.data.data.round);
         }
-      } catch (e) {
-        console.error('Alternative fetch also failed:', e);
+      } catch (fallbackErr) {
+        console.error('❌ Fallback round fetch also failed:', fallbackErr);
       }
     }
   };
@@ -301,21 +307,24 @@ const Dashboard = () => {
   const fetchCurrentPrice = async () => {
     try {
       const res = await api.get('/trading/current-price');
-      if (res.data?.price) {
-        setCurrentPrice(res.data.price);
+      console.log('✅ Price data:', res.data);
+      
+      const price = res.data?.price || res.data?.data?.price;
+      if (price) {
+        setCurrentPrice(parseFloat(price));
         setPriceHistory([{
-          time: new Date().toLocaleTimeString('en-US', {
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: false
+          time: new Date().toLocaleTimeString('en-US', { 
+            hour: '2-digit', 
+            minute: '2-digit', 
+            second: '2-digit', 
+            hour12: false 
           }),
-          price: res.data.price
+          price: parseFloat(price)
         }]);
       }
     } catch (err) {
-      console.error('Price fetch error:', err);
-      // Set fallback price
+      console.error('❌ Price fetch error:', err);
+      // Set a fallback price
       setCurrentPrice(43250.00);
     }
   };
@@ -324,9 +333,12 @@ const Dashboard = () => {
   const fetchMyBets = async () => {
     try {
       const res = await api.get('/trading/my-bets/active');
-      setMyActiveBets(res.data?.activeBets || []);
+      console.log('✅ Active bets:', res.data);
+      
+      const bets = res.data?.activeBets || res.data?.data?.activeBets || [];
+      setMyActiveBets(bets);
     } catch (err) {
-      console.error('Bets fetch error:', err);
+      console.error('❌ Bets fetch error:', err);
       setMyActiveBets([]);
     }
   };
@@ -338,57 +350,56 @@ const Dashboard = () => {
     // Price updates
     socket.on('price_update', (data) => {
       if (data?.price) {
-        setCurrentPrice(data.price);
+        setCurrentPrice(parseFloat(data.price));
         setPriceHistory(prev => {
           const newHistory = [...prev, {
-            time: new Date().toLocaleTimeString('en-US', {
-              hour: '2-digit',
-              minute: '2-digit',
-              second: '2-digit',
-              hour12: false
+            time: new Date().toLocaleTimeString('en-US', { 
+              hour: '2-digit', 
+              minute: '2-digit', 
+              second: '2-digit', 
+              hour12: false 
             }),
-            price: data.price
+            price: parseFloat(data.price)
           }];
-          return newHistory.slice(-60); // Keep last 60 points (5 minutes at 5-second intervals)
+          return newHistory.slice(-60);
         });
       }
     });
 
     // Round started
     socket.on('round_start', (data) => {
+      console.log('🚀 Round started:', data);
       fetchAllRounds();
       fetchMyBets();
-      setRoundStartPrice(data.startPrice);
+      if (data.startPrice) {
+        setRoundStartPrice(parseFloat(data.startPrice));
+      }
       toast.success(`🚀 Round #${data.roundNumber} Started!`, { duration: 3000 });
-      // Auto-switch to current round
       setActiveSlide(1);
     });
 
     // Round ended
     socket.on('round_end', (data) => {
+      console.log('🏁 Round ended:', data);
       fetchAllRounds();
       fetchMyBets();
-      fetchWalletBalance();
+      fetchWalletData();
       
       const emoji = data.result === 'up' ? '📈' : '📉';
-      const color = data.result === 'up' ? 'green' : 'red';
-      toast.success(`${emoji} Round #${data.roundNumber} Ended: ${data.result.toUpperCase()}!`, {
-        duration: 4000,
-        style: { borderLeft: `4px solid ${color}` }
-      });
+      toast.success(`${emoji} Round #${data.roundNumber} Ended: ${data.result.toUpperCase()}!`, { duration: 4000 });
     });
 
     // Round locked
     socket.on('round_lock', (data) => {
+      console.log('🔒 Round locked:', data);
       fetchAllRounds();
       toast('🔒 Betting closed for this round!', { icon: '⏰' });
     });
 
     // Balance update
     socket.on('balance_update', (data) => {
-      if (data?.nairaBalance !== undefined) {
-        setWalletBalance(parseFloat(data.nairaBalance));
-      }
+      console.log('💰 Balance update:', data);
+      fetchWalletData();
     });
 
     return () => {
@@ -402,39 +413,39 @@ const Dashboard = () => {
 
   // ========== COUNTDOWN TIMER ==========
   useEffect(() => {
-    if (!rounds.current?.endTime) {
+    if (!currentRound?.endTime) {
       setTimeLeft(0);
       return;
     }
 
     const updateTimer = () => {
       const now = Date.now();
-      const end = new Date(rounds.current.endTime).getTime();
+      const end = new Date(currentRound.endTime).getTime();
       const diff = end - now;
       setTimeLeft(Math.max(0, Math.floor(diff / 1000)));
     };
 
-    updateTimer(); // Initial update
-    const interval = setInterval(updateTimer, 100); // Update every 100ms for accuracy
+    updateTimer();
+    const interval = setInterval(updateTimer, 100);
 
     return () => clearInterval(interval);
-  }, [rounds.current]);
+  }, [currentRound]);
 
   // ========== PLACE BET ==========
   const handlePlaceBet = async (prediction) => {
     // Validations
-    if (!rounds.current) {
-      toast.error('⏳ No active round. Please wait for the next round.');
+    if (!currentRound) {
+      toast.error('⏳ No active round. Please wait.');
       return;
     }
 
-    if (rounds.current.status !== 'active') {
-      toast.error('🔒 Betting is closed for this round.');
+    if (currentRound.status !== 'active') {
+      toast.error('🔒 Round is not accepting bets.');
       return;
     }
 
     if (timeLeft < 10) {
-      toast.error('⏰ Too late! Round is ending soon.');
+      toast.error('⏰ Too late! Round ending soon.');
       return;
     }
 
@@ -443,8 +454,8 @@ const Dashboard = () => {
       return;
     }
 
-    if (betAmount > walletBalance) {
-      toast.error(`❌ Insufficient balance! You have ₦${walletBalance.toLocaleString()}`);
+    if (betAmount > availableBalance) {
+      toast.error(`❌ Insufficient balance! You have ₦${availableBalance.toLocaleString()} available`);
       return;
     }
 
@@ -452,34 +463,32 @@ const Dashboard = () => {
 
     try {
       const response = await api.post('/trading/bet', {
-        roundId: rounds.current.id,
+        roundId: currentRound.id,
         prediction: prediction.toLowerCase(),
         amount: betAmount
       });
 
-      // Success!
-      toast.success(`✅ Bet placed on ${prediction.toUpperCase()}! Good luck! 🍀`, {
-        duration: 4000
-      });
+      console.log('✅ Bet placed:', response.data);
 
-      // Update local state
-      if (response.data?.wallet) {
-        setWalletBalance(parseFloat(response.data.wallet.nairaBalance));
-      }
+      toast.success(`✅ Bet placed on ${prediction.toUpperCase()}! Good luck! 🍀`, { duration: 4000 });
 
-      // Refresh data
-      await Promise.all([fetchMyBets(), fetchAllRounds()]);
+      // Refresh all data
+      await Promise.all([
+        fetchMyBets(),
+        fetchAllRounds(),
+        fetchWalletData()
+      ]);
 
     } catch (err) {
-      console.error('Bet error:', err);
-      const errorMsg = err.response?.data?.message || 'Failed to place bet. Please try again.';
+      console.error('❌ Bet error:', err);
+      const errorMsg = err.response?.data?.message || err.message || 'Failed to place bet';
       toast.error(errorMsg);
     } finally {
       setLoading(false);
     }
   };
 
-  // ========== HELPERS ==========
+  // ========== HELPER FUNCTIONS ==========
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -492,12 +501,6 @@ const Dashboard = () => {
       maximumFractionDigits: 2
     });
   };
-
-  const priceChange = roundStartPrice > 0 
-    ? ((currentPrice - roundStartPrice) / roundStartPrice) * 100 
-    : 0;
-
-  const canBet = rounds.current?.status === 'active' && timeLeft >= 10;
 
   // ========== LOADING STATE ==========
   if (dataLoading) {
@@ -535,13 +538,13 @@ const Dashboard = () => {
           {/* Title */}
           <div>
             <h1 className="text-2xl lg:text-3xl font-bold text-white flex items-center gap-2">
-              Wealth Trading 
+              Wealth Trading
               <Activity className="text-primary animate-pulse" size={28} />
             </h1>
             <p className="text-gray-400 text-sm lg:text-base">BTC/USD 5-Minute Prediction</p>
           </div>
 
-          {/* Balance Card & Actions */}
+          {/* Balance & Actions */}
           <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
             {/* Help Button */}
             <button
@@ -567,8 +570,13 @@ const Dashboard = () => {
               <div className="text-right flex-1">
                 <p className="text-xs text-gray-400 uppercase tracking-wider">Available Balance</p>
                 <p className="text-xl lg:text-2xl font-black text-green-400">
-                  ₦{formatCurrency(walletBalance)}
+                  ₦{formatCurrency(availableBalance)}
                 </p>
+                {lockedBalance > 0 && (
+                  <p className="text-xs text-orange-400">
+                    Locked: ₦{formatCurrency(lockedBalance)}
+                  </p>
+                )}
               </div>
               <div className="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center text-green-500">
                 <WalletIcon size={24} />
@@ -591,7 +599,7 @@ const Dashboard = () => {
                 </h2>
               </div>
             </div>
-            
+
             {roundStartPrice > 0 && (
               <div className={`flex items-center gap-2 px-4 py-2 rounded-xl ${
                 priceChange >= 0 ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'
@@ -617,9 +625,9 @@ const Dashboard = () => {
               >
                 <ChevronLeft size={20} />
               </button>
-              <span className="text-sm text-gray-400 min-w-[150px] text-center">
-                {activeSlide === 0 ? '📊 Previous Round' : 
-                 activeSlide === 1 ? '🔴 LIVE - Current Round' : 
+              <span className="text-sm text-gray-400 min-w-[160px] text-center font-medium">
+                {activeSlide === 0 ? '📊 Previous Round' :
+                 activeSlide === 1 ? '🔴 LIVE - Current Round' :
                  '⏳ Upcoming Round'}
               </span>
               <button
@@ -653,19 +661,22 @@ const Dashboard = () => {
             >
               {/* ===== SLIDE 1: PREVIOUS ROUND ===== */}
               <div className="min-w-full px-1">
-                {rounds.previous ? (
+                {previousRound ? (
                   <div className="bg-slate-800/40 rounded-3xl p-6 border border-slate-700">
                     <div className="flex justify-between items-center mb-6">
                       <div>
-                        <p className="text-sm text-gray-400">Round #{rounds.previous.roundNumber}</p>
+                        <p className="text-sm text-gray-400">Round #{previousRound.roundNumber}</p>
                         <h3 className="text-xl font-bold text-white">Previous Round (Closed)</h3>
                       </div>
                       <div className={`px-4 py-2 rounded-xl font-bold text-lg ${
-                        rounds.previous.result === 'up' 
-                          ? 'bg-green-500/20 text-green-500' 
-                          : 'bg-red-500/20 text-red-500'
+                        previousRound.result === 'up'
+                          ? 'bg-green-500/20 text-green-500'
+                          : previousRound.result === 'down'
+                          ? 'bg-red-500/20 text-red-500'
+                          : 'bg-yellow-500/20 text-yellow-500'
                       }`}>
-                        {rounds.previous.result === 'up' ? '📈 UP' : '📉 DOWN'}
+                        {previousRound.result === 'up' ? '📈 UP' :
+                         previousRound.result === 'down' ? '📉 DOWN' : '➖ TIE'}
                       </div>
                     </div>
 
@@ -673,23 +684,25 @@ const Dashboard = () => {
                       <div className="bg-slate-900/50 p-4 rounded-xl text-center">
                         <p className="text-xs text-gray-400 mb-1">Start Price</p>
                         <p className="text-lg font-bold text-white">
-                          ${parseFloat(rounds.previous.startPrice || 0).toLocaleString()}
+                          ${parseFloat(previousRound.startPrice || 0).toLocaleString()}
                         </p>
                       </div>
                       <div className="bg-slate-900/50 p-4 rounded-xl text-center">
                         <p className="text-xs text-gray-400 mb-1">End Price</p>
                         <p className="text-lg font-bold text-white">
-                          ${parseFloat(rounds.previous.endPrice || 0).toLocaleString()}
+                          ${parseFloat(previousRound.endPrice || 0).toLocaleString()}
                         </p>
                       </div>
                       <div className="bg-slate-900/50 p-4 rounded-xl text-center">
                         <p className="text-xs text-gray-400 mb-1">Change</p>
                         <p className={`text-lg font-bold ${
-                          (rounds.previous.endPrice - rounds.previous.startPrice) >= 0 
-                            ? 'text-green-500' 
+                          (previousRound.endPrice - previousRound.startPrice) >= 0
+                            ? 'text-green-500'
                             : 'text-red-500'
                         }`}>
-                          {(((rounds.previous.endPrice - rounds.previous.startPrice) / rounds.previous.startPrice) * 100).toFixed(2)}%
+                          {previousRound.startPrice > 0 
+                            ? (((previousRound.endPrice - previousRound.startPrice) / previousRound.startPrice) * 100).toFixed(2)
+                            : 0}%
                         </p>
                       </div>
                     </div>
@@ -698,19 +711,19 @@ const Dashboard = () => {
                       <div className="bg-green-500/10 p-4 rounded-xl">
                         <div className="flex justify-between items-center">
                           <span className="text-green-400 text-sm">Total UP</span>
-                          <span className="text-green-400 text-xs">{rounds.previous.totalUpBets || 0} bets</span>
+                          <span className="text-green-400 text-xs">{previousRound.totalUpBets || 0} bets</span>
                         </div>
                         <p className="text-xl font-bold text-green-500 mt-1">
-                          ₦{formatCurrency(rounds.previous.totalUpAmount)}
+                          ₦{formatCurrency(previousRound.totalUpAmount)}
                         </p>
                       </div>
                       <div className="bg-red-500/10 p-4 rounded-xl">
                         <div className="flex justify-between items-center">
                           <span className="text-red-400 text-sm">Total DOWN</span>
-                          <span className="text-red-400 text-xs">{rounds.previous.totalDownBets || 0} bets</span>
+                          <span className="text-red-400 text-xs">{previousRound.totalDownBets || 0} bets</span>
                         </div>
                         <p className="text-xl font-bold text-red-500 mt-1">
-                          ₦{formatCurrency(rounds.previous.totalDownAmount)}
+                          ₦{formatCurrency(previousRound.totalDownAmount)}
                         </p>
                       </div>
                     </div>
@@ -726,7 +739,7 @@ const Dashboard = () => {
 
               {/* ===== SLIDE 2: CURRENT ROUND (ACTIVE) ===== */}
               <div className="min-w-full px-1">
-                {rounds.current ? (
+                {currentRound ? (
                   <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-3xl p-6 border-2 border-primary/50 shadow-lg shadow-primary/10">
                     {/* Header */}
                     <div className="flex justify-between items-center mb-4">
@@ -736,16 +749,18 @@ const Dashboard = () => {
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
                             <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
                           </span>
-                          <p className="text-sm text-primary font-bold">LIVE • Round #{rounds.current.roundNumber}</p>
+                          <p className="text-sm text-primary font-bold">
+                            {currentRound.status === 'active' ? 'LIVE' : 'LOCKED'} • Round #{currentRound.roundNumber}
+                          </p>
                         </div>
                         <h3 className="text-xl font-bold text-white">Current Round</h3>
                       </div>
-                      
+
                       {/* Timer */}
                       <div className="bg-slate-900/80 px-5 py-3 rounded-2xl border border-slate-700">
                         <p className="text-xs text-gray-400 text-center">Time Remaining</p>
                         <p className={`text-3xl font-mono font-bold text-center ${
-                          timeLeft < 30 ? 'text-red-500 animate-pulse' : 
+                          timeLeft < 30 ? 'text-red-500 animate-pulse' :
                           timeLeft < 60 ? 'text-yellow-500' : 'text-primary'
                         }`}>
                           {formatTime(timeLeft)}
@@ -769,8 +784,7 @@ const Dashboard = () => {
                           </p>
                         </div>
                       </div>
-                      
-                      {/* Price Change Indicator */}
+
                       <div className="flex items-center justify-center gap-2 mt-2">
                         <span className="text-gray-400 text-sm">Change:</span>
                         <span className={`font-bold text-lg flex items-center gap-1 ${
@@ -823,18 +837,18 @@ const Dashboard = () => {
                         className="relative bg-green-500/10 hover:bg-green-500/20 border-2 border-green-500/50 p-6 rounded-2xl transition-all disabled:opacity-30 disabled:cursor-not-allowed group overflow-hidden"
                       >
                         <div className="relative z-10">
-                          <ArrowUpRight 
-                            size={36} 
-                            className="text-green-500 mx-auto mb-2 group-hover:scale-110 transition-transform" 
+                          <ArrowUpRight
+                            size={36}
+                            className="text-green-500 mx-auto mb-2 group-hover:scale-110 transition-transform"
                           />
                           <p className="text-xl font-black text-green-500">PREDICT UP</p>
                           <p className="text-xs text-green-400 mt-1">
-                            Payout: {rounds.current.upMultiplier || '1.80'}x
+                            Payout: {currentRound.upMultiplier || '1.80'}x
                           </p>
                         </div>
                         {loading && (
                           <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                            <div className="w-8 h-8 border-2 border-green-500 border-t-transparent rounded-full animate-spin"></div>
+                            <Loader2 className="w-8 h-8 text-green-500 animate-spin" />
                           </div>
                         )}
                       </button>
@@ -845,29 +859,38 @@ const Dashboard = () => {
                         className="relative bg-red-500/10 hover:bg-red-500/20 border-2 border-red-500/50 p-6 rounded-2xl transition-all disabled:opacity-30 disabled:cursor-not-allowed group overflow-hidden"
                       >
                         <div className="relative z-10">
-                          <ArrowDownRight 
-                            size={36} 
-                            className="text-red-500 mx-auto mb-2 group-hover:scale-110 transition-transform" 
+                          <ArrowDownRight
+                            size={36}
+                            className="text-red-500 mx-auto mb-2 group-hover:scale-110 transition-transform"
                           />
                           <p className="text-xl font-black text-red-500">PREDICT DOWN</p>
                           <p className="text-xs text-red-400 mt-1">
-                            Payout: {rounds.current.downMultiplier || '1.80'}x
+                            Payout: {currentRound.downMultiplier || '1.80'}x
                           </p>
                         </div>
                         {loading && (
                           <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                            <div className="w-8 h-8 border-2 border-red-500 border-t-transparent rounded-full animate-spin"></div>
+                            <Loader2 className="w-8 h-8 text-red-500 animate-spin" />
                           </div>
                         )}
                       </button>
                     </div>
 
-                    {/* Status Message */}
-                    {!canBet && rounds.current.status === 'locked' && (
+                    {/* Status Messages */}
+                    {!canBet && currentRound.status === 'locked' && (
                       <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-3 text-center mb-4">
                         <p className="text-yellow-500 text-sm flex items-center justify-center gap-2">
                           <Clock size={16} />
                           Betting closed - Waiting for results...
+                        </p>
+                      </div>
+                    )}
+
+                    {!canBet && currentRound.status === 'active' && timeLeft < 10 && (
+                      <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-center mb-4">
+                        <p className="text-red-500 text-sm flex items-center justify-center gap-2">
+                          <AlertCircle size={16} />
+                          Round ending - Betting disabled
                         </p>
                       </div>
                     )}
@@ -877,19 +900,19 @@ const Dashboard = () => {
                       <div className="bg-green-500/10 p-3 rounded-xl">
                         <div className="flex justify-between items-center">
                           <span className="text-green-400 text-sm">UP Pool</span>
-                          <span className="text-green-400 text-xs">{rounds.current.totalUpBets || 0} bets</span>
+                          <span className="text-green-400 text-xs">{currentRound.totalUpBets || 0} bets</span>
                         </div>
                         <p className="text-lg font-bold text-green-500">
-                          ₦{formatCurrency(rounds.current.totalUpAmount)}
+                          ₦{formatCurrency(currentRound.totalUpAmount)}
                         </p>
                       </div>
                       <div className="bg-red-500/10 p-3 rounded-xl">
                         <div className="flex justify-between items-center">
                           <span className="text-red-400 text-sm">DOWN Pool</span>
-                          <span className="text-red-400 text-xs">{rounds.current.totalDownBets || 0} bets</span>
+                          <span className="text-red-400 text-xs">{currentRound.totalDownBets || 0} bets</span>
                         </div>
                         <p className="text-lg font-bold text-red-500">
-                          ₦{formatCurrency(rounds.current.totalDownAmount)}
+                          ₦{formatCurrency(currentRound.totalDownAmount)}
                         </p>
                       </div>
                     </div>
@@ -901,8 +924,9 @@ const Dashboard = () => {
                     <p className="text-gray-600 text-sm mt-2">A new round will start soon</p>
                     <button
                       onClick={handleRefresh}
-                      className="mt-4 px-6 py-2 bg-primary text-white rounded-xl hover:bg-primary/80 transition"
+                      className="mt-4 px-6 py-3 bg-primary text-white rounded-xl hover:bg-primary/80 transition flex items-center gap-2 mx-auto"
                     >
+                      <RefreshCw size={18} />
                       Refresh
                     </button>
                   </div>
@@ -911,11 +935,11 @@ const Dashboard = () => {
 
               {/* ===== SLIDE 3: UPCOMING ROUND ===== */}
               <div className="min-w-full px-1">
-                {rounds.upcoming ? (
+                {upcomingRound ? (
                   <div className="bg-slate-800/40 rounded-3xl p-6 border border-slate-700">
                     <div className="flex justify-between items-center mb-6">
                       <div>
-                        <p className="text-sm text-gray-400">Round #{rounds.upcoming.roundNumber}</p>
+                        <p className="text-sm text-gray-400">Round #{upcomingRound.roundNumber}</p>
                         <h3 className="text-xl font-bold text-white">Upcoming Round</h3>
                       </div>
                       <div className="bg-blue-500/20 px-4 py-2 rounded-xl">
@@ -927,11 +951,11 @@ const Dashboard = () => {
                       <Calendar className="mx-auto mb-4 text-blue-500" size={48} />
                       <p className="text-gray-300 text-lg mb-2">This round will start after</p>
                       <p className="text-gray-400 mb-6">the current round ends</p>
-                      
+
                       <div className="bg-slate-900/50 p-4 rounded-xl inline-block">
                         <p className="text-xs text-gray-400 mb-1">Scheduled Start Time</p>
                         <p className="text-xl font-bold text-white">
-                          {new Date(rounds.upcoming.startTime).toLocaleTimeString('en-US', {
+                          {new Date(upcomingRound.startTime).toLocaleTimeString('en-US', {
                             hour: '2-digit',
                             minute: '2-digit',
                             second: '2-digit'
@@ -964,8 +988,8 @@ const Dashboard = () => {
             <DollarSign size={20} className="text-primary" />
             <p className="text-white font-bold">Select Bet Amount</p>
           </div>
-          
-          <div className="flex flex-wrap gap-3">
+
+          <div className="flex flex-wrap gap-3 mb-4">
             {[500, 1000, 2000, 5000, 10000, 50000].map(amt => (
               <button
                 key={amt}
@@ -979,29 +1003,26 @@ const Dashboard = () => {
                 ₦{amt.toLocaleString()}
               </button>
             ))}
-            
-            <div className="relative">
-              <input
-                type="number"
-                placeholder="Custom"
-                value={betAmount}
-                min="100"
-                max={walletBalance}
-                className="bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white w-32 focus:outline-none focus:ring-2 focus:ring-primary"
-                onChange={(e) => setBetAmount(Number(e.target.value) || 0)}
-              />
-            </div>
+
+            <input
+              type="number"
+              placeholder="Custom"
+              value={betAmount}
+              min="100"
+              max={availableBalance}
+              className="bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white w-32 focus:outline-none focus:ring-2 focus:ring-primary"
+              onChange={(e) => setBetAmount(Number(e.target.value) || 0)}
+            />
           </div>
 
-          {/* Quick Info */}
-          <div className="mt-4 flex flex-wrap gap-4 text-sm text-gray-400">
+          <div className="flex flex-wrap gap-4 text-sm text-gray-400">
             <span>Min: ₦100</span>
             <span>•</span>
             <span>Max: ₦100,000</span>
             <span>•</span>
             <span>Fee: 20%</span>
             <span>•</span>
-            <span className="text-green-400">Your Balance: ₦{formatCurrency(walletBalance)}</span>
+            <span className="text-green-400">Available: ₦{formatCurrency(availableBalance)}</span>
           </div>
         </div>
 
@@ -1026,8 +1047,8 @@ const Dashboard = () => {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {myActiveBets.map(bet => (
-                <div 
-                  key={bet.id} 
+                <div
+                  key={bet.id}
                   className={`bg-slate-900/50 p-4 rounded-2xl border ${
                     bet.prediction === 'up' ? 'border-green-500/30' : 'border-red-500/30'
                   }`}
@@ -1041,18 +1062,18 @@ const Dashboard = () => {
                         {bet.prediction}
                       </p>
                       <p className="text-white font-bold text-lg">
-                        ₦{formatCurrency(bet.amount || bet.totalAmount)}
+                        ₦{formatCurrency(bet.amount || bet.totalAmount || bet.stakeAmount)}
                       </p>
                     </div>
                     <div className="text-right">
                       <p className="text-xs text-gray-500">Potential Win</p>
                       <p className="text-md font-bold text-primary">
-                        ₦{formatCurrency((bet.amount || bet.totalAmount) * 1.8)}
+                        ₦{formatCurrency((bet.amount || bet.totalAmount || bet.stakeAmount) * 1.8)}
                       </p>
                     </div>
                   </div>
                   <div className="flex justify-between items-center text-xs text-gray-500">
-                    <span>Round #{bet.roundNumber}</span>
+                    <span>Round #{bet.roundNumber || currentRound?.roundNumber || 'N/A'}</span>
                     {bet.isCurrentlyWinning !== undefined && (
                       <span className={bet.isCurrentlyWinning ? 'text-green-500' : 'text-red-500'}>
                         {bet.isCurrentlyWinning ? '✓ Winning' : '✗ Losing'}
