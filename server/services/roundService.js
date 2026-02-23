@@ -330,7 +330,7 @@ class RoundService {
     }
   }
 
-  // ✅ FIXED: Process bets with correct logic
+  // ✅ FULLY FIXED: Process bets with correct wallet balance logic
   async processBets(round, result, transaction) {
     try {
       const bets = await Bet.findAll({
@@ -354,39 +354,39 @@ class RoundService {
 
       console.log(`   📊 Processing ${bets.length} bets...`);
 
-      // CASE 1: TIE - Refund everyone (full amount)
+      // CASE 1: TIE - Refund everyone
       if (result === 'tie') {
         console.log('   ➖ TIE - Refunding all bets');
         await this.refundAllBets(round, bets, transaction, 'TIE - Price unchanged');
         return;
       }
 
-      // Separate winners and losers based on result
+      // Separate winners and losers
       const winners = bets.filter(bet => bet.prediction === result);
       const losers = bets.filter(bet => bet.prediction !== result);
 
-      console.log(`   ✅ Predicted correctly: ${winners.length}`);
-      console.log(`   ❌ Predicted wrongly: ${losers.length}`);
+      console.log(`   ✅ Winners: ${winners.length}`);
+      console.log(`   ❌ Losers: ${losers.length}`);
 
       const totalWinningStakes = winners.reduce((sum, bet) => sum + parseFloat(bet.stakeAmount), 0);
       const totalLosingStakes = losers.reduce((sum, bet) => sum + parseFloat(bet.stakeAmount), 0);
 
-      // CASE 2: No one predicted correctly - ALL LOSE
+      // CASE 2: No winners - All lose
       if (winners.length === 0) {
         console.log('   ❌ NO WINNERS - Everyone loses!');
         await this.processAllAsLosers(round, bets, transaction);
         return;
       }
 
-      // CASE 3: No one predicted wrongly - Winners get 1x (stake back only)
+      // CASE 3: No losers - Winners get 1x
       if (losers.length === 0) {
         console.log('   🎯 NO LOSERS - Winners get 1x (stake back)');
         await this.processWinnersOnly(round, winners, transaction);
         return;
       }
 
-      // CASE 4: NORMAL - Both winners and losers exist
-      console.log('   🎮 NORMAL CASE - Processing winners and losers');
+      // CASE 4: NORMAL - Both winners and losers
+      console.log('   🎮 NORMAL CASE - Processing payouts');
       
       const platformCut = calculatePlatformCut(totalLosingStakes); // 30%
       const prizePool = calculatePrizePool(totalLosingStakes);     // 70%
@@ -401,13 +401,14 @@ class RoundService {
       console.log(`   🏦 Platform (30%): ₦${platformCut.toLocaleString()}`);
       console.log(`   🎁 Prize Pool (70%): ₦${prizePool.toLocaleString()}`);
 
-      // Process WINNERS - get stake back + share of prize pool
+      // ✅ PROCESS WINNERS - FIXED LOGIC
       for (const bet of winners) {
-        const stakeAmount = parseFloat(bet.stakeAmount);
+        const betTotalAmount = parseFloat(bet.totalAmount); // What user originally paid
+        const stakeAmount = parseFloat(bet.stakeAmount);    // What's in the pool
         const shareRatio = stakeAmount / totalWinningStakes;
         const prizeShare = prizePool * shareRatio;
-        const payout = stakeAmount + prizeShare;
-        const profit = payout - parseFloat(bet.totalAmount);
+        const payout = stakeAmount + prizeShare;            // Total money won
+        const profit = payout - betTotalAmount;             // Actual profit
 
         await bet.update({
           result: 'win',
@@ -422,12 +423,20 @@ class RoundService {
           lock: transaction.LOCK.UPDATE
         });
 
-        const balanceBefore = parseFloat(wallet.nairaBalance);
+        const currentBalance = parseFloat(wallet.nairaBalance);
+        const currentLocked = parseFloat(wallet.lockedBalance);
+
+        // ✅ FIXED: 
+        // 1. Remove bet from locked
+        // 2. Remove bet from balance
+        // 3. Add payout to balance
+        const newLockedBalance = roundToTwo(Math.max(0, currentLocked - betTotalAmount));
+        const newBalance = roundToTwo(currentBalance - betTotalAmount + payout);
 
         await wallet.update({
-          nairaBalance: roundToTwo(balanceBefore + payout),
-          lockedBalance: roundToTwo(Math.max(0, parseFloat(wallet.lockedBalance) - stakeAmount)),
-          totalWon: roundToTwo(parseFloat(wallet.totalWon) + payout)
+          nairaBalance: newBalance,
+          lockedBalance: newLockedBalance,
+          totalWon: roundToTwo(parseFloat(wallet.totalWon || 0) + payout)
         }, { transaction });
 
         await Transaction.create({
@@ -440,27 +449,42 @@ class RoundService {
           metadata: { 
             betId: bet.id, 
             roundId: round.id,
-            stakeReturned: stakeAmount,
+            betAmount: betTotalAmount,
+            stakeAmount: stakeAmount,
             prizeShare: roundToTwo(prizeShare),
             profit: roundToTwo(profit),
             multiplier: roundToTwo(payout / stakeAmount)
           },
-          balanceBefore,
-          balanceAfter: roundToTwo(balanceBefore + payout)
+          balanceBefore: currentBalance,
+          balanceAfter: newBalance
         }, { transaction });
 
         const multiplier = roundToTwo(payout / stakeAmount);
-        console.log(`   ✅ ${bet.user.username}: Won ₦${roundToTwo(payout)} (${multiplier}x)`);
+        console.log(`   ✅ ${bet.user.username}: Bet ₦${betTotalAmount} → Won ₦${roundToTwo(payout)} (${multiplier}x, Profit: ₦${roundToTwo(profit)})`);
+
+        // Emit to user
+        if (this.io) {
+          this.io.to(bet.userId).emit('bet_result', {
+            betId: bet.id,
+            result: 'win',
+            payout: roundToTwo(payout),
+            profit: roundToTwo(profit),
+            multiplier,
+            newBalance,
+            newLockedBalance
+          });
+        }
       }
 
-      // Process LOSERS - lose their stake
+      // ✅ PROCESS LOSERS - FIXED LOGIC
       for (const bet of losers) {
-        const stakeAmount = parseFloat(bet.stakeAmount);
+        const betTotalAmount = parseFloat(bet.totalAmount); // What user paid
+        const stakeAmount = parseFloat(bet.stakeAmount);    // What was in pool
         
         await bet.update({
           result: 'loss',
           payout: 0,
-          profit: -parseFloat(bet.totalAmount),
+          profit: -betTotalAmount,  // Lost full bet amount
           isPaid: true
         }, { transaction });
 
@@ -470,22 +494,51 @@ class RoundService {
           lock: transaction.LOCK.UPDATE
         });
 
+        const currentBalance = parseFloat(wallet.nairaBalance);
+        const currentLocked = parseFloat(wallet.lockedBalance);
+
+        // ✅ FIXED:
+        // 1. Remove from locked
+        // 2. Deduct from balance
+        const newLockedBalance = roundToTwo(Math.max(0, currentLocked - betTotalAmount));
+        const newBalance = roundToTwo(currentBalance - betTotalAmount);
+
         await wallet.update({
-          lockedBalance: roundToTwo(Math.max(0, parseFloat(wallet.lockedBalance) - stakeAmount)),
-          totalLost: roundToTwo(parseFloat(wallet.totalLost) + parseFloat(bet.totalAmount))
+          nairaBalance: newBalance,
+          lockedBalance: newLockedBalance,
+          totalLost: roundToTwo(parseFloat(wallet.totalLost || 0) + betTotalAmount)
         }, { transaction });
 
         await Transaction.create({
           userId: bet.userId,
           type: 'bet_loss',
           method: 'internal',
-          amount: parseFloat(bet.totalAmount),
+          amount: betTotalAmount,
           status: 'completed',
-          description: `Lost ₦${parseFloat(bet.totalAmount).toLocaleString()} in Round #${round.roundNumber}`,
-          metadata: { betId: bet.id, roundId: round.id }
+          description: `Lost ₦${betTotalAmount.toLocaleString()} in Round #${round.roundNumber}`,
+          metadata: { 
+            betId: bet.id, 
+            roundId: round.id,
+            betAmount: betTotalAmount,
+            stakeAmount: stakeAmount
+          },
+          balanceBefore: currentBalance,
+          balanceAfter: newBalance
         }, { transaction });
 
-        console.log(`   ❌ ${bet.user.username}: Lost ₦${parseFloat(bet.totalAmount)}`);
+        console.log(`   ❌ ${bet.user.username}: Lost ₦${betTotalAmount}`);
+
+        // Emit to user
+        if (this.io) {
+          this.io.to(bet.userId).emit('bet_result', {
+            betId: bet.id,
+            result: 'loss',
+            payout: 0,
+            profit: -betTotalAmount,
+            newBalance,
+            newLockedBalance
+          });
+        }
       }
 
       console.log(`   ✅ Round #${round.roundNumber} processing complete`);
@@ -496,15 +549,14 @@ class RoundService {
     }
   }
 
-  // ✅ Refund all bets (for TIE)
+  // ✅ FIXED: Refund all bets (for TIE)
   async refundAllBets(round, bets, transaction, reason) {
     for (const bet of bets) {
-      const refundAmount = parseFloat(bet.totalAmount);
-      const stakeAmount = parseFloat(bet.stakeAmount);
+      const betTotalAmount = parseFloat(bet.totalAmount); // Full refund
 
       await bet.update({
         result: 'refund',
-        payout: refundAmount,
+        payout: betTotalAmount,
         profit: 0,
         isPaid: true
       }, { transaction });
@@ -515,43 +567,63 @@ class RoundService {
         lock: transaction.LOCK.UPDATE
       });
 
-      const balanceBefore = parseFloat(wallet.nairaBalance);
+      const currentBalance = parseFloat(wallet.nairaBalance);
+      const currentLocked = parseFloat(wallet.lockedBalance);
+
+      // ✅ FIXED: Just remove from locked (money stays in balance)
+      const newLockedBalance = roundToTwo(Math.max(0, currentLocked - betTotalAmount));
 
       await wallet.update({
-        nairaBalance: roundToTwo(balanceBefore + refundAmount),
-        lockedBalance: roundToTwo(Math.max(0, parseFloat(wallet.lockedBalance) - stakeAmount))
+        lockedBalance: newLockedBalance
+        // nairaBalance stays same - money was locked, now unlocked
       }, { transaction });
 
       await Transaction.create({
         userId: bet.userId,
         type: 'refund',
         method: 'internal',
-        amount: refundAmount,
+        amount: betTotalAmount,
         status: 'completed',
         description: `Refund for Round #${round.roundNumber} (${reason})`,
-        metadata: { betId: bet.id, roundId: round.id, reason },
-        balanceBefore,
-        balanceAfter: roundToTwo(balanceBefore + refundAmount)
+        metadata: { 
+          betId: bet.id, 
+          roundId: round.id, 
+          reason 
+        },
+        balanceBefore: currentBalance,
+        balanceAfter: currentBalance // No change to balance
       }, { transaction });
 
-      console.log(`   🔄 ${bet.user?.username}: Refunded ₦${refundAmount}`);
+      console.log(`   🔄 ${bet.user?.username}: Refunded ₦${betTotalAmount}`);
+
+      // Emit to user
+      if (this.io) {
+        this.io.to(bet.userId).emit('bet_result', {
+          betId: bet.id,
+          result: 'refund',
+          payout: betTotalAmount,
+          profit: 0,
+          newBalance: currentBalance,
+          newLockedBalance
+        });
+      }
     }
 
     await round.update({ isProcessed: true }, { transaction });
   }
 
-  // ✅ NEW: All lose (no correct predictions)
+  // ✅ FIXED: All lose (no winners)
   async processAllAsLosers(round, bets, transaction) {
     let totalLost = 0;
 
     for (const bet of bets) {
-      const stakeAmount = parseFloat(bet.stakeAmount);
-      totalLost += stakeAmount;
+      const betTotalAmount = parseFloat(bet.totalAmount);
+      totalLost += betTotalAmount;
       
       await bet.update({
         result: 'loss',
         payout: 0,
-        profit: -parseFloat(bet.totalAmount),
+        profit: -betTotalAmount,
         isPaid: true
       }, { transaction });
 
@@ -561,25 +633,45 @@ class RoundService {
         lock: transaction.LOCK.UPDATE
       });
 
+      const currentBalance = parseFloat(wallet.nairaBalance);
+      const currentLocked = parseFloat(wallet.lockedBalance);
+
+      // ✅ FIXED: Remove from locked AND balance
+      const newLockedBalance = roundToTwo(Math.max(0, currentLocked - betTotalAmount));
+      const newBalance = roundToTwo(currentBalance - betTotalAmount);
+
       await wallet.update({
-        lockedBalance: roundToTwo(Math.max(0, parseFloat(wallet.lockedBalance) - stakeAmount)),
-        totalLost: roundToTwo(parseFloat(wallet.totalLost) + parseFloat(bet.totalAmount))
+        nairaBalance: newBalance,
+        lockedBalance: newLockedBalance,
+        totalLost: roundToTwo(parseFloat(wallet.totalLost || 0) + betTotalAmount)
       }, { transaction });
 
       await Transaction.create({
         userId: bet.userId,
         type: 'bet_loss',
         method: 'internal',
-        amount: parseFloat(bet.totalAmount),
+        amount: betTotalAmount,
         status: 'completed',
-        description: `Lost ₦${parseFloat(bet.totalAmount).toLocaleString()} in Round #${round.roundNumber}`,
-        metadata: { betId: bet.id, roundId: round.id }
+        description: `Lost ₦${betTotalAmount.toLocaleString()} in Round #${round.roundNumber}`,
+        metadata: { betId: bet.id, roundId: round.id },
+        balanceBefore: currentBalance,
+        balanceAfter: newBalance
       }, { transaction });
 
-      console.log(`   ❌ ${bet.user?.username}: Lost ₦${parseFloat(bet.totalAmount)}`);
+      console.log(`   ❌ ${bet.user?.username}: Lost ₦${betTotalAmount}`);
+
+      if (this.io) {
+        this.io.to(bet.userId).emit('bet_result', {
+          betId: bet.id,
+          result: 'loss',
+          payout: 0,
+          profit: -betTotalAmount,
+          newBalance,
+          newLockedBalance
+        });
+      }
     }
 
-    // Platform takes all stakes
     await round.update({ 
       platformCut: roundToTwo(totalLost),
       prizePool: 0,
@@ -589,12 +681,13 @@ class RoundService {
     console.log(`   🏦 Platform collected: ₦${totalLost.toLocaleString()}`);
   }
 
-  // ✅ NEW: Winners only (no losers) - get 1x (stake back)
+  // ✅ FIXED: Winners only (no losers) - 1x payout
   async processWinnersOnly(round, winners, transaction) {
     for (const bet of winners) {
+      const betTotalAmount = parseFloat(bet.totalAmount);
       const stakeAmount = parseFloat(bet.stakeAmount);
       const payout = stakeAmount; // 1x - just stake back
-      const profit = payout - parseFloat(bet.totalAmount); // Profit = stake - total bet (may be negative due to fee)
+      const profit = payout - betTotalAmount; // Usually negative due to fee
 
       await bet.update({
         result: 'win',
@@ -609,12 +702,18 @@ class RoundService {
         lock: transaction.LOCK.UPDATE
       });
 
-      const balanceBefore = parseFloat(wallet.nairaBalance);
+      const currentBalance = parseFloat(wallet.nairaBalance);
+      const currentLocked = parseFloat(wallet.lockedBalance);
+
+      // ✅ FIXED:
+      // Remove from locked, deduct bet, add payout
+      const newLockedBalance = roundToTwo(Math.max(0, currentLocked - betTotalAmount));
+      const newBalance = roundToTwo(currentBalance - betTotalAmount + payout);
 
       await wallet.update({
-        nairaBalance: roundToTwo(balanceBefore + payout),
-        lockedBalance: roundToTwo(Math.max(0, parseFloat(wallet.lockedBalance) - stakeAmount)),
-        totalWon: roundToTwo(parseFloat(wallet.totalWon) + payout)
+        nairaBalance: newBalance,
+        lockedBalance: newLockedBalance,
+        totalWon: roundToTwo(parseFloat(wallet.totalWon || 0) + payout)
       }, { transaction });
 
       await Transaction.create({
@@ -627,20 +726,32 @@ class RoundService {
         metadata: { 
           betId: bet.id, 
           roundId: round.id,
+          betAmount: betTotalAmount,
           stakeReturned: stakeAmount,
           prizeShare: 0,
           profit: roundToTwo(profit),
           multiplier: 1,
-          reason: 'No losing bets - 1x payout'
+          reason: 'No losing bets'
         },
-        balanceBefore,
-        balanceAfter: roundToTwo(balanceBefore + payout)
+        balanceBefore: currentBalance,
+        balanceAfter: newBalance
       }, { transaction });
 
-      console.log(`   ✅ ${bet.user?.username}: Won ₦${roundToTwo(payout)} (1x - no opponents)`);
+      console.log(`   ✅ ${bet.user?.username}: Bet ₦${betTotalAmount} → Won ₦${roundToTwo(payout)} (1x, Profit: ₦${roundToTwo(profit)})`);
+
+      if (this.io) {
+        this.io.to(bet.userId).emit('bet_result', {
+          betId: bet.id,
+          result: 'win',
+          payout: roundToTwo(payout),
+          profit: roundToTwo(profit),
+          multiplier: 1,
+          newBalance,
+          newLockedBalance
+        });
+      }
     }
 
-    // Fee collected but no prize pool
     const totalFees = winners.reduce((sum, bet) => sum + parseFloat(bet.feeAmount), 0);
     
     await round.update({ 
@@ -649,7 +760,7 @@ class RoundService {
       isProcessed: true 
     }, { transaction });
 
-    console.log(`   🏦 Platform collected (fees only): ₦${totalFees.toLocaleString()}`);
+    console.log(`   🏦 Platform collected (fees): ₦${totalFees.toLocaleString()}`);
   }
 
   async getCurrentRound() {
