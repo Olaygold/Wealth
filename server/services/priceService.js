@@ -3,7 +3,7 @@ const axios = require('axios');
 
 class PriceService {
   constructor() {
-    this.currentPrice = 43250.00; // Default starting price
+    this.currentPrice = 0.00; // Default starting price
     this.priceHistory = [];
     this.maxHistoryLength = 120; // Keep 10 minutes of history (at 5-second intervals)
     this.io = null;
