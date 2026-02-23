@@ -15,7 +15,7 @@ const Leaderboard = () => {
     setLoading(true);
     try {
       const res = await api.get(`/trading/leaderboard?period=${period}&limit=50`);
-      setLeaderboard(res.data.leaderboard);
+      setLeaderboard(res.leaderboard);
     } catch (err) {
       console.error(err);
     } finally {
