@@ -453,7 +453,7 @@ const placeBet = async (req, res) => {
 
     // ✅ FIXED: Deduct FULL bet amount, lock only stake
     const newBalance = roundToTwo(walletBalance - betAmount);
-    const newLockedBalance = roundToTwo(lockedBalance + stakeAmount);
+    const newLockedBalance = roundToTwo(stakeAmount);
 
     await wallet.update({
       nairaBalance: newBalance,
