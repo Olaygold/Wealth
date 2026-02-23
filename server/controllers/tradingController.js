@@ -50,36 +50,8 @@ const getAllRounds = async (req, res) => {
       const totalDownAmount = parseFloat(currentRound.totalDownAmount) || 0;
       const totalPool = totalUpAmount + totalDownAmount;
       
-      // ✅ FIXED: Correct multiplier calculation
-      let upMultiplier = 1.0;
-      let downMultiplier = 1.0;
-      let upMultiplierDisplay = '1.00';
-      let downMultiplierDisplay = '1.00';
-
-      if (totalUpAmount > 0 && totalDownAmount > 0) {
-        // Both sides have bets - calculate real multipliers
-        // Winners get: stake + (70% of losers pool * their share)
-        upMultiplier = roundToTwo(1 + (totalDownAmount * 0.7) / totalUpAmount);
-        downMultiplier = roundToTwo(1 + (totalUpAmount * 0.7) / totalDownAmount);
-        upMultiplierDisplay = `${upMultiplier}x`;
-        downMultiplierDisplay = `${downMultiplier}x`;
-      } else if (totalUpAmount > 0 && totalDownAmount === 0) {
-        // Only UP bets exist
-        upMultiplier = 1.0;
-        downMultiplier = 0;
-        upMultiplierDisplay = '1x (no opponents)';
-        downMultiplierDisplay = 'N/A';
-      } else if (totalDownAmount > 0 && totalUpAmount === 0) {
-        // Only DOWN bets exist
-        upMultiplier = 0;
-        downMultiplier = 1.0;
-        upMultiplierDisplay = 'N/A';
-        downMultiplierDisplay = '1x (no opponents)';
-      } else {
-        // No bets yet
-        upMultiplierDisplay = '~1.8x';
-        downMultiplierDisplay = '~1.8x';
-      }
+      // Calculate multipliers
+      const multipliers = calculateMultipliers(totalUpAmount, totalDownAmount);
 
       // Calculate timing
       const bettingEndsIn = Math.max(0, Math.floor((new Date(currentRound.lockTime) - now) / 1000));
@@ -99,10 +71,10 @@ const getAllRounds = async (req, res) => {
         totalUpAmount: roundToTwo(totalUpAmount),
         totalDownAmount: roundToTwo(totalDownAmount),
         totalPool: roundToTwo(totalPool),
-        upMultiplier: upMultiplierDisplay,
-        downMultiplier: downMultiplierDisplay,
-        upMultiplierRaw: upMultiplier,
-        downMultiplierRaw: downMultiplier,
+        upMultiplier: multipliers.upDisplay,
+        downMultiplier: multipliers.downDisplay,
+        upMultiplierRaw: multipliers.upRaw,
+        downMultiplierRaw: multipliers.downRaw,
         bettingEndsIn,
         roundEndsIn,
         canBet
@@ -124,6 +96,37 @@ const getAllRounds = async (req, res) => {
       error: error.message
     });
   }
+};
+
+// ============================================================
+// HELPER: Calculate multipliers for UP and DOWN
+// ============================================================
+const calculateMultipliers = (totalUpAmount, totalDownAmount) => {
+  let upRaw = 1.0;
+  let downRaw = 1.0;
+  let upDisplay = '~1.8x';
+  let downDisplay = '~1.8x';
+
+  if (totalUpAmount > 0 && totalDownAmount > 0) {
+    // Both sides have bets - calculate real multipliers
+    // Winners share 70% of losers' pool (30% platform fee from losers)
+    upRaw = roundToTwo(1 + (totalDownAmount * 0.7) / totalUpAmount);
+    downRaw = roundToTwo(1 + (totalUpAmount * 0.7) / totalDownAmount);
+    upDisplay = `${upRaw}x`;
+    downDisplay = `${downRaw}x`;
+  } else if (totalUpAmount > 0 && totalDownAmount === 0) {
+    upRaw = 1.0;
+    downRaw = 0;
+    upDisplay = '1x (refund if no opponents)';
+    downDisplay = 'N/A';
+  } else if (totalDownAmount > 0 && totalUpAmount === 0) {
+    upRaw = 0;
+    downRaw = 1.0;
+    upDisplay = 'N/A';
+    downDisplay = '1x (refund if no opponents)';
+  }
+
+  return { upRaw, downRaw, upDisplay, downDisplay };
 };
 
 // ============================================================
@@ -189,29 +192,8 @@ const getCurrentRound = async (req, res) => {
 
     const currentPrice = priceService.getPrice();
 
-    // ✅ FIXED: Correct multiplier calculation
-    let upMultiplier = 1.0;
-    let downMultiplier = 1.0;
-    let upMultiplierDisplay = '1.00';
-    let downMultiplierDisplay = '1.00';
-
-    if (totalUpAmount > 0 && totalDownAmount > 0) {
-      upMultiplier = roundToTwo(1 + (totalDownAmount * 0.7) / totalUpAmount);
-      downMultiplier = roundToTwo(1 + (totalUpAmount * 0.7) / totalDownAmount);
-      upMultiplierDisplay = `${upMultiplier}x`;
-      downMultiplierDisplay = `${downMultiplier}x`;
-    } else if (totalUpAmount > 0 && totalDownAmount === 0) {
-      upMultiplier = 1.0;
-      upMultiplierDisplay = '1x (no opponents)';
-      downMultiplierDisplay = 'N/A';
-    } else if (totalDownAmount > 0 && totalUpAmount === 0) {
-      downMultiplier = 1.0;
-      upMultiplierDisplay = 'N/A';
-      downMultiplierDisplay = '1x (no opponents)';
-    } else {
-      upMultiplierDisplay = '~1.8x';
-      downMultiplierDisplay = '~1.8x';
-    }
+    // Calculate multipliers
+    const multipliers = calculateMultipliers(totalUpAmount, totalDownAmount);
 
     // Timing calculations
     const bettingEndsIn = Math.max(0, Math.floor((new Date(round.lockTime) - now) / 1000));
@@ -234,10 +216,10 @@ const getCurrentRound = async (req, res) => {
         totalUpAmount: roundToTwo(totalUpAmount),
         totalDownAmount: roundToTwo(totalDownAmount),
         totalPool: roundToTwo(totalPool),
-        upMultiplier: upMultiplierDisplay,
-        downMultiplier: downMultiplierDisplay,
-        upMultiplierRaw: upMultiplier,
-        downMultiplierRaw: downMultiplier,
+        upMultiplier: multipliers.upDisplay,
+        downMultiplier: multipliers.downDisplay,
+        upMultiplierRaw: multipliers.upRaw,
+        downMultiplierRaw: multipliers.downRaw,
         bettingEndsIn,
         roundEndsIn,
         canBet
@@ -382,7 +364,7 @@ const placeBet = async (req, res) => {
       });
     }
 
-    // ===== GET WALLET =====
+    // ===== GET WALLET WITH LOCK =====
     const wallet = await Wallet.findOne({
       where: { userId: req.user.id },
       transaction,
@@ -397,17 +379,18 @@ const placeBet = async (req, res) => {
       });
     }
 
-    const walletBalance = parseFloat(wallet.nairaBalance);
-    const lockedBalance = parseFloat(wallet.lockedBalance);
-    const availableBalance = walletBalance - lockedBalance;
+    // ✅ FIXED: Calculate available balance properly
+    const walletBalance = parseFloat(wallet.nairaBalance) || 0;
+    const currentLockedBalance = parseFloat(wallet.lockedBalance) || 0;
+    const availableBalance = roundToTwo(walletBalance - currentLockedBalance);
 
-    // ✅ FIXED: Check against AVAILABLE balance
+    // Check against available balance
     if (betAmount > availableBalance) {
       await transaction.rollback();
       return res.status(400).json({
         success: false,
-        message: `Insufficient balance. You have ₦${roundToTwo(availableBalance).toLocaleString()} available.`,
-        available: roundToTwo(availableBalance),
+        message: `Insufficient balance. You have ₦${availableBalance.toLocaleString()} available.`,
+        available: availableBalance,
         requested: betAmount
       });
     }
@@ -451,13 +434,14 @@ const placeBet = async (req, res) => {
       result: 'pending'
     }, { transaction });
 
-    // ✅ FIXED: Deduct FULL bet amount, lock only stake
-    const newBalance = roundToTwo(walletBalance - betAmount);
-    const newLockedBalance = roundToTwo(stakeAmount);
+    // ✅ FIXED: Only add to lockedBalance, DO NOT deduct from nairaBalance yet
+    // Money stays in wallet but is locked until round ends
+    const newLockedBalance = roundToTwo(currentLockedBalance + betAmount);
+    const newAvailableBalance = roundToTwo(walletBalance - newLockedBalance);
 
     await wallet.update({
-      nairaBalance: newBalance,
       lockedBalance: newLockedBalance
+      // nairaBalance stays the same - money is locked, not deducted
     }, { transaction });
 
     // ===== CREATE TRANSACTION RECORD =====
@@ -479,23 +463,38 @@ const placeBet = async (req, res) => {
         feePercentage: `${feePercentage}%`
       },
       balanceBefore: balanceBefore,
-      balanceAfter: newBalance
+      balanceAfter: walletBalance // Balance doesn't change, just locked
     }, { transaction });
 
     // ===== UPDATE ROUND TOTALS =====
+    const updatedRoundData = {};
+    
     if (predictionLower === 'up') {
-      await round.update({
-        totalUpAmount: roundToTwo(parseFloat(round.totalUpAmount) + stakeAmount),
-        totalUpBets: round.totalUpBets + 1,
-        totalFeeCollected: roundToTwo(parseFloat(round.totalFeeCollected) + feeAmount)
-      }, { transaction });
+      updatedRoundData.totalUpAmount = roundToTwo(parseFloat(round.totalUpAmount || 0) + stakeAmount);
+      updatedRoundData.totalUpBets = (round.totalUpBets || 0) + 1;
     } else {
-      await round.update({
-        totalDownAmount: roundToTwo(parseFloat(round.totalDownAmount) + stakeAmount),
-        totalDownBets: round.totalDownBets + 1,
-        totalFeeCollected: roundToTwo(parseFloat(round.totalFeeCollected) + feeAmount)
-      }, { transaction });
+      updatedRoundData.totalDownAmount = roundToTwo(parseFloat(round.totalDownAmount || 0) + stakeAmount);
+      updatedRoundData.totalDownBets = (round.totalDownBets || 0) + 1;
     }
+    updatedRoundData.totalFeeCollected = roundToTwo(parseFloat(round.totalFeeCollected || 0) + feeAmount);
+
+    await round.update(updatedRoundData, { transaction });
+
+    // Get updated pool totals for multiplier calculation
+    const newTotalUpAmount = predictionLower === 'up' 
+      ? updatedRoundData.totalUpAmount 
+      : parseFloat(round.totalUpAmount || 0);
+    const newTotalDownAmount = predictionLower === 'down' 
+      ? updatedRoundData.totalDownAmount 
+      : parseFloat(round.totalDownAmount || 0);
+
+    // Calculate current multipliers
+    const multipliers = calculateMultipliers(newTotalUpAmount, newTotalDownAmount);
+
+    // Calculate potential payout for this bet
+    const currentMultiplier = predictionLower === 'up' ? multipliers.upRaw : multipliers.downRaw;
+    const potentialPayout = roundToTwo(stakeAmount * currentMultiplier);
+    const potentialProfit = roundToTwo(potentialPayout - stakeAmount);
 
     await transaction.commit();
 
@@ -509,21 +508,19 @@ const placeBet = async (req, res) => {
           roundNumber: round.roundNumber,
           prediction: predictionLower,
           stakeAmount: stakeAmount,
-          totalUpAmount: predictionLower === 'up' 
-            ? roundToTwo(parseFloat(round.totalUpAmount) + stakeAmount)
-            : parseFloat(round.totalUpAmount),
-          totalDownAmount: predictionLower === 'down'
-            ? roundToTwo(parseFloat(round.totalDownAmount) + stakeAmount)
-            : parseFloat(round.totalDownAmount),
-          totalUpBets: predictionLower === 'up' ? round.totalUpBets + 1 : round.totalUpBets,
-          totalDownBets: predictionLower === 'down' ? round.totalDownBets + 1 : round.totalDownBets
+          totalUpAmount: newTotalUpAmount,
+          totalDownAmount: newTotalDownAmount,
+          totalUpBets: updatedRoundData.totalUpBets || round.totalUpBets,
+          totalDownBets: updatedRoundData.totalDownBets || round.totalDownBets,
+          upMultiplier: multipliers.upDisplay,
+          downMultiplier: multipliers.downDisplay
         });
 
         // Send balance update to this user only
         io.to(req.user.id).emit('balance_update', {
-          nairaBalance: newBalance,
+          nairaBalance: walletBalance,
           lockedBalance: newLockedBalance,
-          availableBalance: roundToTwo(newBalance - newLockedBalance)
+          availableBalance: newAvailableBalance
         });
       }
     } catch (socketError) {
@@ -542,14 +539,16 @@ const placeBet = async (req, res) => {
         totalAmount: betAmount,
         feeAmount: feeAmount,
         stakeAmount: stakeAmount,
-        feePercentage: `${feePercentage}%`
+        feePercentage: `${feePercentage}%`,
+        currentMultiplier: `${currentMultiplier}x`,
+        potentialPayout: potentialPayout,
+        potentialProfit: potentialProfit
       },
       wallet: {
-        previousBalance: balanceBefore,
-        newBalance: newBalance,
+        totalBalance: walletBalance,
         lockedBalance: newLockedBalance,
-        availableBalance: roundToTwo(newBalance - newLockedBalance),
-        deducted: betAmount
+        availableBalance: newAvailableBalance,
+        amountLocked: betAmount
       }
     });
 
@@ -582,31 +581,53 @@ const getMyActiveBets = async (req, res) => {
         where: {
           status: { [Op.in]: ['active', 'locked'] }
         },
-        required: false
+        required: true
       }],
       order: [['createdAt', 'DESC']]
     });
 
     const currentPrice = priceService.getPrice();
+    const now = new Date();
 
-    const activeBets = bets.map(bet => {
+    const activeBets = await Promise.all(bets.map(async (bet) => {
       const round = bet.round;
       
       if (!round) {
-        return {
-          id: bet.id,
-          prediction: bet.prediction,
-          amount: parseFloat(bet.totalAmount),
-          stakeAmount: parseFloat(bet.stakeAmount),
-          status: 'waiting'
-        };
+        return null;
       }
 
-      const priceChange = currentPrice - parseFloat(round.startPrice);
+      // Get all bets for this round to calculate current multipliers
+      const roundBets = await Bet.findAll({
+        where: { roundId: round.id },
+        attributes: ['prediction', 'stakeAmount']
+      });
+
+      const totalUpAmount = roundBets
+        .filter(b => b.prediction === 'up')
+        .reduce((sum, b) => sum + parseFloat(b.stakeAmount), 0);
+      const totalDownAmount = roundBets
+        .filter(b => b.prediction === 'down')
+        .reduce((sum, b) => sum + parseFloat(b.stakeAmount), 0);
+
+      // Calculate current multipliers
+      const multipliers = calculateMultipliers(totalUpAmount, totalDownAmount);
+
+      // Get multiplier for user's prediction
+      const userMultiplier = bet.prediction === 'up' ? multipliers.upRaw : multipliers.downRaw;
+      const userMultiplierDisplay = bet.prediction === 'up' ? multipliers.upDisplay : multipliers.downDisplay;
+
+      // Calculate potential payout
+      const stakeAmount = parseFloat(bet.stakeAmount);
+      const potentialPayout = roundToTwo(stakeAmount * userMultiplier);
+      const potentialProfit = roundToTwo(potentialPayout - stakeAmount);
+
+      // Check if currently winning
+      const startPrice = parseFloat(round.startPrice);
+      const priceChange = currentPrice - startPrice;
       const isWinning = (bet.prediction === 'up' && priceChange > 0) || 
                         (bet.prediction === 'down' && priceChange < 0);
 
-      const now = new Date();
+      // Timing
       const bettingEndsIn = Math.max(0, Math.floor((new Date(round.lockTime) - now) / 1000));
       const roundEndsIn = Math.max(0, Math.floor((new Date(round.endTime) - now) / 1000));
 
@@ -615,25 +636,56 @@ const getMyActiveBets = async (req, res) => {
         roundId: round.id,
         roundNumber: round.roundNumber,
         prediction: bet.prediction,
-        amount: parseFloat(bet.totalAmount),
-        stakeAmount: parseFloat(bet.stakeAmount),
-        feeAmount: parseFloat(bet.feeAmount),
+        
+        // ✅ FIXED: Clear breakdown of amounts
+        totalAmount: parseFloat(bet.totalAmount),  // What user paid
+        feeAmount: parseFloat(bet.feeAmount),      // Platform fee (shown only)
+        stakeAmount: stakeAmount,                  // Amount in pool
+        
+        // ✅ FIXED: Accurate potential payout based on current multiplier
+        currentMultiplier: userMultiplierDisplay,
+        currentMultiplierRaw: userMultiplier,
+        potentialPayout: potentialPayout,
+        potentialProfit: potentialProfit,
+        
+        // Round info
         roundStatus: round.status,
-        startPrice: parseFloat(round.startPrice),
+        startPrice: startPrice,
         currentPrice: currentPrice,
         priceChange: roundToTwo(priceChange),
-        percentChange: roundToTwo((priceChange / parseFloat(round.startPrice)) * 100),
+        percentChange: roundToTwo((priceChange / startPrice) * 100),
         isCurrentlyWinning: isWinning,
+        
+        // Pool info
+        totalUpAmount: roundToTwo(totalUpAmount),
+        totalDownAmount: roundToTwo(totalDownAmount),
+        upMultiplier: multipliers.upDisplay,
+        downMultiplier: multipliers.downDisplay,
+        
+        // Timing
         bettingEndsIn,
         roundEndsIn,
-        endTime: round.endTime
+        endTime: round.endTime,
+        createdAt: bet.createdAt
       };
-    });
+    }));
+
+    // Filter out null entries
+    const validBets = activeBets.filter(bet => bet !== null);
+
+    // Calculate totals
+    const totals = {
+      totalBets: validBets.length,
+      totalStaked: roundToTwo(validBets.reduce((sum, b) => sum + b.stakeAmount, 0)),
+      totalPotentialPayout: roundToTwo(validBets.reduce((sum, b) => sum + b.potentialPayout, 0)),
+      totalPotentialProfit: roundToTwo(validBets.reduce((sum, b) => sum + b.potentialProfit, 0))
+    };
 
     res.json({
       success: true,
-      activeBets: activeBets.filter(bet => bet.roundNumber), // Only return bets with valid rounds
-      total: activeBets.length
+      activeBets: validBets,
+      totals,
+      currentPrice
     });
 
   } catch (error) {
@@ -695,10 +747,19 @@ const getMyBetHistory = async (req, res) => {
     });
 
     const statistics = stats[0] || {};
+    const totalBetsCount = parseInt(statistics.totalBets) || 0;
+    const winsCount = parseInt(statistics.wins) || 0;
 
     res.json({
       success: true,
-      bets,
+      bets: bets.map(bet => ({
+        ...bet.toJSON(),
+        totalAmount: parseFloat(bet.totalAmount),
+        feeAmount: parseFloat(bet.feeAmount),
+        stakeAmount: parseFloat(bet.stakeAmount),
+        payout: parseFloat(bet.payout) || 0,
+        profit: parseFloat(bet.profit) || 0
+      })),
       pagination: {
         total: count,
         page: parseInt(page),
@@ -706,12 +767,12 @@ const getMyBetHistory = async (req, res) => {
         hasMore: parseInt(page) < Math.ceil(count / parseInt(limit))
       },
       statistics: {
-        totalBets: parseInt(statistics.totalBets) || 0,
-        wins: parseInt(statistics.wins) || 0,
+        totalBets: totalBetsCount,
+        wins: winsCount,
         losses: parseInt(statistics.losses) || 0,
         refunds: parseInt(statistics.refunds) || 0,
-        winRate: statistics.totalBets > 0 
-          ? roundToTwo((parseInt(statistics.wins) / parseInt(statistics.totalBets)) * 100) 
+        winRate: totalBetsCount > 0 
+          ? roundToTwo((winsCount / totalBetsCount) * 100) 
           : 0,
         totalWagered: roundToTwo(parseFloat(statistics.totalWagered) || 0),
         totalPayout: roundToTwo(parseFloat(statistics.totalPayout) || 0),
@@ -798,7 +859,7 @@ const getRoundDetails = async (req, res) => {
       include: [{
         model: Bet,
         as: 'bets',
-        attributes: ['id', 'prediction', 'totalAmount', 'stakeAmount', 'result', 'payout', 'profit'],
+        attributes: ['id', 'prediction', 'totalAmount', 'stakeAmount', 'feeAmount', 'result', 'payout', 'profit'],
         include: [{
           model: User,
           as: 'user',
@@ -821,7 +882,9 @@ const getRoundDetails = async (req, res) => {
       downBets: round.bets.filter(b => b.prediction === 'down').length,
       winners: round.bets.filter(b => b.result === 'win').length,
       losers: round.bets.filter(b => b.result === 'loss').length,
-      refunds: round.bets.filter(b => b.result === 'refund').length
+      refunds: round.bets.filter(b => b.result === 'refund').length,
+      totalUpAmount: roundToTwo(round.bets.filter(b => b.prediction === 'up').reduce((sum, b) => sum + parseFloat(b.stakeAmount), 0)),
+      totalDownAmount: roundToTwo(round.bets.filter(b => b.prediction === 'down').reduce((sum, b) => sum + parseFloat(b.stakeAmount), 0))
     };
 
     res.json({
