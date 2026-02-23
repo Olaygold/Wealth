@@ -8,14 +8,12 @@ class PriceService {
     this.maxHistoryLength = 120; // Keep 10 minutes of history (at 5-second intervals)
     this.io = null;
     this.priceInterval = null;
-    this.apiErrors = 0;
-    this.maxApiErrors = 3;
   }
 
   // Start price tracking with Socket.IO
   startPriceTracking(io) {
     this.io = io;
-    console.log('📊 Starting BTC price tracking...');
+    console.log('📊 Starting LIVE BTC price tracking...');
     
     // Get initial price immediately
     this.fetchAndUpdatePrice();
@@ -29,93 +27,129 @@ class PriceService {
   // Fetch and update price from API
   async fetchAndUpdatePrice() {
     try {
-      // Try multiple APIs for reliability
       const price = await this.fetchRealPrice();
       
       if (price && price > 0) {
-        this.apiErrors = 0; // Reset error counter on success
         this.updatePrice(price);
+        console.log(`✅ Live BTC Price: $${price.toFixed(2)}`);
         return price;
       } else {
         throw new Error('Invalid price received');
       }
       
     } catch (error) {
-      this.apiErrors++;
-      
-      if (this.apiErrors <= this.maxApiErrors) {
-        console.error(`⚠️ API Error (${this.apiErrors}/${this.maxApiErrors}):`, error.message);
-      }
-      
-      // Fallback to simulated price if too many errors
-      if (this.apiErrors > this.maxApiErrors) {
-        if (this.apiErrors === this.maxApiErrors + 1) {
-          console.log('⚠️ Too many API errors. Switching to simulated price mode...');
-        }
-        this.generateSimulatedPrice();
-      }
-      
+      console.error('❌ Price fetch error:', error.message);
+      // Keep using last known price instead of simulated
       return this.currentPrice;
     }
   }
 
-  // Fetch real BTC price from multiple sources
+  // Fetch real BTC price from RELIABLE sources with proper headers
   async fetchRealPrice() {
     const apis = [
-      // Binance API (most reliable)
+      // 1. Coinbase API (Most reliable, no API key needed)
       async () => {
-        const res = await axios.get('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT', {
-          timeout: 5000
+        const res = await axios.get('https://api.coinbase.com/v2/prices/BTC-USD/spot', {
+          timeout: 8000,
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          }
         });
-        return parseFloat(res.data.price);
+        return parseFloat(res.data.data.amount);
       },
-      
-      // CoinGecko API (backup)
+
+      // 2. Kraken API (Very reliable)
+      async () => {
+        const res = await axios.get('https://api.kraken.com/0/public/Ticker?pair=XBTUSD', {
+          timeout: 8000,
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0'
+          }
+        });
+        const price = res.data.result.XXBTZUSD.c[0];
+        return parseFloat(price);
+      },
+
+      // 3. Blockchain.com API (Always works)
+      async () => {
+        const res = await axios.get('https://blockchain.info/ticker', {
+          timeout: 8000,
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0'
+          }
+        });
+        return parseFloat(res.data.USD.last);
+      },
+
+      // 4. CoinGecko API (Good backup)
       async () => {
         const res = await axios.get('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd', {
-          timeout: 5000
+          timeout: 8000,
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0'
+          }
         });
         return parseFloat(res.data.bitcoin.usd);
       },
-      
-      // CryptoCompare API (backup 2)
+
+      // 5. Binance with proper headers (less likely to be blocked)
       async () => {
-        const res = await axios.get('https://min-api.cryptocompare.com/data/price?fsym=BTC&tsyms=USD', {
-          timeout: 5000
+        const res = await axios.get('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT', {
+          timeout: 8000,
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive'
+          }
         });
-        return parseFloat(res.data.USD);
+        return parseFloat(res.data.price);
+      },
+
+      // 6. Bitstamp API (European exchange, very stable)
+      async () => {
+        const res = await axios.get('https://www.bitstamp.net/api/v2/ticker/btcusd/', {
+          timeout: 8000,
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0'
+          }
+        });
+        return parseFloat(res.data.last);
+      },
+
+      // 7. Gemini API (Regulated US exchange)
+      async () => {
+        const res = await axios.get('https://api.gemini.com/v1/pubticker/btcusd', {
+          timeout: 8000,
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0'
+          }
+        });
+        return parseFloat(res.data.last);
       }
     ];
 
-    // Try each API in order
-    for (const fetchFn of apis) {
+    // Try each API in order until one works
+    for (let i = 0; i < apis.length; i++) {
       try {
-        const price = await fetchFn();
-        if (price && price > 0) {
+        const price = await apis[i]();
+        if (price && price > 10000 && price < 200000) { // Sanity check for valid BTC price
+          console.log(`✅ Price fetched from API #${i + 1}: $${price.toFixed(2)}`);
           return price;
         }
       } catch (err) {
+        console.log(`⚠️ API #${i + 1} failed, trying next...`);
         continue; // Try next API
       }
     }
 
     throw new Error('All price APIs failed');
-  }
-
-  // Generate realistic simulated price movement
-  generateSimulatedPrice() {
-    // Realistic BTC price range: $40,000 - $50,000
-    if (!this.currentPrice || this.currentPrice < 40000 || this.currentPrice > 50000) {
-      this.currentPrice = 43000 + Math.random() * 7000;
-    }
-
-    // Simulate realistic price movement (±0.1% per 5 seconds)
-    const maxChange = this.currentPrice * 0.001; // 0.1% max change
-    const change = (Math.random() - 0.5) * maxChange * 2;
-    
-    this.currentPrice = Math.max(40000, Math.min(50000, this.currentPrice + change));
-    
-    this.updatePrice(this.currentPrice);
   }
 
   // Update price and broadcast
