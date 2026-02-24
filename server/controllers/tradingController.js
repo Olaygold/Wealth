@@ -3,12 +3,40 @@ const { Round, Bet, Wallet, Transaction, User } = require('../models');
 const { Op } = require('sequelize');
 const { sequelize } = require('../config/database');
 const priceService = require('../services/priceService');
-const {
-  validateBetAmount,
-  calculatePlatformFee,
-  calculateStakeAmount,
-  roundToTwo
-} = require('../utils/helpers');
+
+// Helper function
+const roundToTwo = (num) => Math.round((num + Number.EPSILON) * 100) / 100;
+
+// ============================================================
+// HELPER: Calculate multipliers for UP and DOWN
+// ============================================================
+const calculateMultipliers = (totalUpAmount, totalDownAmount) => {
+  let upRaw = 1.0;
+  let downRaw = 1.0;
+  let upDisplay = '~1.7x';
+  let downDisplay = '~1.7x';
+
+  if (totalUpAmount > 0 && totalDownAmount > 0) {
+    // Winners get: their stake + 70% of losers pool (proportional)
+    // Formula: 1 + (loserPool * 0.7 / winnerPool)
+    upRaw = roundToTwo(1 + (totalDownAmount * 0.7) / totalUpAmount);
+    downRaw = roundToTwo(1 + (totalUpAmount * 0.7) / totalDownAmount);
+    upDisplay = `${upRaw}x`;
+    downDisplay = `${downRaw}x`;
+  } else if (totalUpAmount > 0 && totalDownAmount === 0) {
+    upRaw = 1.0;
+    downRaw = 0;
+    upDisplay = '1x (refund if no opponents)';
+    downDisplay = 'N/A';
+  } else if (totalDownAmount > 0 && totalUpAmount === 0) {
+    upRaw = 0;
+    downRaw = 1.0;
+    upDisplay = 'N/A';
+    downDisplay = '1x (refund if no opponents)';
+  }
+
+  return { upRaw, downRaw, upDisplay, downDisplay };
+};
 
 // ============================================================
 // @desc    Get all rounds (previous, current, upcoming)
@@ -19,14 +47,12 @@ const getAllRounds = async (req, res) => {
   try {
     const now = new Date();
 
-    // Get previous completed round
     const previousRound = await Round.findOne({
       where: { status: 'completed' },
       order: [['endTime', 'DESC']],
       limit: 1
     });
 
-    // Get current active/locked round
     const currentRound = await Round.findOne({
       where: {
         status: { [Op.in]: ['active', 'locked'] }
@@ -34,7 +60,6 @@ const getAllRounds = async (req, res) => {
       order: [['startTime', 'ASC']]
     });
 
-    // Get next upcoming round
     const upcomingRound = await Round.findOne({
       where: { 
         status: 'upcoming',
@@ -43,17 +68,14 @@ const getAllRounds = async (req, res) => {
       order: [['startTime', 'ASC']]
     });
 
-    // Process current round data with multipliers
     let currentRoundData = null;
     if (currentRound) {
       const totalUpAmount = parseFloat(currentRound.totalUpAmount) || 0;
       const totalDownAmount = parseFloat(currentRound.totalDownAmount) || 0;
       const totalPool = totalUpAmount + totalDownAmount;
       
-      // Calculate multipliers
       const multipliers = calculateMultipliers(totalUpAmount, totalDownAmount);
 
-      // Calculate timing
       const bettingEndsIn = Math.max(0, Math.floor((new Date(currentRound.lockTime) - now) / 1000));
       const roundEndsIn = Math.max(0, Math.floor((new Date(currentRound.endTime) - now) / 1000));
       const canBet = currentRound.status === 'active' && bettingEndsIn > 10;
@@ -99,37 +121,6 @@ const getAllRounds = async (req, res) => {
 };
 
 // ============================================================
-// HELPER: Calculate multipliers for UP and DOWN
-// ============================================================
-const calculateMultipliers = (totalUpAmount, totalDownAmount) => {
-  let upRaw = 1.0;
-  let downRaw = 1.0;
-  let upDisplay = '~1.8x';
-  let downDisplay = '~1.8x';
-
-  if (totalUpAmount > 0 && totalDownAmount > 0) {
-    // Both sides have bets - calculate real multipliers
-    // Winners share 70% of losers' pool (30% platform fee from losers)
-    upRaw = roundToTwo(1 + (totalDownAmount * 0.7) / totalUpAmount);
-    downRaw = roundToTwo(1 + (totalUpAmount * 0.7) / totalDownAmount);
-    upDisplay = `${upRaw}x`;
-    downDisplay = `${downRaw}x`;
-  } else if (totalUpAmount > 0 && totalDownAmount === 0) {
-    upRaw = 1.0;
-    downRaw = 0;
-    upDisplay = '1x (refund if no opponents)';
-    downDisplay = 'N/A';
-  } else if (totalDownAmount > 0 && totalUpAmount === 0) {
-    upRaw = 0;
-    downRaw = 1.0;
-    upDisplay = 'N/A';
-    downDisplay = '1x (refund if no opponents)';
-  }
-
-  return { upRaw, downRaw, upDisplay, downDisplay };
-};
-
-// ============================================================
 // @desc    Get current BTC price
 // @route   GET /api/trading/current-price
 // @access  Public
@@ -170,7 +161,7 @@ const getCurrentRound = async (req, res) => {
       include: [{
         model: Bet,
         as: 'bets',
-        attributes: ['prediction', 'stakeAmount']
+        attributes: ['prediction', 'amount']
       }]
     });
 
@@ -182,20 +173,16 @@ const getCurrentRound = async (req, res) => {
       });
     }
 
-    // Calculate pool stats
     const upBets = round.bets.filter(b => b.prediction === 'up');
     const downBets = round.bets.filter(b => b.prediction === 'down');
 
-    const totalUpAmount = upBets.reduce((sum, bet) => sum + parseFloat(bet.stakeAmount), 0);
-    const totalDownAmount = downBets.reduce((sum, bet) => sum + parseFloat(bet.stakeAmount), 0);
+    const totalUpAmount = upBets.reduce((sum, bet) => sum + parseFloat(bet.amount), 0);
+    const totalDownAmount = downBets.reduce((sum, bet) => sum + parseFloat(bet.amount), 0);
     const totalPool = totalUpAmount + totalDownAmount;
 
     const currentPrice = priceService.getPrice();
-
-    // Calculate multipliers
     const multipliers = calculateMultipliers(totalUpAmount, totalDownAmount);
 
-    // Timing calculations
     const bettingEndsIn = Math.max(0, Math.floor((new Date(round.lockTime) - now) / 1000));
     const roundEndsIn = Math.max(0, Math.floor((new Date(round.endTime) - now) / 1000));
     const canBet = round.status === 'active' && bettingEndsIn > 10;
@@ -284,7 +271,7 @@ const getUpcomingRound = async (req, res) => {
 };
 
 // ============================================================
-// @desc    Place a bet
+// @desc    Place a bet - NO UPFRONT FEE
 // @route   POST /api/trading/bet
 // @access  Private
 // ============================================================
@@ -351,7 +338,6 @@ const placeBet = async (req, res) => {
       });
     }
 
-    // Check timing
     const now = new Date();
     const lockTime = new Date(round.lockTime);
     const timeUntilLock = (lockTime - now) / 1000;
@@ -364,7 +350,7 @@ const placeBet = async (req, res) => {
       });
     }
 
-    // ===== GET WALLET WITH LOCK =====
+    // ===== GET WALLET =====
     const wallet = await Wallet.findOne({
       where: { userId: req.user.id },
       transaction,
@@ -379,12 +365,11 @@ const placeBet = async (req, res) => {
       });
     }
 
-    // ✅ FIXED: Calculate available balance properly
     const walletBalance = parseFloat(wallet.nairaBalance) || 0;
     const currentLockedBalance = parseFloat(wallet.lockedBalance) || 0;
     const availableBalance = roundToTwo(walletBalance - currentLockedBalance);
 
-    // Check against available balance
+    // ✅ Check available balance
     if (betAmount > availableBalance) {
       await transaction.rollback();
       return res.status(400).json({
@@ -411,16 +396,12 @@ const placeBet = async (req, res) => {
         message: 'You already have a bet in this round',
         existingBet: {
           prediction: existingBet.prediction,
-          amount: existingBet.totalAmount
+          amount: existingBet.amount
         }
       });
     }
 
-    // ===== CALCULATE FEE & STAKE =====
-    const feePercentage = parseFloat(process.env.PLATFORM_FEE_PERCENTAGE) || 20;
-    const feeAmount = roundToTwo((betAmount * feePercentage) / 100);
-    const stakeAmount = roundToTwo(betAmount - feeAmount);
-
+    // ✅ NO FEE DEDUCTED - Full amount goes to pool
     const balanceBefore = walletBalance;
 
     // ===== CREATE BET =====
@@ -428,20 +409,16 @@ const placeBet = async (req, res) => {
       userId: req.user.id,
       roundId: round.id,
       prediction: predictionLower,
-      totalAmount: betAmount,
-      feeAmount: feeAmount,
-      stakeAmount: stakeAmount,
+      amount: betAmount,        // Full bet amount
       result: 'pending'
     }, { transaction });
 
-    // ✅ FIXED: Only add to lockedBalance, DO NOT deduct from nairaBalance yet
-    // Money stays in wallet but is locked until round ends
+    // ✅ Lock the bet amount (don't deduct yet)
     const newLockedBalance = roundToTwo(currentLockedBalance + betAmount);
-    const newAvailableBalance = roundToTwo(walletBalance - newLockedBalance);
 
     await wallet.update({
       lockedBalance: newLockedBalance
-      // nairaBalance stays the same - money is locked, not deducted
+      // nairaBalance stays same - just locked
     }, { transaction });
 
     // ===== CREATE TRANSACTION RECORD =====
@@ -457,30 +434,26 @@ const placeBet = async (req, res) => {
         roundId: round.id,
         roundNumber: round.roundNumber,
         prediction: predictionLower,
-        totalAmount: betAmount,
-        feeAmount: feeAmount,
-        stakeAmount: stakeAmount,
-        feePercentage: `${feePercentage}%`
+        amount: betAmount
       },
       balanceBefore: balanceBefore,
-      balanceAfter: walletBalance // Balance doesn't change, just locked
+      balanceAfter: walletBalance
     }, { transaction });
 
     // ===== UPDATE ROUND TOTALS =====
     const updatedRoundData = {};
     
     if (predictionLower === 'up') {
-      updatedRoundData.totalUpAmount = roundToTwo(parseFloat(round.totalUpAmount || 0) + stakeAmount);
+      updatedRoundData.totalUpAmount = roundToTwo(parseFloat(round.totalUpAmount || 0) + betAmount);
       updatedRoundData.totalUpBets = (round.totalUpBets || 0) + 1;
     } else {
-      updatedRoundData.totalDownAmount = roundToTwo(parseFloat(round.totalDownAmount || 0) + stakeAmount);
+      updatedRoundData.totalDownAmount = roundToTwo(parseFloat(round.totalDownAmount || 0) + betAmount);
       updatedRoundData.totalDownBets = (round.totalDownBets || 0) + 1;
     }
-    updatedRoundData.totalFeeCollected = roundToTwo(parseFloat(round.totalFeeCollected || 0) + feeAmount);
 
     await round.update(updatedRoundData, { transaction });
 
-    // Get updated pool totals for multiplier calculation
+    // Get updated pool totals
     const newTotalUpAmount = predictionLower === 'up' 
       ? updatedRoundData.totalUpAmount 
       : parseFloat(round.totalUpAmount || 0);
@@ -491,10 +464,10 @@ const placeBet = async (req, res) => {
     // Calculate current multipliers
     const multipliers = calculateMultipliers(newTotalUpAmount, newTotalDownAmount);
 
-    // Calculate potential payout for this bet
+    // Calculate potential payout
     const currentMultiplier = predictionLower === 'up' ? multipliers.upRaw : multipliers.downRaw;
-    const potentialPayout = roundToTwo(stakeAmount * currentMultiplier);
-    const potentialProfit = roundToTwo(potentialPayout - stakeAmount);
+    const potentialPayout = roundToTwo(betAmount * currentMultiplier);
+    const potentialProfit = roundToTwo(potentialPayout - betAmount);
 
     await transaction.commit();
 
@@ -502,12 +475,11 @@ const placeBet = async (req, res) => {
     try {
       const io = req.app.get('io');
       if (io) {
-        // Broadcast bet placed to all
         io.emit('bet_placed', {
           roundId: round.id,
           roundNumber: round.roundNumber,
           prediction: predictionLower,
-          stakeAmount: stakeAmount,
+          amount: betAmount,
           totalUpAmount: newTotalUpAmount,
           totalDownAmount: newTotalDownAmount,
           totalUpBets: updatedRoundData.totalUpBets || round.totalUpBets,
@@ -516,11 +488,10 @@ const placeBet = async (req, res) => {
           downMultiplier: multipliers.downDisplay
         });
 
-        // Send balance update to this user only
         io.to(req.user.id).emit('balance_update', {
           nairaBalance: walletBalance,
           lockedBalance: newLockedBalance,
-          availableBalance: newAvailableBalance
+          availableBalance: roundToTwo(walletBalance - newLockedBalance)
         });
       }
     } catch (socketError) {
@@ -536,10 +507,7 @@ const placeBet = async (req, res) => {
         roundId: round.id,
         roundNumber: round.roundNumber,
         prediction: predictionLower,
-        totalAmount: betAmount,
-        feeAmount: feeAmount,
-        stakeAmount: stakeAmount,
-        feePercentage: `${feePercentage}%`,
+        amount: betAmount,
         currentMultiplier: `${currentMultiplier}x`,
         potentialPayout: potentialPayout,
         potentialProfit: potentialProfit
@@ -547,8 +515,7 @@ const placeBet = async (req, res) => {
       wallet: {
         totalBalance: walletBalance,
         lockedBalance: newLockedBalance,
-        availableBalance: newAvailableBalance,
-        amountLocked: betAmount
+        availableBalance: roundToTwo(walletBalance - newLockedBalance)
       }
     });
 
@@ -592,42 +559,35 @@ const getMyActiveBets = async (req, res) => {
     const activeBets = await Promise.all(bets.map(async (bet) => {
       const round = bet.round;
       
-      if (!round) {
-        return null;
-      }
+      if (!round) return null;
 
-      // Get all bets for this round to calculate current multipliers
+      // Get all bets for this round
       const roundBets = await Bet.findAll({
         where: { roundId: round.id },
-        attributes: ['prediction', 'stakeAmount']
+        attributes: ['prediction', 'amount']
       });
 
       const totalUpAmount = roundBets
         .filter(b => b.prediction === 'up')
-        .reduce((sum, b) => sum + parseFloat(b.stakeAmount), 0);
+        .reduce((sum, b) => sum + parseFloat(b.amount), 0);
       const totalDownAmount = roundBets
         .filter(b => b.prediction === 'down')
-        .reduce((sum, b) => sum + parseFloat(b.stakeAmount), 0);
+        .reduce((sum, b) => sum + parseFloat(b.amount), 0);
 
-      // Calculate current multipliers
       const multipliers = calculateMultipliers(totalUpAmount, totalDownAmount);
 
-      // Get multiplier for user's prediction
       const userMultiplier = bet.prediction === 'up' ? multipliers.upRaw : multipliers.downRaw;
       const userMultiplierDisplay = bet.prediction === 'up' ? multipliers.upDisplay : multipliers.downDisplay;
 
-      // Calculate potential payout
-      const stakeAmount = parseFloat(bet.stakeAmount);
-      const potentialPayout = roundToTwo(stakeAmount * userMultiplier);
-      const potentialProfit = roundToTwo(potentialPayout - stakeAmount);
+      const betAmount = parseFloat(bet.amount);
+      const potentialPayout = roundToTwo(betAmount * userMultiplier);
+      const potentialProfit = roundToTwo(potentialPayout - betAmount);
 
-      // Check if currently winning
       const startPrice = parseFloat(round.startPrice);
       const priceChange = currentPrice - startPrice;
       const isWinning = (bet.prediction === 'up' && priceChange > 0) || 
                         (bet.prediction === 'down' && priceChange < 0);
 
-      // Timing
       const bettingEndsIn = Math.max(0, Math.floor((new Date(round.lockTime) - now) / 1000));
       const roundEndsIn = Math.max(0, Math.floor((new Date(round.endTime) - now) / 1000));
 
@@ -636,33 +596,21 @@ const getMyActiveBets = async (req, res) => {
         roundId: round.id,
         roundNumber: round.roundNumber,
         prediction: bet.prediction,
-        
-        // ✅ FIXED: Clear breakdown of amounts
-        totalAmount: parseFloat(bet.totalAmount),  // What user paid
-        feeAmount: parseFloat(bet.feeAmount),      // Platform fee (shown only)
-        stakeAmount: stakeAmount,                  // Amount in pool
-        
-        // ✅ FIXED: Accurate potential payout based on current multiplier
+        amount: betAmount,
         currentMultiplier: userMultiplierDisplay,
         currentMultiplierRaw: userMultiplier,
         potentialPayout: potentialPayout,
         potentialProfit: potentialProfit,
-        
-        // Round info
         roundStatus: round.status,
         startPrice: startPrice,
         currentPrice: currentPrice,
         priceChange: roundToTwo(priceChange),
         percentChange: roundToTwo((priceChange / startPrice) * 100),
         isCurrentlyWinning: isWinning,
-        
-        // Pool info
         totalUpAmount: roundToTwo(totalUpAmount),
         totalDownAmount: roundToTwo(totalDownAmount),
         upMultiplier: multipliers.upDisplay,
         downMultiplier: multipliers.downDisplay,
-        
-        // Timing
         bettingEndsIn,
         roundEndsIn,
         endTime: round.endTime,
@@ -670,13 +618,11 @@ const getMyActiveBets = async (req, res) => {
       };
     }));
 
-    // Filter out null entries
     const validBets = activeBets.filter(bet => bet !== null);
 
-    // Calculate totals
     const totals = {
       totalBets: validBets.length,
-      totalStaked: roundToTwo(validBets.reduce((sum, b) => sum + b.stakeAmount, 0)),
+      totalStaked: roundToTwo(validBets.reduce((sum, b) => sum + b.amount, 0)),
       totalPotentialPayout: roundToTwo(validBets.reduce((sum, b) => sum + b.potentialPayout, 0)),
       totalPotentialProfit: roundToTwo(validBets.reduce((sum, b) => sum + b.potentialProfit, 0))
     };
@@ -728,7 +674,6 @@ const getMyBetHistory = async (req, res) => {
       offset: (parseInt(page) - 1) * parseInt(limit)
     });
 
-    // Calculate stats
     const stats = await Bet.findAll({
       where: {
         userId: req.user.id,
@@ -739,7 +684,7 @@ const getMyBetHistory = async (req, res) => {
         [sequelize.fn('SUM', sequelize.literal("CASE WHEN result = 'win' THEN 1 ELSE 0 END")), 'wins'],
         [sequelize.fn('SUM', sequelize.literal("CASE WHEN result = 'loss' THEN 1 ELSE 0 END")), 'losses'],
         [sequelize.fn('SUM', sequelize.literal("CASE WHEN result = 'refund' THEN 1 ELSE 0 END")), 'refunds'],
-        [sequelize.fn('SUM', sequelize.col('totalAmount')), 'totalWagered'],
+        [sequelize.fn('SUM', sequelize.col('amount')), 'totalWagered'],
         [sequelize.fn('SUM', sequelize.col('payout')), 'totalPayout'],
         [sequelize.fn('SUM', sequelize.col('profit')), 'netProfit']
       ],
@@ -754,9 +699,7 @@ const getMyBetHistory = async (req, res) => {
       success: true,
       bets: bets.map(bet => ({
         ...bet.toJSON(),
-        totalAmount: parseFloat(bet.totalAmount),
-        feeAmount: parseFloat(bet.feeAmount),
-        stakeAmount: parseFloat(bet.stakeAmount),
+        amount: parseFloat(bet.amount),
         payout: parseFloat(bet.payout) || 0,
         profit: parseFloat(bet.profit) || 0
       })),
@@ -791,7 +734,7 @@ const getMyBetHistory = async (req, res) => {
 };
 
 // ============================================================
-// @desc    Get round history (completed rounds)
+// @desc    Get round history
 // @route   GET /api/trading/rounds/history
 // @access  Public
 // ============================================================
@@ -805,14 +748,13 @@ const getRoundHistory = async (req, res) => {
         'id', 'roundNumber', 'status', 'startTime', 'lockTime', 'endTime',
         'startPrice', 'endPrice', 'result',
         'totalUpAmount', 'totalDownAmount', 'totalUpBets', 'totalDownBets',
-        'prizePool', 'platformCut'
+        'prizePool', 'platformFee'
       ],
       order: [['roundNumber', 'DESC']],
       limit: parseInt(limit),
       offset: (parseInt(page) - 1) * parseInt(limit)
     });
 
-    // Add price change to each round
     const roundsWithChange = rounds.map(round => {
       const startPrice = parseFloat(round.startPrice) || 0;
       const endPrice = parseFloat(round.endPrice) || 0;
@@ -859,7 +801,7 @@ const getRoundDetails = async (req, res) => {
       include: [{
         model: Bet,
         as: 'bets',
-        attributes: ['id', 'prediction', 'totalAmount', 'stakeAmount', 'feeAmount', 'result', 'payout', 'profit'],
+        attributes: ['id', 'prediction', 'amount', 'result', 'payout', 'profit'],
         include: [{
           model: User,
           as: 'user',
@@ -875,7 +817,6 @@ const getRoundDetails = async (req, res) => {
       });
     }
 
-    // Calculate stats
     const stats = {
       totalBets: round.bets.length,
       upBets: round.bets.filter(b => b.prediction === 'up').length,
@@ -883,8 +824,8 @@ const getRoundDetails = async (req, res) => {
       winners: round.bets.filter(b => b.result === 'win').length,
       losers: round.bets.filter(b => b.result === 'loss').length,
       refunds: round.bets.filter(b => b.result === 'refund').length,
-      totalUpAmount: roundToTwo(round.bets.filter(b => b.prediction === 'up').reduce((sum, b) => sum + parseFloat(b.stakeAmount), 0)),
-      totalDownAmount: roundToTwo(round.bets.filter(b => b.prediction === 'down').reduce((sum, b) => sum + parseFloat(b.stakeAmount), 0))
+      totalUpAmount: roundToTwo(round.bets.filter(b => b.prediction === 'up').reduce((sum, b) => sum + parseFloat(b.amount), 0)),
+      totalDownAmount: roundToTwo(round.bets.filter(b => b.prediction === 'down').reduce((sum, b) => sum + parseFloat(b.amount), 0))
     };
 
     res.json({
@@ -916,17 +857,14 @@ const getPlatformStats = async (req, res) => {
     const totalBets = await Bet.count();
     const activeBets = await Bet.count({ where: { result: 'pending' } });
 
-    // Calculate volume
     const volumeStats = await Bet.findAll({
       attributes: [
-        [sequelize.fn('SUM', sequelize.col('totalAmount')), 'totalVolume'],
-        [sequelize.fn('SUM', sequelize.col('feeAmount')), 'totalFees'],
+        [sequelize.fn('SUM', sequelize.col('amount')), 'totalVolume'],
         [sequelize.fn('SUM', sequelize.col('payout')), 'totalPayouts']
       ],
       raw: true
     });
 
-    // Get unique users
     const uniqueUsers = await Bet.findAll({
       attributes: [[sequelize.fn('COUNT', sequelize.fn('DISTINCT', sequelize.col('userId'))), 'count']],
       raw: true
@@ -941,7 +879,6 @@ const getPlatformStats = async (req, res) => {
         totalBets,
         activeBets,
         totalVolume: roundToTwo(parseFloat(volumeStats[0]?.totalVolume) || 0),
-        totalFees: roundToTwo(parseFloat(volumeStats[0]?.totalFees) || 0),
         totalPayouts: roundToTwo(parseFloat(volumeStats[0]?.totalPayouts) || 0),
         activeUsers: parseInt(uniqueUsers[0]?.count) || 0,
         currentPrice
@@ -957,7 +894,6 @@ const getPlatformStats = async (req, res) => {
     });
   }
 };
-
 
 // ============================================================
 // @desc    Get leaderboard
@@ -982,12 +918,21 @@ const getLeaderboard = async (req, res) => {
       timeFilter = { createdAt: { [Op.gte]: monthAgo } };
     }
 
-    // ✅ FIXED: Better GROUP BY query
+    // Check for winning bets first
+    const totalWinningBets = await Bet.count({
+      where: { result: 'win', ...timeFilter }
+    });
+
+    if (totalWinningBets === 0) {
+      return res.json({
+        success: true,
+        period,
+        leaderboard: []
+      });
+    }
+
     const leaderboard = await Bet.findAll({
-      where: {
-        result: 'win',
-        ...timeFilter
-      },
+      where: { result: 'win', ...timeFilter },
       attributes: [
         'userId',
         [sequelize.fn('SUM', sequelize.col('profit')), 'totalProfit'],
@@ -1001,16 +946,13 @@ const getLeaderboard = async (req, res) => {
         required: true
       }],
       group: ['userId', 'user.id'],
-      having: sequelize.where(sequelize.fn('SUM', sequelize.col('profit')), {
-        [Op.gt]: 0
-      }),
+      having: sequelize.where(sequelize.fn('SUM', sequelize.col('profit')), { [Op.gt]: 0 }),
       order: [[sequelize.fn('SUM', sequelize.col('profit')), 'DESC']],
       limit: parseInt(limit),
       subQuery: false,
       raw: true
     });
 
-    // ✅ Format results with ranks
     const formattedLeaderboard = leaderboard.map((entry, index) => ({
       rank: index + 1,
       username: entry['user.username'] || 'Anonymous',
@@ -1020,8 +962,6 @@ const getLeaderboard = async (req, res) => {
       totalWins: parseInt(entry.totalWins) || 0
     }));
 
-    console.log(`📊 Leaderboard (${period}): ${formattedLeaderboard.length} entries`);
-
     res.json({
       success: true,
       period,
@@ -1030,7 +970,6 @@ const getLeaderboard = async (req, res) => {
 
   } catch (error) {
     console.error('Get leaderboard error:', error.message);
-    console.error('Stack:', error.stack);
     res.status(500).json({
       success: false,
       message: 'Failed to get leaderboard',
@@ -1038,6 +977,7 @@ const getLeaderboard = async (req, res) => {
     });
   }
 };
+
 // ============================================================
 // EXPORTS
 // ============================================================
