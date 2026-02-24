@@ -316,7 +316,7 @@ const handleAspfiyWebhook = async (req, res) => {
     const { event, data } = req.body;
 
     // Validate event type
-    if (event !== 'PAYMENT_NOTIFIFICATION') {
+    if (event !== 'PAYMENT_NOTIFICATION') {
       console.log(`ℹ️ Ignoring event: ${event}`);
       await dbTransaction.commit();
       return res.json({ success: true, message: 'Event ignored' });
