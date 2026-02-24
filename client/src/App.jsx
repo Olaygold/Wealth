@@ -13,6 +13,10 @@ import Dashboard from './pages/Dashboard';
 import Wallet from './pages/Wallet';
 import History from './pages/History';
 import Leaderboard from './pages/Leaderboard';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
+
+
 
 // Protected Route Wrapper
 const ProtectedRoute = ({ children }) => {
@@ -111,6 +115,11 @@ function App() {
                 </ProtectedRoute>
               } 
             />
+
+            
+// Inside your Routes:
+<Route path="/forgot-password" element={<ForgotPassword />} />
+<Route path="/reset-password" element={<ResetPassword />} />
 
             {/* Catch all - redirect to dashboard */}
             <Route path="*" element={<Navigate to="/" />} />
