@@ -11,16 +11,6 @@ const crypto = require('crypto');
 // =====================================================
 
 /**
- * Generate unique deposit amount (add random kobo to make matching reliable)
- * This ensures each pending deposit has a unique amount for matching
- * NO FEES - User deposits exact amount, we just add kobo for uniqueness
- */
-const generateUniqueAmount = (baseAmount) => {
-  const randomKobo = Math.floor(Math.random() * 99) + 1; // 1-99 kobo
-  return parseFloat(baseAmount) + (randomKobo / 100);
-};
-
-/**
  * Verify Aspfiy webhook signature
  * Aspfiy uses MD5 hash of secret key in x-wiaxy-signature header
  */
@@ -131,7 +121,7 @@ const initiateNairaDeposit = async (req, res) => {
         message: 'You already have a pending deposit. Please complete it or wait for it to expire.',
         data: {
           reference: existingPending.reference,
-          amount: parseFloat(existingPending.amount),
+          amount: parseFloat(existingPending.originalAmount),
           accountNumber: existingPending.virtualAccount?.accountNumber,
           accountName: existingPending.virtualAccount?.accountName,
           bankName: existingPending.virtualAccount?.bankName,
@@ -169,16 +159,14 @@ const initiateNairaDeposit = async (req, res) => {
     const randomHash = crypto.randomBytes(4).toString('hex').toUpperCase();
     const reference = `WTH-${timestamp}-${randomHash}`;
 
-    // Generate unique amount (add random kobo for matching)
-    // NO FEES - This is just for identification, user gets full credited amount
-    const uniqueAmount = generateUniqueAmount(amount);
+    const depositAmount = parseFloat(amount);
 
     // Create pending deposit
     const pendingDeposit = await PendingDeposit.create({
       userId: req.user.id,
       virtualAccountId: virtualAccount.id,
-      amount: uniqueAmount,
-      originalAmount: parseFloat(amount), // Store original amount for credit
+      amount: depositAmount,
+      originalAmount: depositAmount,
       reference,
       status: 'pending',
       expiresAt: new Date(Date.now() + 30 * 60 * 1000) // 30 minutes expiry
@@ -195,7 +183,7 @@ const initiateNairaDeposit = async (req, res) => {
       userId: req.user.id,
       type: 'deposit',
       method: 'naira',
-      amount: parseFloat(amount), // ✅ Store ORIGINAL amount (no fees)
+      amount: depositAmount,
       currency: 'NGN',
       status: 'pending',
       reference,
@@ -204,15 +192,13 @@ const initiateNairaDeposit = async (req, res) => {
         virtualAccountId: virtualAccount.id,
         pendingDepositId: pendingDeposit.id,
         accountNumber: virtualAccount.accountNumber,
-        bankName: virtualAccount.bankName,
-        originalAmount: parseFloat(amount),
-        uniqueAmount
+        bankName: virtualAccount.bankName
       }
     }, { transaction });
 
     await transaction.commit();
 
-    console.log('✅ Deposit initialized successfully:', reference, 'Unique amount:', uniqueAmount);
+    console.log('✅ Deposit initialized successfully:', reference);
 
     res.json({
       success: true,
@@ -223,9 +209,9 @@ const initiateNairaDeposit = async (req, res) => {
         accountName: virtualAccount.accountName,
         bankName: virtualAccount.bankName,
         
-        // IMPORTANT: User must transfer this EXACT amount
-        amount: uniqueAmount,
-        amountFormatted: `₦${uniqueAmount.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        // User transfers exact amount
+        amount: depositAmount,
+        amountFormatted: `₦${depositAmount.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
         
         reference: reference,
         expiresAt: pendingDeposit.expiresAt,
@@ -233,16 +219,15 @@ const initiateNairaDeposit = async (req, res) => {
         
         // Instructions for user
         instructions: [
-          `Transfer EXACTLY ₦${uniqueAmount.toFixed(2)} to the account above`,
+          `Transfer ₦${depositAmount.toLocaleString()} to the account above`,
           `Transfer from your personal bank account only`,
-          `Your wallet will be credited with ₦${parseFloat(amount).toLocaleString()} automatically`,
+          `Your wallet will be credited automatically within 2 minutes`,
           `This deposit session expires in 30 minutes`
         ],
 
         // Warnings
         warnings: [
-          `⚠️ IMPORTANT: Transfer EXACTLY ₦${uniqueAmount.toFixed(2)} (including kobo)`,
-          'Incorrect amount may delay your deposit',
+          `⚠️ Transfer ₦${depositAmount.toLocaleString()} to the account shown above`,
           'Do not transfer from a third-party account',
           '🎉 NO FEES - You get 100% of what you deposit!'
         ]
@@ -274,7 +259,6 @@ const handleAspfiyWebhook = async (req, res) => {
     const webhookTimestamp = new Date().toISOString();
     console.log('📨 ====== ASPFIY WEBHOOK RECEIVED ======');
     console.log('📨 Time:', webhookTimestamp);
-    console.log('📨 Headers:', JSON.stringify(req.headers, null, 2));
     console.log('📨 Body:', JSON.stringify(req.body, null, 2));
 
     // ===== SECURITY: Verify webhook signature =====
@@ -303,8 +287,6 @@ const handleAspfiyWebhook = async (req, res) => {
     // Verify signature (MD5 of secret key)
     if (!verifyAspfiySignature(receivedSignature, secretKey)) {
       console.error('❌ Invalid webhook signature');
-      console.error('Received:', receivedSignature);
-      console.error('Expected: MD5 of secret key');
       await dbTransaction.rollback();
       return res.status(401).json({ 
         success: false, 
@@ -344,10 +326,9 @@ const handleAspfiyWebhook = async (req, res) => {
       customer = {}
     } = data;
 
-    const payerAccount = payer.account_number || '';
+    const receivedAmount = parseFloat(amount);
     const payerFirstName = customer.firstName || payer.first_name || '';
     const payerLastName = customer.lastName || payer.last_name || '';
-    const receivedAmount = parseFloat(amount);
 
     console.log('📥 Payment details:');
     console.log('   Account:', account_number);
@@ -363,47 +344,38 @@ const handleAspfiyWebhook = async (req, res) => {
 
     if (!virtualAccount) {
       console.error('❌ Unknown virtual account:', account_number);
-      
-      // ✅ FIX: Just log - don't create transaction with null userId
-      console.log('⚠️ UNMATCHED DEPOSIT - UNKNOWN ACCOUNT:', JSON.stringify({
-        reason: 'unknown_account',
-        account_number,
-        amount: receivedAmount,
-        aspfiyReference,
-        merchant_reference,
-        timestamp: webhookTimestamp
-      }, null, 2));
-
+      console.log('⚠️ UNMATCHED - UNKNOWN ACCOUNT:', account_number);
       await dbTransaction.commit();
-      return res.json({ success: true, message: 'Unknown account - logged' });
+      return res.json({ success: true, message: 'Unknown account' });
     }
 
-    console.log('✅ Virtual account found:', virtualAccount.id, virtualAccount.accountName);
+    console.log('✅ Virtual account found:', virtualAccount.id);
 
     // ===== FIND MATCHING PENDING DEPOSIT =====
+    // Match by virtual account + amount (±1 tolerance) + not expired
     const pendingDeposit = await PendingDeposit.findOne({
       where: {
         virtualAccountId: virtualAccount.id,
         status: 'pending',
         expiresAt: { [sequelize.Sequelize.Op.gt]: new Date() },
-        amount: {
-          [sequelize.Sequelize.Op.between]: [receivedAmount - 0.01, receivedAmount + 0.01]
+        originalAmount: {
+          [sequelize.Sequelize.Op.between]: [receivedAmount - 1, receivedAmount + 1]
         }
       },
-      order: [['createdAt', 'ASC']],
+      order: [['createdAt', 'ASC']], // FIFO - oldest pending first
       transaction: dbTransaction
     });
 
     if (!pendingDeposit) {
-      console.error('❌ No matching pending deposit for account:', account_number, 'amount:', receivedAmount);
+      console.error('❌ No matching pending deposit');
       
       // Check if it's a duplicate (already completed)
       const completedDeposit = await PendingDeposit.findOne({
         where: {
           virtualAccountId: virtualAccount.id,
           status: 'completed',
-          amount: {
-            [sequelize.Sequelize.Op.between]: [receivedAmount - 0.01, receivedAmount + 0.01]
+          originalAmount: {
+            [sequelize.Sequelize.Op.between]: [receivedAmount - 1, receivedAmount + 1]
           }
         },
         order: [['completedAt', 'DESC']],
@@ -413,28 +385,23 @@ const handleAspfiyWebhook = async (req, res) => {
       if (completedDeposit) {
         const timeDiff = Date.now() - new Date(completedDeposit.completedAt).getTime();
         if (timeDiff < 60000) {
-          console.log('⚠️ Likely duplicate webhook - deposit recently completed');
+          console.log('⚠️ Duplicate webhook - already processed');
           await dbTransaction.commit();
           return res.json({ success: true, message: 'Already processed' });
         }
       }
 
-      // ✅ FIX: Just log - don't create transaction with null userId
-      console.log('⚠️ UNMATCHED DEPOSIT - NO PENDING FOUND:', JSON.stringify({
-        reason: 'no_matching_pending',
+      // Log unmatched deposit
+      console.log('⚠️ UNMATCHED DEPOSIT:', JSON.stringify({
         virtualAccountId: virtualAccount.id,
         account_number,
         amount: receivedAmount,
-        payer: `${payerFirstName} ${payerLastName}`,
-        payerAccount,
         aspfiyReference,
-        interBankReference,
-        merchant_reference,
         timestamp: webhookTimestamp
       }, null, 2));
 
       await dbTransaction.commit();
-      return res.json({ success: true, message: 'No matching deposit - logged' });
+      return res.json({ success: true, message: 'No matching deposit' });
     }
 
     // Lock the pending deposit
@@ -446,8 +413,7 @@ const handleAspfiyWebhook = async (req, res) => {
     console.log('✅ Matching deposit found:');
     console.log('   Reference:', pendingDeposit.reference);
     console.log('   User ID:', pendingDeposit.userId);
-    console.log('   Expected Amount: ₦' + pendingDeposit.amount);
-    console.log('   Original Amount (to credit): ₦' + pendingDeposit.originalAmount);
+    console.log('   Amount to credit: ₦' + pendingDeposit.originalAmount);
 
     // ===== IDEMPOTENCY CHECK =====
     if (pendingDeposit.status === 'completed') {
@@ -471,7 +437,7 @@ const handleAspfiyWebhook = async (req, res) => {
     }
 
     // ===== CREDIT USER WALLET (NO FEES) =====
-    const amountToCredit = parseFloat(pendingDeposit.originalAmount) || receivedAmount;
+    const amountToCredit = parseFloat(pendingDeposit.originalAmount);
     const balanceBefore = parseFloat(wallet.nairaBalance) || 0;
     const balanceAfter = balanceBefore + amountToCredit;
 
@@ -481,7 +447,6 @@ const handleAspfiyWebhook = async (req, res) => {
     }, { transaction: dbTransaction });
 
     console.log(`✅ Wallet updated: ₦${balanceBefore.toFixed(2)} → ₦${balanceAfter.toFixed(2)}`);
-    console.log(`✅ Amount credited: ₦${amountToCredit.toFixed(2)} (NO FEES)`);
 
     // ===== UPDATE PENDING DEPOSIT =====
     await pendingDeposit.update({
@@ -491,7 +456,7 @@ const handleAspfiyWebhook = async (req, res) => {
         aspfiyReference,
         interBankReference,
         merchant_reference,
-        payer: { payerAccount, payerFirstName, payerLastName },
+        payer: { firstName: payerFirstName, lastName: payerLastName },
         receivedAt: webhookTimestamp,
         rawPayload: req.body
       }
@@ -508,7 +473,6 @@ const handleAspfiyWebhook = async (req, res) => {
         interBankReference,
         merchant_reference,
         payer: {
-          accountNumber: payerAccount,
           name: `${payerFirstName} ${payerLastName}`
         },
         processedAt: new Date(),
@@ -609,8 +573,7 @@ const checkDepositStatus = async (req, res) => {
       success: true,
       data: {
         reference: pendingDeposit.reference,
-        amount: parseFloat(pendingDeposit.amount),
-        originalAmount: parseFloat(pendingDeposit.originalAmount),
+        amount: parseFloat(pendingDeposit.originalAmount),
         status: isExpired ? 'expired' : pendingDeposit.status,
         isExpired,
         timeRemaining: timeRemaining > 0 ? `${timeRemaining} minutes` : 'Expired',
@@ -668,8 +631,7 @@ const getPendingDeposit = async (req, res) => {
       success: true,
       data: {
         reference: pendingDeposit.reference,
-        amount: parseFloat(pendingDeposit.amount),
-        originalAmount: parseFloat(pendingDeposit.originalAmount),
+        amount: parseFloat(pendingDeposit.originalAmount),
         accountNumber: pendingDeposit.virtualAccount.accountNumber,
         accountName: pendingDeposit.virtualAccount.accountName,
         bankName: pendingDeposit.virtualAccount.bankName,
@@ -778,7 +740,7 @@ const requestWithdrawal = async (req, res) => {
       await transaction.rollback();
       return res.status(400).json({
         success: false,
-        message: 'Please provide complete bank details (bankCode, accountNumber, accountName)'
+        message: 'Please provide complete bank details'
       });
     }
 
@@ -821,16 +783,7 @@ const requestWithdrawal = async (req, res) => {
       });
     }
 
-    // Check KYC status (optional - remove if not using KYC)
     const user = await User.findByPk(req.user.id);
-    if (user.kycStatus && user.kycStatus !== 'approved') {
-      await transaction.rollback();
-      return res.status(403).json({
-        success: false,
-        message: 'Please complete KYC verification to withdraw'
-      });
-    }
-
     const reference = generateReference('WTH');
     const balanceBefore = parseFloat(wallet.nairaBalance);
 
@@ -864,7 +817,7 @@ const requestWithdrawal = async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Withdrawal request submitted successfully. Processing within 24 hours.',
+      message: 'Withdrawal request submitted. Processing within 24 hours.',
       data: {
         reference,
         amount,
@@ -950,23 +903,19 @@ const getTransactions = async (req, res) => {
 // ADMIN: GET UNMATCHED DEPOSITS
 // =====================================================
 
-// @desc    Get unmatched deposits for manual processing (Admin only)
+// @desc    Get unmatched deposits (Admin only)
 // @route   GET /api/wallet/admin/unmatched
 // @access  Admin
 const getUnmatchedDeposits = async (req, res) => {
   try {
-    // Since we're now logging to console instead of DB,
-    // this endpoint won't have DB records. 
-    // You can implement a file-based logging system if needed.
     res.json({
       success: true,
       data: {
         count: 0,
         deposits: [],
-        message: 'Unmatched deposits are now logged to console. Check server logs.'
+        message: 'Unmatched deposits are logged to console. Check server logs.'
       }
     });
-
   } catch (error) {
     console.error('❌ Get unmatched deposits error:', error);
     res.status(500).json({
@@ -980,8 +929,8 @@ const getUnmatchedDeposits = async (req, res) => {
 // CLEANUP: EXPIRE OLD PENDING DEPOSITS
 // =====================================================
 
-// @desc    Cleanup expired pending deposits (Run via cron job)
-// @route   POST /api/wallet/cleanup/expired (or call directly)
+// @desc    Cleanup expired pending deposits
+// @route   POST /api/wallet/cleanup/expired
 // @access  Internal/Cron
 const cleanupExpiredDeposits = async () => {
   try {
