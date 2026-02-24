@@ -2,9 +2,12 @@
 const { User, Wallet } = require('../models');
 const { generateToken } = require('../middleware/auth');
 const { sequelize } = require('../config/database');
-
 const crypto = require('crypto');
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
+
+// Initialize Resend
+const resend = new Resend(process.env.RESEND_API_KEY);
+
 // ========== VALIDATION HELPERS ==========
 const validateEmail = (email) => {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -46,6 +49,146 @@ const validateFullName = (name) => {
   return true;
 };
 
+// ========== EMAIL SERVICE ==========
+const sendPasswordResetEmail = async (userEmail, userName, resetToken) => {
+  const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password?token=${resetToken}`;
+
+  try {
+    const { data, error } = await resend.emails.send({
+      from: process.env.RESEND_FROM_EMAIL || 'Wealth Trading <onboarding@resend.dev>',
+      to: [userEmail],
+      subject: 'Password Reset Request - Wealth Trading',
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Password Reset</title>
+        </head>
+        <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #0f172a;">
+          <table role="presentation" style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td align="center" style="padding: 40px 20px;">
+                <table role="presentation" style="max-width: 600px; width: 100%; border-collapse: collapse;">
+                  
+                  <!-- Header -->
+                  <tr>
+                    <td style="text-align: center; padding-bottom: 30px;">
+                      <h1 style="color: #6366f1; margin: 0; font-size: 32px; font-weight: bold;">
+                        Wealth Trading
+                      </h1>
+                    </td>
+                  </tr>
+
+                  <!-- Main Content Card -->
+                  <tr>
+                    <td style="background: linear-gradient(to bottom, #1e293b, #0f172a); border-radius: 16px; padding: 40px; box-shadow: 0 10px 40px rgba(0,0,0,0.3);">
+                      
+                      <h2 style="color: #ffffff; margin: 0 0 20px 0; font-size: 24px; font-weight: 600;">
+                        Password Reset Request
+                      </h2>
+                      
+                      <p style="color: #e2e8f0; margin: 0 0 16px 0; font-size: 16px; line-height: 1.6;">
+                        Hi <strong style="color: #ffffff;">${userName}</strong>,
+                      </p>
+                      
+                      <p style="color: #cbd5e1; margin: 0 0 24px 0; font-size: 15px; line-height: 1.6;">
+                        We received a request to reset your password. Click the button below to create a new password:
+                      </p>
+                      
+                      <!-- CTA Button -->
+                      <table role="presentation" style="margin: 30px 0; width: 100%;">
+                        <tr>
+                          <td align="center">
+                            <a href="${resetUrl}" 
+                               style="display: inline-block; 
+                                      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); 
+                                      color: #ffffff; 
+                                      text-decoration: none; 
+                                      padding: 16px 40px; 
+                                      border-radius: 8px; 
+                                      font-weight: 600; 
+                                      font-size: 16px;
+                                      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+                                      transition: all 0.3s ease;">
+                              Reset Password
+                            </a>
+                          </td>
+                        </tr>
+                      </table>
+
+                      <!-- Security Info -->
+                      <div style="background: rgba(239, 68, 68, 0.1); 
+                                  border-left: 4px solid #ef4444; 
+                                  padding: 16px; 
+                                  margin: 24px 0; 
+                                  border-radius: 4px;">
+                        <p style="color: #fca5a5; margin: 0; font-size: 14px; font-weight: 600;">
+                          ⏱️ This link expires in <strong style="color: #ffffff;">30 minutes</strong>
+                        </p>
+                      </div>
+                      
+                      <p style="color: #94a3b8; margin: 0 0 16px 0; font-size: 14px; line-height: 1.6;">
+                        If you didn't request this password reset, please ignore this email or contact our support team if you have concerns. Your password will remain unchanged.
+                      </p>
+
+                      <!-- Alternative Link -->
+                      <p style="color: #64748b; margin: 24px 0 0 0; font-size: 13px; line-height: 1.6;">
+                        If the button doesn't work, copy and paste this link into your browser:
+                      </p>
+                      <p style="color: #6366f1; 
+                                margin: 8px 0 0 0; 
+                                font-size: 12px; 
+                                word-break: break-all; 
+                                background: rgba(99, 102, 241, 0.1); 
+                                padding: 12px; 
+                                border-radius: 6px;">
+                        ${resetUrl}
+                      </p>
+                      
+                    </td>
+                  </tr>
+
+                  <!-- Footer -->
+                  <tr>
+                    <td style="padding-top: 30px; text-align: center;">
+                      <p style="color: #64748b; margin: 0 0 8px 0; font-size: 13px;">
+                        Need help? Contact us at 
+                        <a href="mailto:support@wealthtrading.com" 
+                           style="color: #6366f1; text-decoration: none;">
+                          support@wealthtrading.com
+                        </a>
+                      </p>
+                      <p style="color: #475569; margin: 0; font-size: 12px;">
+                        © ${new Date().getFullYear()} Wealth Trading. All rights reserved.
+                      </p>
+                    </td>
+                  </tr>
+
+                </table>
+              </td>
+            </tr>
+          </table>
+        </body>
+        </html>
+      `
+    });
+
+    if (error) {
+      console.error('❌ Resend API error:', error);
+      throw new Error(`Email delivery failed: ${error.message}`);
+    }
+
+    console.log('✅ Password reset email sent successfully. Email ID:', data.id);
+    return data;
+
+  } catch (err) {
+    console.error('❌ Failed to send password reset email:', err);
+    throw err;
+  }
+};
+
 // @desc    Register new user
 // @route   POST /api/auth/register
 // @access  Public
@@ -76,7 +219,6 @@ const register = async (req, res) => {
     }
 
     // ===== PHONE NUMBER VALIDATION =====
-    // Clean phone number
     const cleanPhoneNumber = phoneNumber.replace(/[\s-]/g, '');
 
     if (!cleanPhoneNumber.startsWith('0')) {
@@ -582,21 +724,6 @@ const getReferrals = async (req, res) => {
   }
 };
 
-
-
-// ========== EMAIL TRANSPORTER ==========
-const createTransporter = () => {
-  return nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: process.env.SMTP_PORT || 587,
-    secure: false,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS
-    }
-  });
-};
-
 // @desc    Forgot password - Send reset email
 // @route   POST /api/auth/forgot-password
 // @access  Public
@@ -611,11 +738,18 @@ const forgotPassword = async (req, res) => {
       });
     }
 
+    if (!validateEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a valid email address'
+      });
+    }
+
     const user = await User.findOne({
       where: { email: email.toLowerCase() }
     });
 
-    // Don't reveal if email exists or not (security)
+    // SECURITY: Don't reveal if email exists or not
     if (!user) {
       return res.json({
         success: true,
@@ -623,88 +757,35 @@ const forgotPassword = async (req, res) => {
       });
     }
 
-    // Generate reset token
+    // Generate reset token (raw token sent to user, hash stored in DB)
     const resetToken = crypto.randomBytes(32).toString('hex');
     const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
     const resetTokenExpiry = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
 
-    // Save to user
+    // Save hashed token to database
     await user.update({
       passwordResetToken: resetTokenHash,
       passwordResetExpires: resetTokenExpiry
     });
 
-    // Create reset URL
-    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password?token=${resetToken}`;
-
-    // Send email
+    // Send email via Resend
     try {
-      const transporter = createTransporter();
-
-      await transporter.sendMail({
-        from: `"Wealth Trading" <${process.env.SMTP_USER}>`,
-        to: user.email,
-        subject: 'Password Reset Request - Wealth Trading',
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-            <div style="text-align: center; margin-bottom: 30px;">
-              <h1 style="color: #6366f1; margin: 0;">Wealth Trading</h1>
-            </div>
-            
-            <div style="background: #1e293b; border-radius: 16px; padding: 30px; color: #fff;">
-              <h2 style="margin-top: 0;">Password Reset Request</h2>
-              
-              <p style="color: #94a3b8;">Hi ${user.fullName || user.username},</p>
-              
-              <p style="color: #94a3b8;">
-                You requested to reset your password. Click the button below to create a new password:
-              </p>
-              
-              <div style="text-align: center; margin: 30px 0;">
-                <a href="${resetUrl}" 
-                   style="background: linear-gradient(to right, #6366f1, #8b5cf6); 
-                          color: white; 
-                          padding: 14px 30px; 
-                          border-radius: 8px; 
-                          text-decoration: none; 
-                          font-weight: bold;
-                          display: inline-block;">
-                  Reset Password
-                </a>
-              </div>
-              
-              <p style="color: #94a3b8; font-size: 14px;">
-                This link will expire in <strong>30 minutes</strong>.
-              </p>
-              
-              <p style="color: #94a3b8; font-size: 14px;">
-                If you didn't request this, please ignore this email. Your password will remain unchanged.
-              </p>
-              
-              <hr style="border: none; border-top: 1px solid #334155; margin: 30px 0;" />
-              
-              <p style="color: #64748b; font-size: 12px; text-align: center;">
-                © 2024 Wealth Trading. All rights reserved.
-              </p>
-            </div>
-          </div>
-        `
-      });
-
+      await sendPasswordResetEmail(user.email, user.fullName || user.username, resetToken);
+      
       console.log('✅ Password reset email sent to:', user.email);
 
     } catch (emailError) {
       console.error('❌ Email sending failed:', emailError);
       
-      // Clear the reset token if email fails
+      // Rollback: Clear the reset token if email fails
       await user.update({
         passwordResetToken: null,
         passwordResetExpires: null
       });
 
-      return res.status(500).json({
+      return res.status(503).json({
         success: false,
-        message: 'Failed to send reset email. Please try again.'
+        message: 'Unable to send reset email at this time. Please try again later.'
       });
     }
 
@@ -714,10 +795,11 @@ const forgotPassword = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Forgot password error:', error);
+    console.error('❌ Forgot password error:', error);
     res.status(500).json({
       success: false,
-      message: 'Something went wrong. Please try again.'
+      message: 'Something went wrong. Please try again.',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -740,14 +822,14 @@ const resetPassword = async (req, res) => {
     if (!validatePassword(password)) {
       return res.status(400).json({
         success: false,
-        message: 'Password must be at least 8 characters with uppercase, lowercase, and number'
+        message: 'Password must be at least 8 characters with at least one uppercase letter, one lowercase letter, and one number'
       });
     }
 
     // Hash the token to compare with stored hash
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
-    // Find user with valid token
+    // Find user with valid token and expiry
     const user = await User.findOne({
       where: {
         passwordResetToken: tokenHash,
@@ -779,15 +861,15 @@ const resetPassword = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Reset password error:', error);
+    console.error('❌ Reset password error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to reset password. Please try again.'
+      message: 'Failed to reset password. Please try again.',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
 
-// Add to exports
 module.exports = {
   register,
   login,
@@ -795,9 +877,6 @@ module.exports = {
   updateProfile,
   changePassword,
   getReferrals,
-  forgotPassword,    // ADD THIS
-  resetPassword      // ADD THIS
+  forgotPassword,
+  resetPassword
 };
-
-
-
