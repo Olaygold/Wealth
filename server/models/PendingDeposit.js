@@ -1,3 +1,4 @@
+
 // models/PendingDeposit.js
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
@@ -10,27 +11,15 @@ const PendingDeposit = sequelize.define('PendingDeposit', {
   },
   userId: {
     type: DataTypes.UUID,
-    allowNull: false,
-    references: {
-      model: 'users',
-      key: 'id'
-    }
+    allowNull: false
   },
   virtualAccountId: {
     type: DataTypes.INTEGER,
-    allowNull: false,
-    references: {
-      model: 'virtual_accounts',
-      key: 'id'
-    }
+    allowNull: false
   },
   amount: {
     type: DataTypes.DECIMAL(15, 2),
     allowNull: false
-  },
-  originalAmount: {
-    type: DataTypes.DECIMAL(15, 2),
-    allowNull: true // Original amount before adding unique kobo
   },
   reference: {
     type: DataTypes.STRING(50),
@@ -55,7 +44,8 @@ const PendingDeposit = sequelize.define('PendingDeposit', {
   }
 }, {
   timestamps: true,
-  tableName: 'pending_deposits'
+  tableName: 'pending_deposits',
+  underscored: false  // Keep camelCase - matches your database
 });
 
 module.exports = PendingDeposit;
