@@ -1188,13 +1188,13 @@ const Dashboard = () => {
                                   ) : (
                                     <>
                                       <p className="text-sm text-yellow-400 font-bold">
-                                        1x (Refund)
+                                        1x 
                                       </p>
                                       <p className="text-xs text-yellow-400">
                                         No DOWN bets yet
                                       </p>
                                       <p className="text-xs text-gray-400">
-                                        Refund if you win
+                                      
                                       </p>
                                     </>
                                   )
@@ -1252,13 +1252,13 @@ const Dashboard = () => {
                                   ) : (
                                     <>
                                       <p className="text-sm text-yellow-400 font-bold">
-                                        1x (Refund)
+                                        1x 
                                       </p>
                                       <p className="text-xs text-yellow-400">
                                         No UP bets yet
                                       </p>
                                       <p className="text-xs text-gray-400">
-                                        Refund if you win
+                                        
                                       </p>
                                     </>
                                   )
