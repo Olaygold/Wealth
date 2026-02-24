@@ -799,11 +799,5 @@ module.exports = {
   resetPassword      // ADD THIS
 };
 
-module.exports = {
-  register,
-  login,
-  getMe,
-  updateProfile,
-  changePassword,
-  getReferrals
-};
+
+
