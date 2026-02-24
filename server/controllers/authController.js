@@ -1,12 +1,48 @@
+
 const { User, Wallet } = require('../models');
 const { generateToken } = require('../middleware/auth');
-const { 
-  validateEmail, 
-  validateUsername, 
-  validatePassword,
-  validatePhoneNumber 
-} = require('../utils/validators');
 const { sequelize } = require('../config/database');
+
+// ========== VALIDATION HELPERS ==========
+const validateEmail = (email) => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+};
+
+const validateUsername = (username) => {
+  // 3-30 characters, alphanumeric and underscore only
+  const usernameRegex = /^[a-zA-Z0-9_]{3,30}$/;
+  return usernameRegex.test(username);
+};
+
+const validatePassword = (password) => {
+  // At least 8 characters, 1 uppercase, 1 lowercase, 1 number
+  if (password.length < 8) return false;
+  if (!/[A-Z]/.test(password)) return false;
+  if (!/[a-z]/.test(password)) return false;
+  if (!/[0-9]/.test(password)) return false;
+  return true;
+};
+
+const validatePhoneNumber = (phone) => {
+  // Remove spaces and dashes
+  const cleanPhone = phone.replace(/[\s-]/g, '');
+  
+  // Must start with 0 and be exactly 11 digits
+  if (!cleanPhone.startsWith('0')) return false;
+  if (cleanPhone.length !== 11) return false;
+  if (!/^\d+$/.test(cleanPhone)) return false;
+  
+  return true;
+};
+
+const validateFullName = (name) => {
+  if (!name || name.trim().length < 3) return false;
+  if (name.trim().length > 100) return false;
+  // Only letters and spaces
+  if (!/^[a-zA-Z\s]+$/.test(name.trim())) return false;
+  return true;
+};
 
 // @desc    Register new user
 // @route   POST /api/auth/register
@@ -17,73 +53,124 @@ const register = async (req, res) => {
   try {
     const { username, email, password, fullName, phoneNumber, referralCode } = req.body;
 
-    // Validation
-    if (!username || !email || !password) {
+    console.log('📝 Registration attempt:', { username, email, fullName, phoneNumber });
+
+    // ===== REQUIRED FIELDS VALIDATION =====
+    if (!username || !email || !password || !fullName || !phoneNumber) {
+      await transaction.rollback();
       return res.status(400).json({
         success: false,
-        message: 'Please provide username, email and password'
+        message: 'Please provide all required fields: username, email, password, full name, and phone number'
       });
     }
 
-    // Validate email
+    // ===== FULL NAME VALIDATION =====
+    if (!validateFullName(fullName)) {
+      await transaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Full name must be 3-100 characters and contain only letters and spaces'
+      });
+    }
+
+    // ===== PHONE NUMBER VALIDATION =====
+    // Clean phone number
+    const cleanPhoneNumber = phoneNumber.replace(/[\s-]/g, '');
+
+    if (!cleanPhoneNumber.startsWith('0')) {
+      await transaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Phone number must start with 0'
+      });
+    }
+
+    if (cleanPhoneNumber.length !== 11) {
+      await transaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Phone number must be exactly 11 digits'
+      });
+    }
+
+    if (!/^\d+$/.test(cleanPhoneNumber)) {
+      await transaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Phone number can only contain digits'
+      });
+    }
+
+    // ===== EMAIL VALIDATION =====
     if (!validateEmail(email)) {
+      await transaction.rollback();
       return res.status(400).json({
         success: false,
-        message: 'Invalid email format'
+        message: 'Please provide a valid email address'
       });
     }
 
-    // Validate username
+    // ===== USERNAME VALIDATION =====
     if (!validateUsername(username)) {
+      await transaction.rollback();
       return res.status(400).json({
         success: false,
-        message: 'Username must be 3-50 alphanumeric characters'
+        message: 'Username must be 3-30 characters and can only contain letters, numbers, and underscores'
       });
     }
 
-    // Validate password
+    // ===== PASSWORD VALIDATION =====
     if (!validatePassword(password)) {
+      await transaction.rollback();
       return res.status(400).json({
         success: false,
-        message: 'Password must be at least 8 characters with uppercase, lowercase and number'
+        message: 'Password must be at least 8 characters with at least one uppercase letter, one lowercase letter, and one number'
       });
     }
 
-    // Validate phone number if provided
-    if (phoneNumber && !validatePhoneNumber(phoneNumber)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid phone number format'
-      });
-    }
-
-    // Check if user exists
-    const userExists = await User.findOne({
+    // ===== CHECK IF USER EXISTS =====
+    const existingUser = await User.findOne({
       where: {
         [sequelize.Sequelize.Op.or]: [
-          { email },
-          { username }
+          { email: email.toLowerCase() },
+          { username: username.toLowerCase() },
+          { phoneNumber: cleanPhoneNumber }
         ]
       }
     });
 
-    if (userExists) {
-      return res.status(400).json({
-        success: false,
-        message: userExists.email === email 
-          ? 'Email already registered' 
-          : 'Username already taken'
-      });
+    if (existingUser) {
+      await transaction.rollback();
+      
+      if (existingUser.email.toLowerCase() === email.toLowerCase()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Email is already registered'
+        });
+      }
+      if (existingUser.username.toLowerCase() === username.toLowerCase()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Username is already taken'
+        });
+      }
+      if (existingUser.phoneNumber === cleanPhoneNumber) {
+        return res.status(400).json({
+          success: false,
+          message: 'Phone number is already registered'
+        });
+      }
     }
 
-    // Check referral code if provided
+    // ===== CHECK REFERRAL CODE =====
     let referrerId = null;
-    if (referralCode) {
+    if (referralCode && referralCode.trim()) {
       const referrer = await User.findOne({
-        where: { referralCode }
+        where: { referralCode: referralCode.trim().toUpperCase() }
       });
 
       if (!referrer) {
+        await transaction.rollback();
         return res.status(400).json({
           success: false,
           message: 'Invalid referral code'
@@ -93,35 +180,38 @@ const register = async (req, res) => {
       referrerId = referrer.id;
     }
 
-    // Create user
+    // ===== CREATE USER =====
     const user = await User.create({
-      username,
-      email,
+      username: username.toLowerCase(),
+      email: email.toLowerCase(),
       password, // Will be hashed by beforeCreate hook
-      fullName,
-      phoneNumber,
+      fullName: fullName.trim(),
+      phoneNumber: cleanPhoneNumber,
       referredBy: referrerId
     }, { transaction });
 
-    // Create wallet for user
+    // ===== CREATE WALLET =====
     await Wallet.create({
       userId: user.id
     }, { transaction });
 
     await transaction.commit();
 
-    // Generate token
+    console.log('✅ User registered successfully:', user.username);
+
+    // ===== GENERATE TOKEN =====
     const token = generateToken(user.id);
 
     res.status(201).json({
       success: true,
-      message: 'Registration successful',
+      message: 'Registration successful! Welcome to Wealth.',
       data: {
         user: {
           id: user.id,
           username: user.username,
           email: user.email,
           fullName: user.fullName,
+          phoneNumber: user.phoneNumber,
           referralCode: user.referralCode,
           isVerified: user.isVerified
         },
@@ -131,11 +221,31 @@ const register = async (req, res) => {
 
   } catch (error) {
     await transaction.rollback();
-    console.error('Register error:', error.message);
+    console.error('❌ Registration error:', error);
+    
+    // Handle Sequelize validation errors
+    if (error.name === 'SequelizeValidationError') {
+      const messages = error.errors.map(e => e.message);
+      return res.status(400).json({
+        success: false,
+        message: messages[0] || 'Validation error',
+        errors: messages
+      });
+    }
+
+    // Handle unique constraint errors
+    if (error.name === 'SequelizeUniqueConstraintError') {
+      const field = error.errors[0]?.path || 'field';
+      return res.status(400).json({
+        success: false,
+        message: `This ${field} is already registered`
+      });
+    }
+
     res.status(500).json({
       success: false,
-      message: 'Registration failed',
-      error: error.message
+      message: 'Registration failed. Please try again.',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -159,8 +269,8 @@ const login = async (req, res) => {
     const user = await User.findOne({
       where: {
         [sequelize.Sequelize.Op.or]: [
-          { email: emailOrUsername },
-          { username: emailOrUsername }
+          { email: emailOrUsername.toLowerCase() },
+          { username: emailOrUsername.toLowerCase() }
         ]
       },
       include: [{
@@ -172,7 +282,7 @@ const login = async (req, res) => {
     if (!user) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid credentials'
+        message: 'Invalid email/username or password'
       });
     }
 
@@ -180,7 +290,7 @@ const login = async (req, res) => {
     if (!user.isActive) {
       return res.status(401).json({
         success: false,
-        message: 'Account is deactivated. Please contact support.'
+        message: 'Your account has been deactivated. Please contact support.'
       });
     }
 
@@ -190,7 +300,7 @@ const login = async (req, res) => {
     if (!isPasswordValid) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid credentials'
+        message: 'Invalid email/username or password'
       });
     }
 
@@ -199,6 +309,8 @@ const login = async (req, res) => {
 
     // Generate token
     const token = generateToken(user.id);
+
+    console.log('✅ User logged in:', user.username);
 
     res.json({
       success: true,
@@ -215,21 +327,21 @@ const login = async (req, res) => {
           kycStatus: user.kycStatus,
           referralCode: user.referralCode
         },
-        wallet: {
-          nairaBalance: user.wallet.nairaBalance,
-          cryptoBalance: user.wallet.cryptoBalance,
-          lockedBalance: user.wallet.lockedBalance
-        },
+        wallet: user.wallet ? {
+          nairaBalance: parseFloat(user.wallet.nairaBalance) || 0,
+          cryptoBalance: parseFloat(user.wallet.cryptoBalance) || 0,
+          lockedBalance: parseFloat(user.wallet.lockedBalance) || 0
+        } : null,
         token
       }
     });
 
   } catch (error) {
-    console.error('Login error:', error.message);
+    console.error('❌ Login error:', error.message);
     res.status(500).json({
       success: false,
-      message: 'Login failed',
-      error: error.message
+      message: 'Login failed. Please try again.',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -246,6 +358,13 @@ const getMe = async (req, res) => {
       }]
     });
 
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
     res.json({
       success: true,
       data: {
@@ -261,15 +380,15 @@ const getMe = async (req, res) => {
           referralCode: user.referralCode,
           createdAt: user.createdAt
         },
-        wallet: {
-          nairaBalance: user.wallet.nairaBalance,
-          cryptoBalance: user.wallet.cryptoBalance,
-          lockedBalance: user.wallet.lockedBalance,
-          totalDeposited: user.wallet.totalDeposited,
-          totalWithdrawn: user.wallet.totalWithdrawn,
-          totalWon: user.wallet.totalWon,
-          totalLost: user.wallet.totalLost
-        }
+        wallet: user.wallet ? {
+          nairaBalance: parseFloat(user.wallet.nairaBalance) || 0,
+          cryptoBalance: parseFloat(user.wallet.cryptoBalance) || 0,
+          lockedBalance: parseFloat(user.wallet.lockedBalance) || 0,
+          totalDeposited: parseFloat(user.wallet.totalDeposited) || 0,
+          totalWithdrawn: parseFloat(user.wallet.totalWithdrawn) || 0,
+          totalWon: parseFloat(user.wallet.totalWon) || 0,
+          totalLost: parseFloat(user.wallet.totalLost) || 0
+        } : null
       }
     });
 
@@ -278,7 +397,7 @@ const getMe = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to get profile',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -291,17 +410,51 @@ const updateProfile = async (req, res) => {
     const { fullName, phoneNumber } = req.body;
     const user = await User.findByPk(req.user.id);
 
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
     const updateData = {};
 
-    if (fullName) updateData.fullName = fullName;
-    if (phoneNumber) {
-      if (!validatePhoneNumber(phoneNumber)) {
+    if (fullName) {
+      if (!validateFullName(fullName)) {
         return res.status(400).json({
           success: false,
-          message: 'Invalid phone number format'
+          message: 'Full name must be 3-100 characters and contain only letters and spaces'
         });
       }
-      updateData.phoneNumber = phoneNumber;
+      updateData.fullName = fullName.trim();
+    }
+
+    if (phoneNumber) {
+      const cleanPhone = phoneNumber.replace(/[\s-]/g, '');
+      
+      if (!validatePhoneNumber(cleanPhone)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Phone number must start with 0 and be exactly 11 digits'
+        });
+      }
+
+      // Check if phone is already used by another user
+      const existingPhone = await User.findOne({
+        where: { 
+          phoneNumber: cleanPhone,
+          id: { [sequelize.Sequelize.Op.ne]: user.id }
+        }
+      });
+
+      if (existingPhone) {
+        return res.status(400).json({
+          success: false,
+          message: 'This phone number is already registered to another account'
+        });
+      }
+
+      updateData.phoneNumber = cleanPhone;
     }
 
     await user.update(updateData);
@@ -325,7 +478,7 @@ const updateProfile = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to update profile',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -340,19 +493,25 @@ const changePassword = async (req, res) => {
     if (!currentPassword || !newPassword) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide current and new password'
+        message: 'Please provide current password and new password'
       });
     }
 
-    // Validate new password
     if (!validatePassword(newPassword)) {
       return res.status(400).json({
         success: false,
-        message: 'New password must be at least 8 characters with uppercase, lowercase and number'
+        message: 'New password must be at least 8 characters with at least one uppercase letter, one lowercase letter, and one number'
       });
     }
 
     const user = await User.findByPk(req.user.id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
 
     // Verify current password
     const isPasswordValid = await user.comparePassword(currentPassword);
@@ -377,7 +536,7 @@ const changePassword = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to change password',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -395,12 +554,19 @@ const getReferrals = async (req, res) => {
       }]
     });
 
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
     res.json({
       success: true,
       data: {
         referralCode: user.referralCode,
-        totalReferrals: user.referrals.length,
-        referrals: user.referrals
+        totalReferrals: user.referrals?.length || 0,
+        referrals: user.referrals || []
       }
     });
 
@@ -409,7 +575,7 @@ const getReferrals = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to get referrals',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
