@@ -70,7 +70,16 @@ const User = sequelize.define('User', {
   lastLogin: {
     type: DataTypes.DATE,
     allowNull: true
-  }
+  },
+  // In models/User.js - add these fields
+passwordResetToken: {
+  type: DataTypes.STRING,
+  allowNull: true
+},
+passwordResetExpires: {
+  type: DataTypes.DATE,
+  allowNull: true
+}
 }, {
   timestamps: true,
   tableName: 'users',
