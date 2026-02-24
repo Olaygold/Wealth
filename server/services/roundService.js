@@ -282,7 +282,7 @@ class RoundService {
   }
 
   // ============================================================
-  // ✅ FAIR SETTLEMENT LOGIC - 30% FEE FROM LOSERS ONLY
+  // ✅ CORRECT FAIR SETTLEMENT LOGIC
   // ============================================================
   async processBets(round, result, transaction) {
     try {
@@ -300,6 +300,16 @@ class RoundService {
 
       console.log(`   📊 Processing ${bets.length} bets...`);
 
+      // Separate by prediction
+      const upBets = bets.filter(bet => bet.prediction === 'up');
+      const downBets = bets.filter(bet => bet.prediction === 'down');
+
+      const totalUpPool = upBets.reduce((sum, bet) => sum + parseFloat(bet.amount), 0);
+      const totalDownPool = downBets.reduce((sum, bet) => sum + parseFloat(bet.amount), 0);
+
+      console.log(`   📈 UP bets: ${upBets.length} (₦${totalUpPool.toLocaleString()})`);
+      console.log(`   📉 DOWN bets: ${downBets.length} (₦${totalDownPool.toLocaleString()})`);
+
       // ===== CASE 1: TIE - Refund everyone =====
       if (result === 'tie') {
         console.log('   ➖ TIE - Refunding all bets');
@@ -307,36 +317,45 @@ class RoundService {
         return;
       }
 
-      const winners = bets.filter(bet => bet.prediction === result);
-      const losers = bets.filter(bet => bet.prediction !== result);
+      // Determine winners and losers based on result
+      let winners, losers, winnerPool, loserPool;
 
-      console.log(`   ✅ Winners: ${winners.length}`);
-      console.log(`   ❌ Losers: ${losers.length}`);
+      if (result === 'up') {
+        winners = upBets;
+        losers = downBets;
+        winnerPool = totalUpPool;
+        loserPool = totalDownPool;
+      } else {
+        winners = downBets;
+        losers = upBets;
+        winnerPool = totalDownPool;
+        loserPool = totalUpPool;
+      }
 
-      const totalWinnerPool = winners.reduce((sum, bet) => sum + parseFloat(bet.amount), 0);
-      const totalLoserPool = losers.reduce((sum, bet) => sum + parseFloat(bet.amount), 0);
+      console.log(`   ✅ Winners: ${winners.length} (₦${winnerPool.toLocaleString()})`);
+      console.log(`   ❌ Losers: ${losers.length} (₦${loserPool.toLocaleString()})`);
 
-      // ===== CASE 2: No winners - Refund everyone =====
-      if (winners.length === 0) {
-        console.log('   ❌ NO WINNERS - Refunding all bets');
-        await this.refundAllBets(round, bets, transaction, 'No correct predictions');
+      // ===== CASE 2: Everyone predicted WRONG - ALL LOSE =====
+      if (winners.length === 0 && losers.length > 0) {
+        console.log('   ❌ EVERYONE PREDICTED WRONG - All lose!');
+        await this.processAllAsLosers(round, losers, transaction);
         return;
       }
 
-      // ===== CASE 3: No losers - Refund winners =====
-      if (losers.length === 0) {
-        console.log('   🎯 NO LOSERS - Refunding winners');
-        await this.refundAllBets(round, winners, transaction, 'No opposing bets');
+      // ===== CASE 3: Everyone predicted CORRECT but no opponents - REFUND =====
+      if (winners.length > 0 && losers.length === 0) {
+        console.log('   🎯 EVERYONE PREDICTED CORRECT - No opponents, refunding winners');
+        await this.refundAllBets(round, winners, transaction, 'No opposing bets - refund');
         return;
       }
 
-      // ===== CASE 4: NORMAL - Both winners and losers =====
+      // ===== CASE 4: NORMAL - Both winners and losers exist =====
       console.log('   🎮 NORMAL CASE - Processing payouts');
       
       // 30% platform fee from losers pool
-      const platformFee = roundToTwo(totalLoserPool * 0.30);
+      const platformFee = roundToTwo(loserPool * 0.30);
       // 70% goes to winners
-      const prizePool = roundToTwo(totalLoserPool * 0.70);
+      const prizePool = roundToTwo(loserPool * 0.70);
 
       await round.update({
         platformFee: platformFee,
@@ -344,15 +363,15 @@ class RoundService {
         isProcessed: true
       }, { transaction });
 
-      console.log(`   💰 Losers Pool: ₦${totalLoserPool.toLocaleString()}`);
+      console.log(`   💰 Losers Pool: ₦${loserPool.toLocaleString()}`);
       console.log(`   🏦 Platform Fee (30%): ₦${platformFee.toLocaleString()}`);
       console.log(`   🎁 Prize Pool (70%): ₦${prizePool.toLocaleString()}`);
-      console.log(`   🏆 Winner Pool: ₦${totalWinnerPool.toLocaleString()}`);
+      console.log(`   🏆 Winner Pool: ₦${winnerPool.toLocaleString()}`);
 
       // ===== PROCESS WINNERS =====
       for (const bet of winners) {
         const betAmount = parseFloat(bet.amount);
-        const shareRatio = betAmount / totalWinnerPool;
+        const shareRatio = betAmount / winnerPool;
         const prizeShare = prizePool * shareRatio;
         const payout = roundToTwo(betAmount + prizeShare); // Stake back + winnings
         const profit = roundToTwo(prizeShare); // Pure profit
@@ -395,7 +414,7 @@ class RoundService {
             betId: bet.id, 
             roundId: round.id,
             betAmount: betAmount,
-            prizeShare: prizeShare,
+            prizeShare: roundToTwo(prizeShare),
             profit: profit,
             multiplier: multiplier
           },
@@ -427,7 +446,7 @@ class RoundService {
         await bet.update({
           result: 'loss',
           payout: 0,
-          profit: -betAmount, // Lost full amount
+          profit: -betAmount,
           isPaid: true
         }, { transaction });
 
@@ -486,6 +505,85 @@ class RoundService {
   }
 
   // ============================================================
+  // ✅ ALL LOSE - When everyone predicted wrong
+  // Example: All bet UP, but price went DOWN
+  // ============================================================
+  async processAllAsLosers(round, losers, transaction) {
+    let totalLost = 0;
+
+    for (const bet of losers) {
+      const betAmount = parseFloat(bet.amount);
+      totalLost += betAmount;
+      
+      await bet.update({
+        result: 'loss',
+        payout: 0,
+        profit: -betAmount,
+        isPaid: true
+      }, { transaction });
+
+      const wallet = await Wallet.findOne({
+        where: { userId: bet.userId },
+        transaction,
+        lock: transaction.LOCK.UPDATE
+      });
+
+      const currentBalance = parseFloat(wallet.nairaBalance);
+      const currentLocked = parseFloat(wallet.lockedBalance);
+
+      // Remove from locked AND deduct from balance
+      const newLockedBalance = roundToTwo(Math.max(0, currentLocked - betAmount));
+      const newBalance = roundToTwo(currentBalance - betAmount);
+
+      await wallet.update({
+        nairaBalance: newBalance,
+        lockedBalance: newLockedBalance,
+        totalLost: roundToTwo(parseFloat(wallet.totalLost || 0) + betAmount)
+      }, { transaction });
+
+      await Transaction.create({
+        userId: bet.userId,
+        type: 'bet_loss',
+        method: 'internal',
+        amount: betAmount,
+        status: 'completed',
+        description: `Lost ₦${betAmount.toLocaleString()} in Round #${round.roundNumber} (no correct predictions)`,
+        metadata: { 
+          betId: bet.id, 
+          roundId: round.id,
+          reason: 'All players predicted wrong'
+        },
+        balanceBefore: currentBalance,
+        balanceAfter: newBalance
+      }, { transaction });
+
+      console.log(`   ❌ ${bet.user?.username}: Lost ₦${betAmount}`);
+
+      if (this.io) {
+        this.io.to(bet.userId).emit('bet_result', {
+          betId: bet.id,
+          result: 'loss',
+          amount: betAmount,
+          payout: 0,
+          profit: -betAmount,
+          newBalance: newBalance,
+          newLockedBalance: newLockedBalance,
+          reason: 'All players predicted wrong - no winners'
+        });
+      }
+    }
+
+    // Platform takes all
+    await round.update({ 
+      platformFee: roundToTwo(totalLost),
+      prizePool: 0,
+      isProcessed: true 
+    }, { transaction });
+
+    console.log(`   🏦 Platform collected (all lost): ₦${totalLost.toLocaleString()}`);
+  }
+
+  // ============================================================
   // REFUND ALL BETS
   // ============================================================
   async refundAllBets(round, bets, transaction, reason) {
@@ -521,7 +619,7 @@ class RoundService {
         method: 'internal',
         amount: betAmount,
         status: 'completed',
-        description: `Refund for Round #${round.roundNumber} (${reason})`,
+        description: `Refund ₦${betAmount.toLocaleString()} for Round #${round.roundNumber} (${reason})`,
         metadata: { betId: bet.id, roundId: round.id, reason },
         balanceBefore: currentBalance,
         balanceAfter: currentBalance
@@ -536,13 +634,18 @@ class RoundService {
           amount: betAmount,
           payout: betAmount,
           profit: 0,
+          reason: reason,
           newBalance: currentBalance,
           newLockedBalance: newLockedBalance
         });
       }
     }
 
-    await round.update({ isProcessed: true }, { transaction });
+    await round.update({ 
+      platformFee: 0,
+      prizePool: 0,
+      isProcessed: true 
+    }, { transaction });
   }
 
   async getCurrentRound() {
