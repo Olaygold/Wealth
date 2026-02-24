@@ -1042,6 +1042,51 @@ const cleanupExpiredDeposits = async () => {
   }
 };
 
+
+
+
+
+// controllers/walletController.js
+
+// ... all your existing code ...
+
+// @desc    Get unmatched deposits for manual processing (Admin only)
+// @route   GET /api/wallet/admin/unmatched
+// @access  Admin
+const getUnmatchedDeposits = async (req, res) => {
+  try {
+    const unmatchedDeposits = await Transaction.findAll({
+      where: {
+        status: {
+          [sequelize.Sequelize.Op.in]: ['unmatched', 'unknown_account']
+        },
+        type: 'deposit'
+      },
+      order: [['createdAt', 'DESC']],
+      limit: 100
+    });
+
+    res.json({
+      success: true,
+      data: {
+        count: unmatchedDeposits.length,
+        deposits: unmatchedDeposits
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Get unmatched deposits error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get unmatched deposits'
+    });
+  }
+};
+
+
+  
+
+
 // =====================================================
 // EXPORTS
 // =====================================================
@@ -1055,5 +1100,6 @@ module.exports = {
   requestWithdrawal,
   getTransactions,
   getUnmatchedDeposits,
-  cleanupExpiredDeposits
+  cleanupExpiredDeposits,
+  getUnmatchedDeposits
 };
