@@ -3,6 +3,8 @@ const { User, Wallet } = require('../models');
 const { generateToken } = require('../middleware/auth');
 const { sequelize } = require('../config/database');
 
+const crypto = require('crypto');
+const nodemailer = require('nodemailer');
 // ========== VALIDATION HELPERS ==========
 const validateEmail = (email) => {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -578,6 +580,223 @@ const getReferrals = async (req, res) => {
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
+};
+
+
+
+// ========== EMAIL TRANSPORTER ==========
+const createTransporter = () => {
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: process.env.SMTP_PORT || 587,
+    secure: false,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS
+    }
+  });
+};
+
+// @desc    Forgot password - Send reset email
+// @route   POST /api/auth/forgot-password
+// @access  Public
+const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide an email address'
+      });
+    }
+
+    const user = await User.findOne({
+      where: { email: email.toLowerCase() }
+    });
+
+    // Don't reveal if email exists or not (security)
+    if (!user) {
+      return res.json({
+        success: true,
+        message: 'If an account exists with this email, you will receive a reset link'
+      });
+    }
+
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+    const resetTokenExpiry = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
+
+    // Save to user
+    await user.update({
+      passwordResetToken: resetTokenHash,
+      passwordResetExpires: resetTokenExpiry
+    });
+
+    // Create reset URL
+    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password?token=${resetToken}`;
+
+    // Send email
+    try {
+      const transporter = createTransporter();
+
+      await transporter.sendMail({
+        from: `"Wealth Trading" <${process.env.SMTP_USER}>`,
+        to: user.email,
+        subject: 'Password Reset Request - Wealth Trading',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="text-align: center; margin-bottom: 30px;">
+              <h1 style="color: #6366f1; margin: 0;">Wealth Trading</h1>
+            </div>
+            
+            <div style="background: #1e293b; border-radius: 16px; padding: 30px; color: #fff;">
+              <h2 style="margin-top: 0;">Password Reset Request</h2>
+              
+              <p style="color: #94a3b8;">Hi ${user.fullName || user.username},</p>
+              
+              <p style="color: #94a3b8;">
+                You requested to reset your password. Click the button below to create a new password:
+              </p>
+              
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${resetUrl}" 
+                   style="background: linear-gradient(to right, #6366f1, #8b5cf6); 
+                          color: white; 
+                          padding: 14px 30px; 
+                          border-radius: 8px; 
+                          text-decoration: none; 
+                          font-weight: bold;
+                          display: inline-block;">
+                  Reset Password
+                </a>
+              </div>
+              
+              <p style="color: #94a3b8; font-size: 14px;">
+                This link will expire in <strong>30 minutes</strong>.
+              </p>
+              
+              <p style="color: #94a3b8; font-size: 14px;">
+                If you didn't request this, please ignore this email. Your password will remain unchanged.
+              </p>
+              
+              <hr style="border: none; border-top: 1px solid #334155; margin: 30px 0;" />
+              
+              <p style="color: #64748b; font-size: 12px; text-align: center;">
+                © 2024 Wealth Trading. All rights reserved.
+              </p>
+            </div>
+          </div>
+        `
+      });
+
+      console.log('✅ Password reset email sent to:', user.email);
+
+    } catch (emailError) {
+      console.error('❌ Email sending failed:', emailError);
+      
+      // Clear the reset token if email fails
+      await user.update({
+        passwordResetToken: null,
+        passwordResetExpires: null
+      });
+
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send reset email. Please try again.'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'If an account exists with this email, you will receive a reset link'
+    });
+
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Something went wrong. Please try again.'
+    });
+  }
+};
+
+// @desc    Reset password with token
+// @route   POST /api/auth/reset-password
+// @access  Public
+const resetPassword = async (req, res) => {
+  try {
+    const { token, password } = req.body;
+
+    if (!token || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide token and new password'
+      });
+    }
+
+    // Validate password
+    if (!validatePassword(password)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 8 characters with uppercase, lowercase, and number'
+      });
+    }
+
+    // Hash the token to compare with stored hash
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+    // Find user with valid token
+    const user = await User.findOne({
+      where: {
+        passwordResetToken: tokenHash,
+        passwordResetExpires: {
+          [sequelize.Sequelize.Op.gt]: new Date()
+        }
+      }
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired reset token. Please request a new reset link.'
+      });
+    }
+
+    // Update password and clear reset token
+    await user.update({
+      password: password, // Will be hashed by beforeUpdate hook
+      passwordResetToken: null,
+      passwordResetExpires: null
+    });
+
+    console.log('✅ Password reset successful for:', user.email);
+
+    res.json({
+      success: true,
+      message: 'Password reset successful. You can now login with your new password.'
+    });
+
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to reset password. Please try again.'
+    });
+  }
+};
+
+// Add to exports
+module.exports = {
+  register,
+  login,
+  getMe,
+  updateProfile,
+  changePassword,
+  getReferrals,
+  forgotPassword,    // ADD THIS
+  resetPassword      // ADD THIS
 };
 
 module.exports = {
