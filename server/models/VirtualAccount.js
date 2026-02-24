@@ -1,3 +1,4 @@
+
 // models/VirtualAccount.js
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
@@ -49,7 +50,7 @@ const VirtualAccount = sequelize.define('VirtualAccount', {
 }, {
   timestamps: true,
   tableName: 'virtual_accounts',
-  underscored: true
+  underscored: false  // Keep camelCase - matches your database
 });
 
 module.exports = VirtualAccount;
