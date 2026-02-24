@@ -6,7 +6,9 @@ const {
   getMe,
   updateProfile,
   changePassword,
-  getReferrals
+  getReferrals,
+  forgotPassword,
+  resetPassword
 } = require('../controllers/authController');
 const { protect } = require('../middleware/auth');
 const { authLimiter } = require('../middleware/rateLimiter');
