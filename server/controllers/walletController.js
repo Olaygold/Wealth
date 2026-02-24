@@ -314,7 +314,7 @@ const handleAspfiyWebhook = async (req, res) => {
 
     console.log('✅ Webhook signature verified');
 
-    // ===== EXTRACT DATA (Based on Aspfiy docs) =====
+    // ===== EXTRACT DATA =====
     const { event, data } = req.body;
 
     // Validate event type
@@ -339,12 +339,7 @@ const handleAspfiyWebhook = async (req, res) => {
       merchant_reference,
       wiaxy_ref: interBankReference,
       amount,
-      created_at,
-      account: {
-        account_number,
-        account_name,
-        bank_name
-      },
+      account: { account_number },
       payer = {},
       customer = {}
     } = data;
@@ -352,14 +347,12 @@ const handleAspfiyWebhook = async (req, res) => {
     const payerAccount = payer.account_number || '';
     const payerFirstName = customer.firstName || payer.first_name || '';
     const payerLastName = customer.lastName || payer.last_name || '';
-
     const receivedAmount = parseFloat(amount);
 
     console.log('📥 Payment details:');
     console.log('   Account:', account_number);
     console.log('   Amount: ₦' + receivedAmount);
     console.log('   Payer:', `${payerFirstName} ${payerLastName}`);
-    console.log('   Merchant Ref:', merchant_reference);
     console.log('   Aspfiy Ref:', aspfiyReference);
 
     // ===== FIND VIRTUAL ACCOUNT =====
@@ -371,35 +364,23 @@ const handleAspfiyWebhook = async (req, res) => {
     if (!virtualAccount) {
       console.error('❌ Unknown virtual account:', account_number);
       
-      // Log for manual review
-      await Transaction.create({
-        userId: null,
-        type: 'deposit',
-        method: 'naira',
+      // ✅ FIX: Just log - don't create transaction with null userId
+      console.log('⚠️ UNMATCHED DEPOSIT - UNKNOWN ACCOUNT:', JSON.stringify({
+        reason: 'unknown_account',
+        account_number,
         amount: receivedAmount,
-        currency: 'NGN',
-        status: 'unknown_account',
-        reference: `UNKNOWN-${aspfiyReference}`,
-        description: `Unknown account: ${account_number}`,
-        metadata: { 
-          reason: 'unknown_account',
-          account_number,
-          webhookData: req.body 
-        }
-      }, { transaction: dbTransaction });
+        aspfiyReference,
+        merchant_reference,
+        timestamp: webhookTimestamp
+      }, null, 2));
 
       await dbTransaction.commit();
-      
-      return res.json({ 
-        success: true, 
-        message: 'Unknown account - logged for review' 
-      });
+      return res.json({ success: true, message: 'Unknown account - logged' });
     }
 
     console.log('✅ Virtual account found:', virtualAccount.id, virtualAccount.accountName);
 
-    // ===== FIND MATCHING PENDING DEPOSIT (2-STEP APPROACH) =====
-    // STEP 1: Find without lock (no JOIN lock issue)
+    // ===== FIND MATCHING PENDING DEPOSIT =====
     const pendingDeposit = await PendingDeposit.findOne({
       where: {
         virtualAccountId: virtualAccount.id,
@@ -434,45 +415,29 @@ const handleAspfiyWebhook = async (req, res) => {
         if (timeDiff < 60000) {
           console.log('⚠️ Likely duplicate webhook - deposit recently completed');
           await dbTransaction.commit();
-          return res.json({ 
-            success: true, 
-            message: 'Already processed' 
-          });
+          return res.json({ success: true, message: 'Already processed' });
         }
       }
 
-      // Log unmatched deposit for manual processing
-      await Transaction.create({
-        userId: null,
-        type: 'deposit',
-        method: 'naira',
+      // ✅ FIX: Just log - don't create transaction with null userId
+      console.log('⚠️ UNMATCHED DEPOSIT - NO PENDING FOUND:', JSON.stringify({
+        reason: 'no_matching_pending',
+        virtualAccountId: virtualAccount.id,
+        account_number,
         amount: receivedAmount,
-        currency: 'NGN',
-        status: 'unmatched',
-        reference: `UNMATCHED-${aspfiyReference}`,
-        description: `Unmatched deposit: ₦${receivedAmount}`,
-        metadata: {
-          reason: 'no_matching_pending',
-          virtualAccountId: virtualAccount.id,
-          payer: `${payerFirstName} ${payerLastName}`,
-          payerAccount,
-          aspfiyReference,
-          interBankReference,
-          merchant_reference,
-          webhookData: req.body
-        }
-      }, { transaction: dbTransaction });
+        payer: `${payerFirstName} ${payerLastName}`,
+        payerAccount,
+        aspfiyReference,
+        interBankReference,
+        merchant_reference,
+        timestamp: webhookTimestamp
+      }, null, 2));
 
       await dbTransaction.commit();
-      
-      console.log('⚠️ Unmatched deposit logged for manual review');
-      return res.json({ 
-        success: true, 
-        message: 'No matching deposit - logged for manual review' 
-      });
+      return res.json({ success: true, message: 'No matching deposit - logged' });
     }
 
-    // STEP 2: Lock the pending deposit
+    // Lock the pending deposit
     await pendingDeposit.reload({
       lock: dbTransaction.LOCK.UPDATE,
       transaction: dbTransaction
@@ -488,18 +453,12 @@ const handleAspfiyWebhook = async (req, res) => {
     if (pendingDeposit.status === 'completed') {
       console.log('⚠️ Deposit already completed (idempotency check)');
       await dbTransaction.commit();
-      return res.json({ 
-        success: true, 
-        message: 'Already processed' 
-      });
+      return res.json({ success: true, message: 'Already processed' });
     }
 
     // ===== GET USER AND WALLET =====
     const user = await User.findByPk(pendingDeposit.userId, {
-      include: [{
-        model: Wallet,
-        as: 'wallet'
-      }],
+      include: [{ model: Wallet, as: 'wallet' }],
       transaction: dbTransaction
     });
 
@@ -508,15 +467,11 @@ const handleAspfiyWebhook = async (req, res) => {
     if (!wallet) {
       console.error('❌ Wallet not found for user:', pendingDeposit.userId);
       await dbTransaction.rollback();
-      return res.status(500).json({
-        success: false,
-        message: 'Wallet not found'
-      });
+      return res.status(500).json({ success: false, message: 'Wallet not found' });
     }
 
-    // ===== CREDIT USER WALLET =====
-    // ✅ Credit ORIGINAL AMOUNT (no fees deducted)
-    const amountToCredit = parseFloat(pendingDeposit.originalAmount);
+    // ===== CREDIT USER WALLET (NO FEES) =====
+    const amountToCredit = parseFloat(pendingDeposit.originalAmount) || receivedAmount;
     const balanceBefore = parseFloat(wallet.nairaBalance) || 0;
     const balanceAfter = balanceBefore + amountToCredit;
 
@@ -536,11 +491,7 @@ const handleAspfiyWebhook = async (req, res) => {
         aspfiyReference,
         interBankReference,
         merchant_reference,
-        payer: {
-          accountNumber: payerAccount,
-          firstName: payerFirstName,
-          lastName: payerLastName
-        },
+        payer: { payerAccount, payerFirstName, payerLastName },
         receivedAt: webhookTimestamp,
         rawPayload: req.body
       }
@@ -1004,20 +955,15 @@ const getTransactions = async (req, res) => {
 // @access  Admin
 const getUnmatchedDeposits = async (req, res) => {
   try {
-    const unmatchedDeposits = await Transaction.findAll({
-      where: {
-        status: ['unmatched', 'unknown_account'],
-        type: 'deposit'
-      },
-      order: [['createdAt', 'DESC']],
-      limit: 100
-    });
-
+    // Since we're now logging to console instead of DB,
+    // this endpoint won't have DB records. 
+    // You can implement a file-based logging system if needed.
     res.json({
       success: true,
       data: {
-        count: unmatchedDeposits.length,
-        deposits: unmatchedDeposits
+        count: 0,
+        deposits: [],
+        message: 'Unmatched deposits are now logged to console. Check server logs.'
       }
     });
 
