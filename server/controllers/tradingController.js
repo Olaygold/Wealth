@@ -958,6 +958,7 @@ const getPlatformStats = async (req, res) => {
   }
 };
 
+
 // ============================================================
 // @desc    Get leaderboard
 // @route   GET /api/trading/leaderboard
@@ -981,6 +982,7 @@ const getLeaderboard = async (req, res) => {
       timeFilter = { createdAt: { [Op.gte]: monthAgo } };
     }
 
+    // ✅ FIXED: Better GROUP BY query
     const leaderboard = await Bet.findAll({
       where: {
         result: 'win',
@@ -990,25 +992,35 @@ const getLeaderboard = async (req, res) => {
         'userId',
         [sequelize.fn('SUM', sequelize.col('profit')), 'totalProfit'],
         [sequelize.fn('SUM', sequelize.col('payout')), 'totalPayout'],
-        [sequelize.fn('COUNT', sequelize.col('id')), 'totalWins']
+        [sequelize.fn('COUNT', sequelize.col('Bet.id')), 'totalWins']
       ],
       include: [{
         model: User,
         as: 'user',
-        attributes: ['username']
+        attributes: ['id', 'username'],
+        required: true
       }],
-      group: ['userId', 'user.id', 'user.username'],
-      order: [[sequelize.literal('"totalProfit"'), 'DESC']],
-      limit: parseInt(limit)
+      group: ['userId', 'user.id'],
+      having: sequelize.where(sequelize.fn('SUM', sequelize.col('profit')), {
+        [Op.gt]: 0
+      }),
+      order: [[sequelize.fn('SUM', sequelize.col('profit')), 'DESC']],
+      limit: parseInt(limit),
+      subQuery: false,
+      raw: true
     });
 
+    // ✅ Format results with ranks
     const formattedLeaderboard = leaderboard.map((entry, index) => ({
       rank: index + 1,
-      username: entry.user?.username || 'Anonymous',
-      totalProfit: roundToTwo(parseFloat(entry.dataValues.totalProfit) || 0),
-      totalPayout: roundToTwo(parseFloat(entry.dataValues.totalPayout) || 0),
-      totalWins: parseInt(entry.dataValues.totalWins) || 0
+      username: entry['user.username'] || 'Anonymous',
+      userId: entry.userId,
+      totalProfit: roundToTwo(parseFloat(entry.totalProfit) || 0),
+      totalPayout: roundToTwo(parseFloat(entry.totalPayout) || 0),
+      totalWins: parseInt(entry.totalWins) || 0
     }));
+
+    console.log(`📊 Leaderboard (${period}): ${formattedLeaderboard.length} entries`);
 
     res.json({
       success: true,
@@ -1018,6 +1030,7 @@ const getLeaderboard = async (req, res) => {
 
   } catch (error) {
     console.error('Get leaderboard error:', error.message);
+    console.error('Stack:', error.stack);
     res.status(500).json({
       success: false,
       message: 'Failed to get leaderboard',
@@ -1025,7 +1038,6 @@ const getLeaderboard = async (req, res) => {
     });
   }
 };
-
 // ============================================================
 // EXPORTS
 // ============================================================
