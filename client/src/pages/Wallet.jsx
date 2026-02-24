@@ -1,6 +1,6 @@
 
 // pages/Wallet.jsx
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import toast from 'react-hot-toast';
@@ -27,13 +27,14 @@ const Wallet = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('deposit');
   const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [transactions, setTransactions] = useState([]);
   const [walletData, setWalletData] = useState(null);
 
   // Deposit State
   const [depositAmount, setDepositAmount] = useState(1000);
   const [pendingDeposit, setPendingDeposit] = useState(null);
-  const [depositStep, setDepositStep] = useState('amount'); // 'amount' | 'payment' | 'waiting'
+  const [depositStep, setDepositStep] = useState('amount');
   const [countdown, setCountdown] = useState(0);
   const [checkingStatus, setCheckingStatus] = useState(false);
 
@@ -71,9 +72,7 @@ const Wallet = () => {
   ];
 
   useEffect(() => {
-    fetchWalletData();
-    fetchTransactions();
-    checkPendingDeposit();
+    loadInitialData();
   }, []);
 
   // Countdown timer for pending deposit
@@ -103,25 +102,51 @@ const Wallet = () => {
     if (pendingDeposit && depositStep === 'waiting') {
       const interval = setInterval(() => {
         checkDepositStatus(pendingDeposit.reference);
-      }, 30000); // Check every 30 seconds
+      }, 30000);
 
       return () => clearInterval(interval);
     }
   }, [pendingDeposit, depositStep]);
 
+  const loadInitialData = async () => {
+    try {
+      setInitialLoading(true);
+      await Promise.all([
+        fetchWalletData(),
+        fetchTransactions(),
+        checkPendingDeposit()
+      ]);
+    } catch (err) {
+      console.error('Load initial data error:', err);
+    } finally {
+      setInitialLoading(false);
+    }
+  };
+
   const fetchWalletData = async () => {
     try {
-      const res = await api.get('/wallet/balance');
-      setWalletData(res.data.data);
+      // api.get already returns response.data due to interceptor
+      const response = await api.get('/wallet/balance');
+      console.log('Wallet Response:', response);
+      
+      // Response is already { success: true, data: {...} }
+      if (response.success && response.data) {
+        setWalletData(response.data);
+      }
     } catch (err) {
       console.error('Fetch wallet error:', err);
+      toast.error(err.message || 'Failed to load wallet');
     }
   };
 
   const fetchTransactions = async () => {
     try {
-      const res = await api.get('/wallet/transactions?limit=50');
-      setTransactions(res.data.data.transactions || []);
+      const response = await api.get('/wallet/transactions?limit=50');
+      console.log('Transactions Response:', response);
+      
+      if (response.success && response.data && response.data.transactions) {
+        setTransactions(response.data.transactions);
+      }
     } catch (err) {
       console.error('Fetch transactions error:', err);
     }
@@ -129,30 +154,30 @@ const Wallet = () => {
 
   const checkPendingDeposit = async () => {
     try {
-      const res = await api.get('/wallet/deposit/pending');
-      if (res.data.data) {
-        setPendingDeposit(res.data.data);
+      const response = await api.get('/wallet/deposit/pending');
+      console.log('Pending Deposit Response:', response);
+      
+      if (response.success && response.data) {
+        setPendingDeposit(response.data);
         setDepositStep('payment');
       }
     } catch (err) {
-      console.error('Check pending deposit error:', err);
+      // Silent fail - it's normal to not have a pending deposit
+      console.log('No pending deposit');
     }
   };
 
-  // ========== FORMAT COUNTDOWN ==========
   const formatCountdown = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // ========== COPY TO CLIPBOARD ==========
   const copyToClipboard = (text, label) => {
     navigator.clipboard.writeText(text);
     toast.success(`${label} copied!`);
   };
 
-  // ========== INITIATE DEPOSIT ==========
   const handleDeposit = async () => {
     if (depositAmount < 100) {
       return toast.error('Minimum deposit is ₦100');
@@ -164,49 +189,48 @@ const Wallet = () => {
 
     setLoading(true);
     try {
-      const res = await api.post('/wallet/deposit/naira', { amount: depositAmount });
+      const response = await api.post('/wallet/deposit/naira', { amount: depositAmount });
+      console.log('Deposit Response:', response);
       
-      setPendingDeposit(res.data.data);
-      setDepositStep('payment');
-      toast.success('Deposit initiated! Transfer to the account below.');
-      
-    } catch (err) {
-      if (err.response?.data?.data) {
-        // Already has pending deposit
-        setPendingDeposit(err.response.data.data);
+      if (response.success && response.data) {
+        setPendingDeposit(response.data);
         setDepositStep('payment');
-        toast.error(err.response?.data?.message || 'You have a pending deposit');
-      } else {
-        toast.error(err.response?.data?.message || 'Failed to initiate deposit');
+        toast.success('Deposit initiated! Transfer to the account below.');
       }
+    } catch (err) {
+      console.error('Deposit error:', err);
+      toast.error(err.message || 'Failed to initiate deposit');
     } finally {
       setLoading(false);
     }
   };
 
-  // ========== CHECK DEPOSIT STATUS ==========
   const checkDepositStatus = async (reference) => {
     if (!reference) return;
     
     setCheckingStatus(true);
     try {
-      const res = await api.get(`/wallet/deposit/status/${reference}`);
-      const data = res.data.data;
+      const response = await api.get(`/wallet/deposit/status/${reference}`);
+      console.log('Status Response:', response);
+      
+      if (response.success && response.data) {
+        const data = response.data;
 
-      if (data.status === 'completed') {
-        toast.success('🎉 Deposit confirmed! Your wallet has been credited.');
-        setPendingDeposit(null);
-        setDepositStep('amount');
-        fetchWalletData();
-        fetchTransactions();
-      } else if (data.status === 'expired' || data.isExpired) {
-        toast.error('Deposit session expired. Please try again.');
-        setPendingDeposit(null);
-        setDepositStep('amount');
-      } else if (data.status === 'cancelled') {
-        toast.error('Deposit was cancelled.');
-        setPendingDeposit(null);
-        setDepositStep('amount');
+        if (data.status === 'completed') {
+          toast.success('🎉 Deposit confirmed! Your wallet has been credited.');
+          setPendingDeposit(null);
+          setDepositStep('amount');
+          fetchWalletData();
+          fetchTransactions();
+        } else if (data.status === 'expired' || data.isExpired) {
+          toast.error('Deposit session expired. Please try again.');
+          setPendingDeposit(null);
+          setDepositStep('amount');
+        } else if (data.status === 'cancelled') {
+          toast.error('Deposit was cancelled.');
+          setPendingDeposit(null);
+          setDepositStep('amount');
+        }
       }
     } catch (err) {
       console.error('Check status error:', err);
@@ -215,7 +239,6 @@ const Wallet = () => {
     }
   };
 
-  // ========== CANCEL DEPOSIT ==========
   const cancelDeposit = async () => {
     if (!pendingDeposit?.reference) return;
 
@@ -228,23 +251,20 @@ const Wallet = () => {
       setPendingDeposit(null);
       setDepositStep('amount');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to cancel deposit');
+      toast.error(err.message || 'Failed to cancel deposit');
     } finally {
       setLoading(false);
     }
   };
 
-  // ========== I'VE MADE TRANSFER ==========
   const handleTransferMade = () => {
     setDepositStep('waiting');
     toast.success('Great! We are checking for your payment...');
-    // Immediately check status
     if (pendingDeposit?.reference) {
       checkDepositStatus(pendingDeposit.reference);
     }
   };
 
-  // ========== WITHDRAW NAIRA ==========
   const handleWithdraw = async (e) => {
     e.preventDefault();
 
@@ -273,7 +293,7 @@ const Wallet = () => {
       fetchTransactions();
       fetchWalletData();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Withdrawal failed');
+      toast.error(err.message || 'Withdrawal failed');
     } finally {
       setLoading(false);
     }
@@ -283,7 +303,6 @@ const Wallet = () => {
     setWithdrawalData({ ...withdrawalData, [e.target.name]: e.target.value });
   };
 
-  // ========== TRANSACTION STATUS ICONS ==========
   const getStatusIcon = (status) => {
     switch (status) {
       case 'completed':
@@ -320,6 +339,18 @@ const Wallet = () => {
     }
   };
 
+  // Loading state
+  if (initialLoading) {
+    return (
+      <div className="min-h-screen bg-darker flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-400 text-lg">Loading wallet...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-darker p-4 lg:p-8">
       <div className="max-w-6xl mx-auto">
@@ -337,21 +368,27 @@ const Wallet = () => {
           <div className="bg-gradient-to-br from-green-500 to-emerald-600 p-6 rounded-3xl shadow-2xl">
             <p className="text-green-100 text-sm uppercase tracking-wide mb-2">Total Balance</p>
             <h2 className="text-4xl font-black text-white">
-              ₦{parseFloat(walletData?.nairaBalance || 0).toLocaleString()}
+              ₦{walletData?.nairaBalance 
+                ? parseFloat(walletData.nairaBalance).toLocaleString('en-NG', { minimumFractionDigits: 2 })
+                : '0.00'}
             </h2>
           </div>
 
           <div className="bg-gradient-to-br from-orange-500 to-red-600 p-6 rounded-3xl shadow-2xl">
             <p className="text-orange-100 text-sm uppercase tracking-wide mb-2">Locked in Bets</p>
             <h2 className="text-4xl font-black text-white">
-              ₦{parseFloat(walletData?.lockedBalance || 0).toLocaleString()}
+              ₦{walletData?.lockedBalance 
+                ? parseFloat(walletData.lockedBalance).toLocaleString('en-NG', { minimumFractionDigits: 2 })
+                : '0.00'}
             </h2>
           </div>
 
           <div className="bg-gradient-to-br from-blue-500 to-indigo-600 p-6 rounded-3xl shadow-2xl">
             <p className="text-blue-100 text-sm uppercase tracking-wide mb-2">Available</p>
             <h2 className="text-4xl font-black text-white">
-              ₦{(parseFloat(walletData?.nairaBalance || 0) - parseFloat(walletData?.lockedBalance || 0)).toLocaleString()}
+              ₦{walletData 
+                ? (parseFloat(walletData.nairaBalance || 0) - parseFloat(walletData.lockedBalance || 0)).toLocaleString('en-NG', { minimumFractionDigits: 2 })
+                : '0.00'}
             </h2>
           </div>
         </div>
@@ -381,10 +418,9 @@ const Wallet = () => {
         {/* Tab Content */}
         <div className="bg-slate-800/40 backdrop-blur-md rounded-3xl p-6 md:p-8 border border-slate-700">
           
-          {/* ========== DEPOSIT TAB ========== */}
+          {/* DEPOSIT TAB */}
           {activeTab === 'deposit' && (
             <div>
-              
               {/* STEP 1: SELECT AMOUNT */}
               {depositStep === 'amount' && (
                 <>
@@ -456,15 +492,17 @@ const Wallet = () => {
                   </div>
 
                   {/* Countdown Timer */}
-                  <div className={`flex items-center justify-center gap-2 mb-6 p-3 rounded-xl ${countdown < 300 ? 'bg-red-500/20 border border-red-500/50' : 'bg-yellow-500/20 border border-yellow-500/50'}`}>
-                    <Timer size={20} className={countdown < 300 ? 'text-red-400' : 'text-yellow-400'} />
-                    <span className={`font-mono text-xl font-bold ${countdown < 300 ? 'text-red-400' : 'text-yellow-400'}`}>
-                      {formatCountdown(countdown)}
-                    </span>
-                    <span className={`text-sm ${countdown < 300 ? 'text-red-300' : 'text-yellow-300'}`}>
-                      remaining
-                    </span>
-                  </div>
+                  {countdown > 0 && (
+                    <div className={`flex items-center justify-center gap-2 mb-6 p-3 rounded-xl ${countdown < 300 ? 'bg-red-500/20 border border-red-500/50' : 'bg-yellow-500/20 border border-yellow-500/50'}`}>
+                      <Timer size={20} className={countdown < 300 ? 'text-red-400' : 'text-yellow-400'} />
+                      <span className={`font-mono text-xl font-bold ${countdown < 300 ? 'text-red-400' : 'text-yellow-400'}`}>
+                        {formatCountdown(countdown)}
+                      </span>
+                      <span className={`text-sm ${countdown < 300 ? 'text-red-300' : 'text-yellow-300'}`}>
+                        remaining
+                      </span>
+                    </div>
+                  )}
 
                   {/* Bank Account Details Card */}
                   <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl p-6 border border-slate-700 mb-6">
@@ -514,7 +552,7 @@ const Wallet = () => {
                           </p>
                         </div>
                         <button 
-                          onClick={() => copyToClipboard(pendingDeposit.amount.toString(), 'Amount')}
+                          onClick={() => copyToClipboard(parseFloat(pendingDeposit.amount).toFixed(2), 'Amount')}
                           className="p-3 bg-green-500/20 hover:bg-green-500/30 rounded-xl transition"
                         >
                           <Copy className="text-green-400" size={20} />
@@ -576,10 +614,12 @@ const Wallet = () => {
                     </p>
 
                     {/* Countdown */}
-                    <div className="inline-flex items-center gap-2 px-4 py-2 bg-yellow-500/20 rounded-xl mb-6">
-                      <Timer size={18} className="text-yellow-400" />
-                      <span className="font-mono text-yellow-400 font-bold">{formatCountdown(countdown)}</span>
-                    </div>
+                    {countdown > 0 && (
+                      <div className="inline-flex items-center gap-2 px-4 py-2 bg-yellow-500/20 rounded-xl mb-6">
+                        <Timer size={18} className="text-yellow-400" />
+                        <span className="font-mono text-yellow-400 font-bold">{formatCountdown(countdown)}</span>
+                      </div>
+                    )}
 
                     {/* Transfer Details Summary */}
                     <div className="bg-slate-800/50 rounded-xl p-4 mb-6 text-left">
@@ -621,7 +661,7 @@ const Wallet = () => {
                         onClick={() => setDepositStep('payment')}
                         className="flex-1 bg-slate-700 text-gray-300 font-bold py-3 rounded-xl hover:bg-slate-600 transition"
                       >
-                        View Account Details
+                        View Details
                       </button>
                     </div>
 
@@ -635,11 +675,10 @@ const Wallet = () => {
                   </div>
                 </>
               )}
-
             </div>
           )}
 
-          {/* ========== WITHDRAW TAB ========== */}
+          {/* WITHDRAW TAB */}
           {activeTab === 'withdraw' && (
             <div>
               <h2 className="text-2xl font-bold text-white mb-6">Withdraw to Bank Account</h2>
@@ -658,7 +697,7 @@ const Wallet = () => {
                     required
                   />
                   <p className="text-xs text-gray-500 mt-2">
-                    Available: ₦{(parseFloat(walletData?.nairaBalance || 0) - parseFloat(walletData?.lockedBalance || 0)).toLocaleString()} | Minimum: ₦1,000
+                    Available: ₦{walletData ? (parseFloat(walletData.nairaBalance || 0) - parseFloat(walletData.lockedBalance || 0)).toLocaleString() : '0.00'} | Minimum: ₦1,000
                   </p>
                 </div>
 
@@ -729,13 +768,16 @@ const Wallet = () => {
             </div>
           )}
 
-          {/* ========== HISTORY TAB ========== */}
+          {/* HISTORY TAB */}
           {activeTab === 'history' && (
             <div>
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-2xl font-bold text-white">Transaction History</h2>
                 <button 
-                  onClick={fetchTransactions}
+                  onClick={() => {
+                    fetchTransactions();
+                    toast.success('Refreshed');
+                  }}
                   className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition"
                   title="Refresh"
                 >
@@ -743,14 +785,14 @@ const Wallet = () => {
                 </button>
               </div>
               
-              {transactions.length === 0 ? (
+              {!transactions || transactions.length === 0 ? (
                 <div className="text-center py-12 text-gray-500">
                   <Clock size={48} className="mx-auto mb-4 opacity-20" />
                   <p>No transactions yet</p>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {transactions.map(tx => (
+                  {transactions.map((tx) => (
                     <div key={tx.id} className="bg-slate-900/50 p-4 rounded-2xl border border-slate-700/50 flex items-center justify-between hover:bg-slate-900/70 transition">
                       <div className="flex items-center gap-4">
                         <div className="p-3 bg-slate-800 rounded-xl">
