@@ -1,8 +1,19 @@
+
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
-import { UserPlus, TrendingUp, Wallet, Shield } from 'lucide-react';
+import { 
+  UserPlus, 
+  TrendingUp, 
+  Wallet, 
+  Shield, 
+  Eye, 
+  EyeOff,
+  CheckCircle,
+  XCircle,
+  AlertCircle
+} from 'lucide-react';
 
 const Register = () => {
   const [formData, setFormData] = useState({
@@ -15,20 +26,163 @@ const Register = () => {
     referralCode: '',
   });
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [errors, setErrors] = useState({});
   const { register } = useAuth();
   const navigate = useNavigate();
 
+  // ========== VALIDATION FUNCTIONS ==========
+  const validateFullName = (name) => {
+    if (!name || name.trim().length < 3) {
+      return 'Full name must be at least 3 characters';
+    }
+    if (name.trim().length > 100) {
+      return 'Full name must be less than 100 characters';
+    }
+    // Only letters and spaces
+    if (!/^[a-zA-Z\s]+$/.test(name.trim())) {
+      return 'Full name can only contain letters and spaces';
+    }
+    return null;
+  };
+
+  const validatePhoneNumber = (phone) => {
+    if (!phone) {
+      return 'Phone number is required';
+    }
+    // Remove any spaces or dashes
+    const cleanPhone = phone.replace(/[\s-]/g, '');
+    
+    if (!cleanPhone.startsWith('0')) {
+      return 'Phone number must start with 0';
+    }
+    if (cleanPhone.length !== 11) {
+      return 'Phone number must be exactly 11 digits';
+    }
+    if (!/^\d+$/.test(cleanPhone)) {
+      return 'Phone number can only contain digits';
+    }
+    return null;
+  };
+
+  const validateUsername = (username) => {
+    if (!username || username.length < 3) {
+      return 'Username must be at least 3 characters';
+    }
+    if (username.length > 30) {
+      return 'Username must be less than 30 characters';
+    }
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+      return 'Username can only contain letters, numbers and underscore';
+    }
+    return null;
+  };
+
+  const validateEmail = (email) => {
+    if (!email) {
+      return 'Email is required';
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return 'Invalid email format';
+    }
+    return null;
+  };
+
+  const validatePassword = (password) => {
+    if (!password || password.length < 8) {
+      return 'Password must be at least 8 characters';
+    }
+    if (!/[A-Z]/.test(password)) {
+      return 'Password must contain at least one uppercase letter';
+    }
+    if (!/[a-z]/.test(password)) {
+      return 'Password must contain at least one lowercase letter';
+    }
+    if (!/[0-9]/.test(password)) {
+      return 'Password must contain at least one number';
+    }
+    return null;
+  };
+
+  // ========== REAL-TIME VALIDATION ==========
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData({ ...formData, [name]: value });
+
+    // Clear error when user starts typing
+    if (errors[name]) {
+      setErrors({ ...errors, [name]: null });
+    }
+  };
+
+  // ========== VALIDATE ON BLUR ==========
+  const handleBlur = (e) => {
+    const { name, value } = e.target;
+    let error = null;
+
+    switch (name) {
+      case 'fullName':
+        error = validateFullName(value);
+        break;
+      case 'phoneNumber':
+        error = validatePhoneNumber(value);
+        break;
+      case 'username':
+        error = validateUsername(value);
+        break;
+      case 'email':
+        error = validateEmail(value);
+        break;
+      case 'password':
+        error = validatePassword(value);
+        break;
+      case 'confirmPassword':
+        if (value !== formData.password) {
+          error = 'Passwords do not match';
+        }
+        break;
+      default:
+        break;
+    }
+
+    if (error) {
+      setErrors({ ...errors, [name]: error });
+    }
+  };
+
+  // ========== FORM SUBMIT ==========
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Validation
+    // Validate all fields
+    const newErrors = {};
+
+    const fullNameError = validateFullName(formData.fullName);
+    if (fullNameError) newErrors.fullName = fullNameError;
+
+    const phoneError = validatePhoneNumber(formData.phoneNumber);
+    if (phoneError) newErrors.phoneNumber = phoneError;
+
+    const usernameError = validateUsername(formData.username);
+    if (usernameError) newErrors.username = usernameError;
+
+    const emailError = validateEmail(formData.email);
+    if (emailError) newErrors.email = emailError;
+
+    const passwordError = validatePassword(formData.password);
+    if (passwordError) newErrors.password = passwordError;
+
     if (formData.password !== formData.confirmPassword) {
-      toast.error('Passwords do not match');
-      return;
+      newErrors.confirmPassword = 'Passwords do not match';
     }
 
-    if (formData.password.length < 8) {
-      toast.error('Password must be at least 8 characters');
+    // If there are errors, show them and stop
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      const firstError = Object.values(newErrors)[0];
+      toast.error(firstError);
       return;
     }
 
@@ -36,18 +190,86 @@ const Register = () => {
 
     try {
       const { confirmPassword, ...registerData } = formData;
+      
+      // Clean phone number (remove spaces/dashes)
+      registerData.phoneNumber = registerData.phoneNumber.replace(/[\s-]/g, '');
+      
       await register(registerData);
       toast.success('Account created successfully! 🎉');
       navigate('/');
     } catch (error) {
+      console.error('Registration error:', error);
       toast.error(error.message || 'Registration failed');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+  // ========== INPUT FIELD COMPONENT ==========
+  const InputField = ({ 
+    label, 
+    name, 
+    type = 'text', 
+    placeholder, 
+    required = false,
+    icon = null,
+    showToggle = false 
+  }) => {
+    const hasError = errors[name];
+    const hasValue = formData[name]?.length > 0;
+    
+    return (
+      <div>
+        <label className="block text-sm font-medium text-gray-300 mb-2">
+          {label} {required && <span className="text-red-500">*</span>}
+        </label>
+        <div className="relative">
+          <input
+            type={showToggle ? (name === 'password' ? (showPassword ? 'text' : 'password') : (showConfirmPassword ? 'text' : 'password')) : type}
+            name={name}
+            value={formData[name]}
+            onChange={handleChange}
+            onBlur={handleBlur}
+            className={`w-full px-4 py-3 bg-slate-900/50 border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 transition pr-12 ${
+              hasError 
+                ? 'border-red-500 focus:ring-red-500' 
+                : hasValue && !hasError
+                ? 'border-green-500 focus:ring-green-500'
+                : 'border-slate-600 focus:ring-primary focus:border-transparent'
+            }`}
+            placeholder={placeholder}
+            required={required}
+          />
+          
+          {/* Status Icon */}
+          <div className="absolute right-3 top-1/2 transform -translate-y-1/2 flex items-center gap-2">
+            {showToggle && (
+              <button
+                type="button"
+                onClick={() => name === 'password' ? setShowPassword(!showPassword) : setShowConfirmPassword(!showConfirmPassword)}
+                className="text-gray-400 hover:text-white"
+              >
+                {(name === 'password' ? showPassword : showConfirmPassword) ? (
+                  <EyeOff size={18} />
+                ) : (
+                  <Eye size={18} />
+                )}
+              </button>
+            )}
+            {hasError && <XCircle size={18} className="text-red-500" />}
+            {hasValue && !hasError && <CheckCircle size={18} className="text-green-500" />}
+          </div>
+        </div>
+        
+        {/* Error Message */}
+        {hasError && (
+          <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+            <AlertCircle size={14} />
+            {hasError}
+          </p>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -103,102 +325,181 @@ const Register = () => {
 
           <div className="bg-slate-800/50 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-slate-700">
             <h2 className="text-3xl font-bold text-white mb-2">Create Account</h2>
-            <p className="text-gray-400 mb-8">Join thousands of traders</p>
+            <p className="text-gray-400 mb-6">Join thousands of traders</p>
+
+            {/* Required Fields Notice */}
+            <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3 mb-6">
+              <p className="text-blue-400 text-sm flex items-center gap-2">
+                <AlertCircle size={16} />
+                Fields marked with <span className="text-red-500">*</span> are required
+              </p>
+            </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Full Name - REQUIRED */}
+              <InputField
+                label="Full Name"
+                name="fullName"
+                placeholder="Enter your full name"
+                required={true}
+              />
+
+              {/* Phone Number - REQUIRED */}
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Username *
+                  Phone Number <span className="text-red-500">*</span>
                 </label>
-                <input
-                  type="text"
-                  name="username"
-                  value={formData.username}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 bg-slate-900/50 border border-slate-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition"
-                  placeholder="Choose a username"
-                  required
-                />
+                <div className="relative">
+                  <input
+                    type="tel"
+                    name="phoneNumber"
+                    value={formData.phoneNumber}
+                    onChange={handleChange}
+                    onBlur={handleBlur}
+                    className={`w-full px-4 py-3 bg-slate-900/50 border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 transition pr-12 ${
+                      errors.phoneNumber 
+                        ? 'border-red-500 focus:ring-red-500' 
+                        : formData.phoneNumber?.length > 0 && !errors.phoneNumber
+                        ? 'border-green-500 focus:ring-green-500'
+                        : 'border-slate-600 focus:ring-primary focus:border-transparent'
+                    }`}
+                    placeholder="08012345678"
+                    required
+                    maxLength={11}
+                  />
+                  <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                    {errors.phoneNumber && <XCircle size={18} className="text-red-500" />}
+                    {formData.phoneNumber?.length === 11 && !errors.phoneNumber && (
+                      <CheckCircle size={18} className="text-green-500" />
+                    )}
+                  </div>
+                </div>
+                {errors.phoneNumber && (
+                  <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                    <AlertCircle size={14} />
+                    {errors.phoneNumber}
+                  </p>
+                )}
+                <p className="mt-1 text-xs text-gray-500">
+                  Must start with 0 and be exactly 11 digits (e.g., 08012345678)
+                </p>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Email *
-                </label>
-                <input
-                  type="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 bg-slate-900/50 border border-slate-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition"
-                  placeholder="your@email.com"
-                  required
-                />
-              </div>
+              {/* Username - REQUIRED */}
+              <InputField
+                label="Username"
+                name="username"
+                placeholder="Choose a username"
+                required={true}
+              />
 
+              {/* Email - REQUIRED */}
+              <InputField
+                label="Email"
+                name="email"
+                type="email"
+                placeholder="your@email.com"
+                required={true}
+              />
+
+              {/* Password Fields */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Password *
+                    Password <span className="text-red-500">*</span>
                   </label>
-                  <input
-                    type="password"
-                    name="password"
-                    value={formData.password}
-                    onChange={handleChange}
-                    className="w-full px-4 py-3 bg-slate-900/50 border border-slate-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition"
-                    placeholder="••••••••"
-                    required
-                  />
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      name="password"
+                      value={formData.password}
+                      onChange={handleChange}
+                      onBlur={handleBlur}
+                      className={`w-full px-4 py-3 bg-slate-900/50 border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 transition pr-10 ${
+                        errors.password 
+                          ? 'border-red-500 focus:ring-red-500' 
+                          : formData.password?.length >= 8 && !errors.password
+                          ? 'border-green-500 focus:ring-green-500'
+                          : 'border-slate-600 focus:ring-primary focus:border-transparent'
+                      }`}
+                      placeholder="••••••••"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white"
+                    >
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                  {errors.password && (
+                    <p className="mt-1 text-xs text-red-500">{errors.password}</p>
+                  )}
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Confirm *
+                    Confirm <span className="text-red-500">*</span>
                   </label>
-                  <input
-                    type="password"
-                    name="confirmPassword"
-                    value={formData.confirmPassword}
-                    onChange={handleChange}
-                    className="w-full px-4 py-3 bg-slate-900/50 border border-slate-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition"
-                    placeholder="••••••••"
-                    required
-                  />
+                  <div className="relative">
+                    <input
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      name="confirmPassword"
+                      value={formData.confirmPassword}
+                      onChange={handleChange}
+                      onBlur={handleBlur}
+                      className={`w-full px-4 py-3 bg-slate-900/50 border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 transition pr-10 ${
+                        errors.confirmPassword 
+                          ? 'border-red-500 focus:ring-red-500' 
+                          : formData.confirmPassword?.length >= 8 && formData.confirmPassword === formData.password
+                          ? 'border-green-500 focus:ring-green-500'
+                          : 'border-slate-600 focus:ring-primary focus:border-transparent'
+                      }`}
+                      placeholder="••••••••"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white"
+                    >
+                      {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                  {errors.confirmPassword && (
+                    <p className="mt-1 text-xs text-red-500">{errors.confirmPassword}</p>
+                  )}
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Full Name (Optional)
-                </label>
-                <input
-                  type="text"
-                  name="fullName"
-                  value={formData.fullName}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 bg-slate-900/50 border border-slate-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition"
-                  placeholder="John Doe"
-                />
+              {/* Password Requirements */}
+              <div className="bg-slate-900/50 rounded-lg p-3">
+                <p className="text-xs text-gray-400 mb-2">Password must contain:</p>
+                <div className="grid grid-cols-2 gap-1 text-xs">
+                  <div className={`flex items-center gap-1 ${formData.password?.length >= 8 ? 'text-green-500' : 'text-gray-500'}`}>
+                    {formData.password?.length >= 8 ? <CheckCircle size={12} /> : <XCircle size={12} />}
+                    At least 8 characters
+                  </div>
+                  <div className={`flex items-center gap-1 ${/[A-Z]/.test(formData.password) ? 'text-green-500' : 'text-gray-500'}`}>
+                    {/[A-Z]/.test(formData.password) ? <CheckCircle size={12} /> : <XCircle size={12} />}
+                    One uppercase letter
+                  </div>
+                  <div className={`flex items-center gap-1 ${/[a-z]/.test(formData.password) ? 'text-green-500' : 'text-gray-500'}`}>
+                    {/[a-z]/.test(formData.password) ? <CheckCircle size={12} /> : <XCircle size={12} />}
+                    One lowercase letter
+                  </div>
+                  <div className={`flex items-center gap-1 ${/[0-9]/.test(formData.password) ? 'text-green-500' : 'text-gray-500'}`}>
+                    {/[0-9]/.test(formData.password) ? <CheckCircle size={12} /> : <XCircle size={12} />}
+                    One number
+                  </div>
+                </div>
               </div>
 
+              {/* Referral Code - OPTIONAL */}
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Phone Number (Optional)
-                </label>
-                <input
-                  type="tel"
-                  name="phoneNumber"
-                  value={formData.phoneNumber}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 bg-slate-900/50 border border-slate-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition"
-                  placeholder="08012345678"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Referral Code (Optional)
+                  Referral Code <span className="text-gray-500">(Optional)</span>
                 </label>
                 <input
                   type="text"
@@ -210,10 +511,11 @@ const Register = () => {
                 />
               </div>
 
+              {/* Submit Button */}
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-gradient-to-r from-primary to-secondary text-white font-semibold py-3 rounded-lg hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+                className="w-full bg-gradient-to-r from-primary to-secondary text-white font-semibold py-4 rounded-lg hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 mt-6"
               >
                 {loading ? (
                   <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
