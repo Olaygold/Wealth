@@ -14,6 +14,8 @@ const { authLimiter } = require('../middleware/rateLimiter');
 // Public routes
 router.post('/register', authLimiter, register);
 router.post('/login', authLimiter, login);
+router.post('/forgot-password', forgotPassword);  // ADD THIS
+router.post('/reset-password', resetPassword);    // ADD THIS
 
 // Protected routes
 router.get('/me', protect, getMe);
