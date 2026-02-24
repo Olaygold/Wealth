@@ -13,6 +13,7 @@ const crypto = require('crypto');
 /**
  * Generate unique deposit amount (add random kobo to make matching reliable)
  * This ensures each pending deposit has a unique amount for matching
+ * NO FEES - User deposits exact amount, we just add kobo for uniqueness
  */
 const generateUniqueAmount = (baseAmount) => {
   const randomKobo = Math.floor(Math.random() * 99) + 1; // 1-99 kobo
@@ -169,7 +170,7 @@ const initiateNairaDeposit = async (req, res) => {
     const reference = `WTH-${timestamp}-${randomHash}`;
 
     // Generate unique amount (add random kobo for matching)
-    // This ensures each deposit can be uniquely identified by amount
+    // NO FEES - This is just for identification, user gets full credited amount
     const uniqueAmount = generateUniqueAmount(amount);
 
     // Create pending deposit
@@ -177,7 +178,7 @@ const initiateNairaDeposit = async (req, res) => {
       userId: req.user.id,
       virtualAccountId: virtualAccount.id,
       amount: uniqueAmount,
-      originalAmount: parseFloat(amount), // Store original amount for display
+      originalAmount: parseFloat(amount), // Store original amount for credit
       reference,
       status: 'pending',
       expiresAt: new Date(Date.now() + 30 * 60 * 1000) // 30 minutes expiry
@@ -194,7 +195,7 @@ const initiateNairaDeposit = async (req, res) => {
       userId: req.user.id,
       type: 'deposit',
       method: 'naira',
-      amount: uniqueAmount,
+      amount: parseFloat(amount), // ✅ Store ORIGINAL amount (no fees)
       currency: 'NGN',
       status: 'pending',
       reference,
@@ -234,7 +235,7 @@ const initiateNairaDeposit = async (req, res) => {
         instructions: [
           `Transfer EXACTLY ₦${uniqueAmount.toFixed(2)} to the account above`,
           `Transfer from your personal bank account only`,
-          `Your wallet will be credited automatically within 2 minutes`,
+          `Your wallet will be credited with ₦${parseFloat(amount).toLocaleString()} automatically`,
           `This deposit session expires in 30 minutes`
         ],
 
@@ -242,7 +243,8 @@ const initiateNairaDeposit = async (req, res) => {
         warnings: [
           `⚠️ IMPORTANT: Transfer EXACTLY ₦${uniqueAmount.toFixed(2)} (including kobo)`,
           'Incorrect amount may delay your deposit',
-          'Do not transfer from a third-party account'
+          'Do not transfer from a third-party account',
+          '🎉 NO FEES - You get 100% of what you deposit!'
         ]
       }
     });
@@ -333,23 +335,23 @@ const handleAspfiyWebhook = async (req, res) => {
 
     // Extract webhook data
     const {
-      reference: aspfiyReference,        // Aspfiy's transaction reference
-      merchant_reference,                 // Our account reference (WEALTH_xxx)
-      aspfiy_ref: interBankReference,    // Inter-bank reference
-      amount,                            // Payment amount (as string)
-      created_at,                        // Payment date
+      reference: aspfiyReference,
+      merchant_reference,
+      wiaxy_ref: interBankReference,
+      amount,
+      created_at,
       account: {
-        account_number,                  // Virtual account number
+        account_number,
         account_name,
         bank_name
       },
-      payer: {
-        account_number: payerAccount,
-        first_name: payerFirstName,
-        last_name: payerLastName,
-        createdAt: paymentDate
-      }
+      payer = {},
+      customer = {}
     } = data;
+
+    const payerAccount = payer.account_number || '';
+    const payerFirstName = customer.firstName || payer.first_name || '';
+    const payerLastName = customer.lastName || payer.last_name || '';
 
     const receivedAmount = parseFloat(amount);
 
@@ -396,28 +398,18 @@ const handleAspfiyWebhook = async (req, res) => {
 
     console.log('✅ Virtual account found:', virtualAccount.id, virtualAccount.accountName);
 
-    // ===== FIND MATCHING PENDING DEPOSIT =====
-    // Match by: virtual account + exact amount + status pending + not expired
+    // ===== FIND MATCHING PENDING DEPOSIT (2-STEP APPROACH) =====
+    // STEP 1: Find without lock (no JOIN lock issue)
     const pendingDeposit = await PendingDeposit.findOne({
       where: {
         virtualAccountId: virtualAccount.id,
         status: 'pending',
         expiresAt: { [sequelize.Sequelize.Op.gt]: new Date() },
-        // Match exact amount (with small tolerance for rounding)
         amount: {
           [sequelize.Sequelize.Op.between]: [receivedAmount - 0.01, receivedAmount + 0.01]
         }
       },
-      include: [{
-        model: User,
-        as: 'user',
-        include: [{
-          model: Wallet,
-          as: 'wallet'
-        }]
-      }],
-      order: [['createdAt', 'ASC']], // FIFO - first created gets matched first
-      lock: dbTransaction.LOCK.UPDATE,
+      order: [['createdAt', 'ASC']],
       transaction: dbTransaction
     });
 
@@ -433,12 +425,13 @@ const handleAspfiyWebhook = async (req, res) => {
             [sequelize.Sequelize.Op.between]: [receivedAmount - 0.01, receivedAmount + 0.01]
           }
         },
-        order: [['completedAt', 'DESC']]
+        order: [['completedAt', 'DESC']],
+        transaction: dbTransaction
       });
 
       if (completedDeposit) {
         const timeDiff = Date.now() - new Date(completedDeposit.completedAt).getTime();
-        if (timeDiff < 60000) { // Within 1 minute - likely duplicate webhook
+        if (timeDiff < 60000) {
           console.log('⚠️ Likely duplicate webhook - deposit recently completed');
           await dbTransaction.commit();
           return res.json({ 
@@ -479,10 +472,17 @@ const handleAspfiyWebhook = async (req, res) => {
       });
     }
 
+    // STEP 2: Lock the pending deposit
+    await pendingDeposit.reload({
+      lock: dbTransaction.LOCK.UPDATE,
+      transaction: dbTransaction
+    });
+
     console.log('✅ Matching deposit found:');
     console.log('   Reference:', pendingDeposit.reference);
     console.log('   User ID:', pendingDeposit.userId);
     console.log('   Expected Amount: ₦' + pendingDeposit.amount);
+    console.log('   Original Amount (to credit): ₦' + pendingDeposit.originalAmount);
 
     // ===== IDEMPOTENCY CHECK =====
     if (pendingDeposit.status === 'completed') {
@@ -494,8 +494,16 @@ const handleAspfiyWebhook = async (req, res) => {
       });
     }
 
-    // ===== CREDIT USER WALLET =====
-    const wallet = pendingDeposit.user?.wallet;
+    // ===== GET USER AND WALLET =====
+    const user = await User.findByPk(pendingDeposit.userId, {
+      include: [{
+        model: Wallet,
+        as: 'wallet'
+      }],
+      transaction: dbTransaction
+    });
+
+    const wallet = user?.wallet;
     
     if (!wallet) {
       console.error('❌ Wallet not found for user:', pendingDeposit.userId);
@@ -506,15 +514,19 @@ const handleAspfiyWebhook = async (req, res) => {
       });
     }
 
+    // ===== CREDIT USER WALLET =====
+    // ✅ Credit ORIGINAL AMOUNT (no fees deducted)
+    const amountToCredit = parseFloat(pendingDeposit.originalAmount);
     const balanceBefore = parseFloat(wallet.nairaBalance) || 0;
-    const balanceAfter = balanceBefore + receivedAmount;
+    const balanceAfter = balanceBefore + amountToCredit;
 
     await wallet.update({
       nairaBalance: balanceAfter,
-      totalDeposited: parseFloat(wallet.totalDeposited || 0) + receivedAmount
+      totalDeposited: parseFloat(wallet.totalDeposited || 0) + amountToCredit
     }, { transaction: dbTransaction });
 
     console.log(`✅ Wallet updated: ₦${balanceBefore.toFixed(2)} → ₦${balanceAfter.toFixed(2)}`);
+    console.log(`✅ Amount credited: ₦${amountToCredit.toFixed(2)} (NO FEES)`);
 
     // ===== UPDATE PENDING DEPOSIT =====
     await pendingDeposit.update({
@@ -548,7 +560,9 @@ const handleAspfiyWebhook = async (req, res) => {
           accountNumber: payerAccount,
           name: `${payerFirstName} ${payerLastName}`
         },
-        processedAt: new Date()
+        processedAt: new Date(),
+        amountCredited: amountToCredit,
+        noFeesCharged: true
       }
     }, {
       where: { reference: pendingDeposit.reference },
@@ -558,7 +572,7 @@ const handleAspfiyWebhook = async (req, res) => {
     await dbTransaction.commit();
 
     console.log('✅✅✅ ====== DEPOSIT COMPLETED ======');
-    console.log(`✅ Amount: ₦${receivedAmount.toFixed(2)}`);
+    console.log(`✅ Amount Credited: ₦${amountToCredit.toFixed(2)}`);
     console.log(`✅ User: ${pendingDeposit.userId}`);
     console.log(`✅ New Balance: ₦${balanceAfter.toFixed(2)}`);
     console.log('✅✅✅ ================================');
@@ -567,11 +581,11 @@ const handleAspfiyWebhook = async (req, res) => {
     const io = req.app.get('io');
     if (io) {
       io.to(`user_${pendingDeposit.userId}`).emit('deposit_confirmed', {
-        amount: receivedAmount,
+        amount: amountToCredit,
         newBalance: balanceAfter,
         reference: pendingDeposit.reference,
         timestamp: new Date(),
-        message: `Your deposit of ₦${receivedAmount.toLocaleString()} has been confirmed!`
+        message: `Your deposit of ₦${amountToCredit.toLocaleString()} has been confirmed! 🎉`
       });
       console.log('📤 Real-time notification sent to user');
     }
@@ -645,6 +659,7 @@ const checkDepositStatus = async (req, res) => {
       data: {
         reference: pendingDeposit.reference,
         amount: parseFloat(pendingDeposit.amount),
+        originalAmount: parseFloat(pendingDeposit.originalAmount),
         status: isExpired ? 'expired' : pendingDeposit.status,
         isExpired,
         timeRemaining: timeRemaining > 0 ? `${timeRemaining} minutes` : 'Expired',
@@ -703,6 +718,7 @@ const getPendingDeposit = async (req, res) => {
       data: {
         reference: pendingDeposit.reference,
         amount: parseFloat(pendingDeposit.amount),
+        originalAmount: parseFloat(pendingDeposit.originalAmount),
         accountNumber: pendingDeposit.virtualAccount.accountNumber,
         accountName: pendingDeposit.virtualAccount.accountName,
         bankName: pendingDeposit.virtualAccount.bankName,
@@ -939,7 +955,7 @@ const getTransactions = async (req, res) => {
     const transactions = await Transaction.findAndCountAll({
       where,
       order: [['createdAt', 'DESC']],
-      limit: Math.min(parseInt(limit), 100), // Max 100 per page
+      limit: Math.min(parseInt(limit), 100),
       offset: (Math.max(parseInt(page), 1) - 1) * parseInt(limit)
     });
 
@@ -1042,15 +1058,6 @@ const cleanupExpiredDeposits = async () => {
   }
 };
 
-
-
-
-
-
-
-  
-
-
 // =====================================================
 // EXPORTS
 // =====================================================
@@ -1064,6 +1071,5 @@ module.exports = {
   requestWithdrawal,
   getTransactions,
   getUnmatchedDeposits,
-  cleanupExpiredDeposits,
-  getUnmatchedDeposits
+  cleanupExpiredDeposits
 };
