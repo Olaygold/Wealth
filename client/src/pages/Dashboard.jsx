@@ -9,7 +9,6 @@ import {
   TrendingUp,
   TrendingDown,
   Clock,
-  Users,
   ArrowUpRight,
   ArrowDownRight,
   Wallet as WalletIcon,
@@ -31,14 +30,33 @@ import {
   RefreshCw,
   Loader2,
   Wifi,
-  WifiOff
+  WifiOff,
+  TrendingUp as TrendUp,
+  Users
 } from 'lucide-react';
 
+// ==================== HELPER FUNCTIONS ====================
+const roundToTwo = (num) => Math.round((num + Number.EPSILON) * 100) / 100;
+
+const formatCurrency = (amount) => {
+  return parseFloat(amount || 0).toLocaleString('en-NG', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  });
+};
+
+const formatTime = (seconds) => {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
+
 // ==================== PROFESSIONAL TRADING CHART ====================
-const TradingChart = ({ priceHistory, startPrice }) => {
+const TradingChart = ({ priceHistory, startPrice, currentPrice }) => {
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null);
   const seriesRef = useRef(null);
+  const priceLineRef = useRef(null);
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
@@ -50,15 +68,17 @@ const TradingChart = ({ priceHistory, startPrice }) => {
         textColor: '#9ca3af',
       },
       grid: {
-        vertLines: { color: '#1e293b' },
-        horzLines: { color: '#1e293b' },
+        vertLines: { color: '#1e293b', style: 1 },
+        horzLines: { color: '#1e293b', style: 1 },
       },
       width: chartContainerRef.current.clientWidth,
-      height: 200,
+      height: 220,
       timeScale: {
         timeVisible: true,
         secondsVisible: true,
         borderColor: '#334155',
+        rightOffset: 5,
+        barSpacing: 10,
       },
       rightPriceScale: {
         borderColor: '#334155',
@@ -73,16 +93,21 @@ const TradingChart = ({ priceHistory, startPrice }) => {
           color: '#6366f1',
           width: 1,
           style: 2,
+          labelBackgroundColor: '#6366f1',
         },
         horzLine: {
           color: '#6366f1',
           width: 1,
           style: 2,
+          labelBackgroundColor: '#6366f1',
         },
+      },
+      handleScroll: {
+        vertTouchDrag: false,
       },
     });
 
-    // Add area series
+    // Add area series with gradient
     const areaSeries = chart.addAreaSeries({
       lineColor: '#6366f1',
       topColor: 'rgba(99, 102, 241, 0.4)',
@@ -90,27 +115,19 @@ const TradingChart = ({ priceHistory, startPrice }) => {
       lineWidth: 2,
       priceLineVisible: true,
       lastValueVisible: true,
+      crosshairMarkerVisible: true,
+      crosshairMarkerRadius: 6,
     });
 
     chartRef.current = chart;
     seriesRef.current = areaSeries;
 
-    // Add start price line
-    if (startPrice > 0) {
-      areaSeries.createPriceLine({
-        price: startPrice,
-        color: '#f59e0b',
-        lineWidth: 2,
-        lineStyle: 2,
-        axisLabelVisible: true,
-        title: 'Start',
-      });
-    }
-
     // Handle resize
     const handleResize = () => {
-      if (chartContainerRef.current) {
-        chart.applyOptions({ width: chartContainerRef.current.clientWidth });
+      if (chartContainerRef.current && chartRef.current) {
+        chartRef.current.applyOptions({ 
+          width: chartContainerRef.current.clientWidth 
+        });
       }
     };
 
@@ -118,27 +135,137 @@ const TradingChart = ({ priceHistory, startPrice }) => {
 
     return () => {
       window.removeEventListener('resize', handleResize);
-      chart.remove();
+      if (chartRef.current) {
+        chartRef.current.remove();
+      }
     };
+  }, []);
+
+  // Update start price line
+  useEffect(() => {
+    if (!seriesRef.current || !startPrice || startPrice <= 0) return;
+
+    // Remove old price line
+    if (priceLineRef.current) {
+      seriesRef.current.removePriceLine(priceLineRef.current);
+    }
+
+    // Add new start price line
+    priceLineRef.current = seriesRef.current.createPriceLine({
+      price: startPrice,
+      color: '#f59e0b',
+      lineWidth: 2,
+      lineStyle: 2,
+      axisLabelVisible: true,
+      title: 'Start',
+    });
   }, [startPrice]);
 
-  // Update data
+  // Update chart data
   useEffect(() => {
     if (!seriesRef.current || priceHistory.length === 0) return;
 
+    const now = Math.floor(Date.now() / 1000);
     const chartData = priceHistory.map((item, index) => ({
-      time: Math.floor(Date.now() / 1000) - (priceHistory.length - index) * 5,
+      time: now - (priceHistory.length - index - 1) * 5,
       value: item.price,
     }));
 
     seriesRef.current.setData(chartData);
+
+    // Fit content
+    if (chartRef.current) {
+      chartRef.current.timeScale().fitContent();
+    }
   }, [priceHistory]);
 
   return (
-    <div 
-      ref={chartContainerRef} 
-      className="w-full h-[200px] rounded-xl overflow-hidden"
-    />
+    <div className="relative">
+      <div 
+        ref={chartContainerRef} 
+        className="w-full h-[220px] rounded-xl overflow-hidden"
+      />
+      {priceHistory.length === 0 && (
+        <div className="absolute inset-0 flex items-center justify-center bg-slate-900/50 rounded-xl">
+          <div className="text-center">
+            <Activity className="w-8 h-8 text-primary animate-pulse mx-auto mb-2" />
+            <p className="text-gray-400 text-sm">Loading chart data...</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ==================== LIVE POOL INDICATOR ====================
+const LivePoolIndicator = ({ totalUp, totalDown, upBets, downBets }) => {
+  const total = totalUp + totalDown;
+  const upPercent = total > 0 ? (totalUp / total) * 100 : 50;
+  const downPercent = total > 0 ? (totalDown / total) * 100 : 50;
+
+  return (
+    <div className="bg-slate-900/50 rounded-xl p-4">
+      <div className="flex justify-between items-center mb-3">
+        <span className="text-sm text-white font-bold flex items-center gap-2">
+          <Users size={16} className="text-primary" />
+          Live Pool Distribution
+        </span>
+        <span className="text-xs text-green-500 font-bold flex items-center gap-1 animate-pulse">
+          <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+          LIVE
+        </span>
+      </div>
+      
+      {/* Progress Bar */}
+      <div className="h-4 bg-slate-700 rounded-full overflow-hidden flex mb-3">
+        <div 
+          className="bg-gradient-to-r from-green-600 to-green-400 transition-all duration-500 ease-out flex items-center justify-center"
+          style={{ width: `${upPercent}%` }}
+        >
+          {upPercent > 15 && (
+            <span className="text-[10px] text-white font-bold">{upPercent.toFixed(0)}%</span>
+          )}
+        </div>
+        <div 
+          className="bg-gradient-to-r from-red-400 to-red-600 transition-all duration-500 ease-out flex items-center justify-center"
+          style={{ width: `${downPercent}%` }}
+        >
+          {downPercent > 15 && (
+            <span className="text-[10px] text-white font-bold">{downPercent.toFixed(0)}%</span>
+          )}
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="flex items-center justify-between bg-green-500/10 p-3 rounded-lg">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="text-green-500" size={18} />
+            <div>
+              <p className="text-green-500 font-bold">UP</p>
+              <p className="text-xs text-gray-400">{upBets} bets</p>
+            </div>
+          </div>
+          <p className="text-green-500 font-black text-lg">₦{formatCurrency(totalUp)}</p>
+        </div>
+        <div className="flex items-center justify-between bg-red-500/10 p-3 rounded-lg">
+          <div className="flex items-center gap-2">
+            <TrendingDown className="text-red-500" size={18} />
+            <div>
+              <p className="text-red-500 font-bold">DOWN</p>
+              <p className="text-xs text-gray-400">{downBets} bets</p>
+            </div>
+          </div>
+          <p className="text-red-500 font-black text-lg">₦{formatCurrency(totalDown)}</p>
+        </div>
+      </div>
+
+      {/* Total Pool */}
+      <div className="mt-3 pt-3 border-t border-slate-700 text-center">
+        <span className="text-gray-400 text-sm">Total Pool: </span>
+        <span className="text-white font-black text-lg">₦{formatCurrency(total)}</span>
+      </div>
+    </div>
   );
 };
 
@@ -156,31 +283,31 @@ const UserGuideModal = ({ isOpen, onClose }) => {
     {
       icon: <Clock className="w-12 h-12 text-blue-500" />,
       title: "How Rounds Work ⏰",
-      content: "Each round lasts 5 minutes. You can place bets while the round is ACTIVE. Betting closes 10 seconds before the round ends.",
+      content: "Each round has 2 phases:\n• Betting Phase: Place your bets\n• Locked Phase: Wait for results\n\nBetting closes 10 seconds before round ends.",
       tip: "Watch the countdown timer - don't miss your chance to bet!"
     },
     {
       icon: <DollarSign className="w-12 h-12 text-green-500" />,
       title: "Placing a Bet 💰",
-      content: "1. Select your bet amount (min ₦100)\n2. Click 'PREDICT UP' if you think price will rise\n3. Click 'PREDICT DOWN' if you think price will fall",
-      tip: "Start small while learning, then increase your bets!"
+      content: "1. Select your bet amount (min ₦100)\n2. Check the potential payout\n3. Click PREDICT UP or PREDICT DOWN\n4. Wait for the round to end!",
+      tip: "The potential payout updates in real-time based on the pool!"
     },
     {
       icon: <Trophy className="w-12 h-12 text-yellow-500" />,
       title: "Winning & Payouts 🏆",
-      content: "If your prediction is correct, you WIN! Your payout depends on the pool ratio. More people betting against you = higher payout!",
-      tip: "The multiplier shows your potential payout (e.g., 1.8x means ₦1000 bet = ₦1800 return)"
+      content: "If your prediction is correct:\n• You get your bet back\n• Plus 70% of the losing pool!\n\nThe more opponents, the higher your potential win!",
+      tip: "No opponents = Full refund if you win"
     },
     {
       icon: <Zap className="w-12 h-12 text-orange-500" />,
-      title: "Swipe Between Rounds 👆",
-      content: "• LEFT slide: Previous round results\n• CENTER slide: Current active round\n• RIGHT slide: Upcoming round",
-      tip: "Learn from previous rounds to make better predictions!"
+      title: "Understanding Multipliers 📊",
+      content: "The multiplier shows your potential return:\n• 1.5x = ₦1000 bet wins ₦1500\n• 2.0x = ₦1000 bet wins ₦2000\n\nMultiplier changes as more bets come in!",
+      tip: "Higher multiplier = More profit if you win!"
     },
     {
       icon: <Shield className="w-12 h-12 text-purple-500" />,
-      title: "Important Rules 📋",
-      content: "• 20% platform fee on each bet\n• One bet per round\n• No betting in last 10 seconds\n• Ties = full refund",
+      title: "Fair System Rules 📋",
+      content: "• No upfront fees - full amount goes to pool\n• 30% fee only from LOSERS' pool\n• Winners share 70% of losers' pool\n• Tie = Full refund to everyone",
       tip: "Trade responsibly and only bet what you can afford!"
     }
   ];
@@ -206,7 +333,7 @@ const UserGuideModal = ({ isOpen, onClose }) => {
 
         {/* Content */}
         <div className="p-6">
-          <p className="text-gray-300 whitespace-pre-line text-center mb-4">
+          <p className="text-gray-300 whitespace-pre-line text-center mb-4 leading-relaxed">
             {steps[currentStep].content}
           </p>
           
@@ -262,58 +389,6 @@ const UserGuideModal = ({ isOpen, onClose }) => {
   );
 };
 
-// ==================== LIVE POOL INDICATOR ====================
-const LivePoolIndicator = ({ totalUp, totalDown, upBets, downBets }) => {
-  const total = totalUp + totalDown;
-  const upPercent = total > 0 ? (totalUp / total) * 100 : 50;
-  const downPercent = total > 0 ? (totalDown / total) * 100 : 50;
-
-  return (
-    <div className="bg-slate-900/50 rounded-xl p-4">
-      <div className="flex justify-between items-center mb-2">
-        <span className="text-xs text-gray-400 uppercase">Live Pool Distribution</span>
-        <span className="text-xs text-primary font-bold animate-pulse">● LIVE</span>
-      </div>
-      
-      {/* Progress Bar */}
-      <div className="h-3 bg-slate-700 rounded-full overflow-hidden flex mb-3">
-        <div 
-          className="bg-gradient-to-r from-green-600 to-green-400 transition-all duration-500 ease-out"
-          style={{ width: `${upPercent}%` }}
-        />
-        <div 
-          className="bg-gradient-to-r from-red-400 to-red-600 transition-all duration-500 ease-out"
-          style={{ width: `${downPercent}%` }}
-        />
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-green-500" />
-            <span className="text-green-400 text-sm">UP</span>
-          </div>
-          <div className="text-right">
-            <span className="text-green-500 font-bold">{upPercent.toFixed(0)}%</span>
-            <span className="text-gray-500 text-xs ml-2">({upBets})</span>
-          </div>
-        </div>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-red-500" />
-            <span className="text-red-400 text-sm">DOWN</span>
-          </div>
-          <div className="text-right">
-            <span className="text-red-500 font-bold">{downPercent.toFixed(0)}%</span>
-            <span className="text-gray-500 text-xs ml-2">({downBets})</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 // ==================== MAIN DASHBOARD COMPONENT ====================
 const Dashboard = () => {
   const { socket, isConnected } = useSocket();
@@ -335,32 +410,92 @@ const Dashboard = () => {
   const [showGuide, setShowGuide] = useState(false);
   const [walletData, setWalletData] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [lastUpdate, setLastUpdate] = useState(Date.now());
 
   // ========== CALCULATED VALUES ==========
   const walletBalance = parseFloat(walletData?.nairaBalance || 0);
   const lockedBalance = parseFloat(walletData?.lockedBalance || 0);
-  const availableBalance = walletBalance - lockedBalance;
+  const availableBalance = roundToTwo(walletBalance - lockedBalance);
   const priceChange = roundStartPrice > 0 ? ((currentPrice - roundStartPrice) / roundStartPrice) * 100 : 0;
   const canBet = currentRound?.status === 'active' && timeLeft >= 10;
 
-  // ========== LIVE MULTIPLIER CALCULATION ==========
-  const calculateMultiplier = useCallback((prediction) => {
-    if (!currentRound) return 1.8;
-    
+  // ========== MULTIPLIER CALCULATION (INCLUDING USER'S BET) ==========
+  const calculatePotentialPayout = useCallback((prediction) => {
+    if (!currentRound || betAmount <= 0) {
+      return { 
+        payout: 0, 
+        profit: 0, 
+        multiplier: 1.7, 
+        hasOpponents: false,
+        message: 'Enter bet amount'
+      };
+    }
+
+    let totalUp = parseFloat(currentRound.totalUpAmount || 0);
+    let totalDown = parseFloat(currentRound.totalDownAmount || 0);
+
+    // Add user's bet to calculation
+    if (prediction === 'up') {
+      totalUp += betAmount;
+    } else {
+      totalDown += betAmount;
+    }
+
+    // Check if there are opponents
+    const hasOpponents = prediction === 'up' ? totalDown > 0 : totalUp > 0;
+
+    if (!hasOpponents) {
+      return {
+        payout: betAmount,
+        profit: 0,
+        multiplier: 1.0,
+        hasOpponents: false,
+        message: 'Refund if you win (no opponents yet)'
+      };
+    }
+
+    // Calculate multiplier with user's bet included
+    let multiplier;
+    if (prediction === 'up') {
+      multiplier = roundToTwo(1 + (totalDown * 0.7) / totalUp);
+    } else {
+      multiplier = roundToTwo(1 + (totalUp * 0.7) / totalDown);
+    }
+
+    const payout = roundToTwo(betAmount * multiplier);
+    const profit = roundToTwo(payout - betAmount);
+
+    return {
+      payout,
+      profit,
+      multiplier,
+      hasOpponents: true,
+      message: null
+    };
+  }, [currentRound, betAmount]);
+
+  // ========== GET CURRENT POOL MULTIPLIER (WITHOUT USER'S BET) ==========
+  const getCurrentMultiplier = useCallback((prediction) => {
+    if (!currentRound) return { value: 1.7, display: '~1.7x' };
+
     const totalUp = parseFloat(currentRound.totalUpAmount || 0);
     const totalDown = parseFloat(currentRound.totalDownAmount || 0);
 
-    if (totalUp === 0 && totalDown === 0) return 1.8; // Default
+    if (totalUp === 0 && totalDown === 0) {
+      return { value: 1.7, display: '~1.7x' };
+    }
 
     if (prediction === 'up') {
-      if (totalUp === 0) return 1.0;
-      if (totalDown === 0) return 1.0;
-      return Math.round((1 + (totalDown * 0.7) / totalUp) * 100) / 100;
+      if (totalUp === 0 || totalDown === 0) {
+        return { value: 1.0, display: totalDown === 0 ? 'N/A' : '~1.7x' };
+      }
+      const mult = roundToTwo(1 + (totalDown * 0.7) / totalUp);
+      return { value: mult, display: `${mult}x` };
     } else {
-      if (totalDown === 0) return 1.0;
-      if (totalUp === 0) return 1.0;
-      return Math.round((1 + (totalUp * 0.7) / totalDown) * 100) / 100;
+      if (totalDown === 0 || totalUp === 0) {
+        return { value: 1.0, display: totalUp === 0 ? 'N/A' : '~1.7x' };
+      }
+      const mult = roundToTwo(1 + (totalUp * 0.7) / totalDown);
+      return { value: mult, display: `${mult}x` };
     }
   }, [currentRound]);
 
@@ -404,7 +539,6 @@ const Dashboard = () => {
     const interval = setInterval(() => {
       fetchAllRounds();
       fetchMyBets();
-      setLastUpdate(Date.now());
     }, 3000);
 
     return () => clearInterval(interval);
@@ -430,7 +564,7 @@ const Dashboard = () => {
         setWalletData(data);
       }
     } catch (err) {
-      console.error('❌ Wallet fetch error:', err);
+      console.error('Wallet fetch error:', err);
     }
   };
 
@@ -449,7 +583,7 @@ const Dashboard = () => {
         }
       }
     } catch (err) {
-      console.error('❌ Rounds fetch error:', err);
+      console.error('Rounds fetch error:', err);
     }
   };
 
@@ -462,19 +596,14 @@ const Dashboard = () => {
         setCurrentPrice(parseFloat(price));
         setPriceHistory(prev => {
           const newEntry = {
-            time: new Date().toLocaleTimeString('en-US', { 
-              hour: '2-digit', 
-              minute: '2-digit', 
-              second: '2-digit', 
-              hour12: false 
-            }),
+            time: Date.now(),
             price: parseFloat(price)
           };
           return [...prev.slice(-59), newEntry];
         });
       }
     } catch (err) {
-      console.error('❌ Price fetch error:', err);
+      console.error('Price fetch error:', err);
     }
   };
 
@@ -484,7 +613,7 @@ const Dashboard = () => {
       const data = await api.get('/trading/my-bets/active');
       setMyActiveBets(data?.activeBets || []);
     } catch (err) {
-      console.error('❌ Bets fetch error:', err);
+      console.error('Bets fetch error:', err);
       setMyActiveBets([]);
     }
   };
@@ -493,19 +622,14 @@ const Dashboard = () => {
   useEffect(() => {
     if (!socket || !isConnected) return;
 
-    // Price updates - HIGH FREQUENCY
+    // Price updates
     socket.on('price_update', (data) => {
       if (data?.price) {
         const price = parseFloat(data.price);
         setCurrentPrice(price);
         setPriceHistory(prev => {
           const newEntry = {
-            time: new Date().toLocaleTimeString('en-US', { 
-              hour: '2-digit', 
-              minute: '2-digit', 
-              second: '2-digit', 
-              hour12: false 
-            }),
+            time: Date.now(),
             price: price
           };
           return [...prev.slice(-59), newEntry];
@@ -513,11 +637,10 @@ const Dashboard = () => {
       }
     });
 
-    // ✅ NEW: Bet placed by ANY user - Update pool instantly
+    // Bet placed by ANY user - Update pool instantly
     socket.on('bet_placed', (data) => {
       console.log('🎰 New bet placed:', data);
       
-      // Update current round pools instantly
       setCurrentRound(prev => {
         if (!prev || prev.id !== data.roundId) return prev;
         return {
@@ -530,9 +653,6 @@ const Dashboard = () => {
           downMultiplier: data.downMultiplier
         };
       });
-
-      // Show toast for other users' bets (optional)
-      // toast(`Someone bet on ${data.prediction.toUpperCase()}!`, { icon: '🎲' });
     });
 
     // Round started
@@ -543,7 +663,7 @@ const Dashboard = () => {
       if (data.startPrice) {
         setRoundStartPrice(parseFloat(data.startPrice));
       }
-      setPriceHistory([]); // Reset chart for new round
+      setPriceHistory([]);
       toast.success(`🚀 Round #${data.roundNumber} Started!`, { duration: 3000 });
       setActiveSlide(1);
     });
@@ -556,17 +676,17 @@ const Dashboard = () => {
       fetchWalletData();
       
       const emoji = data.result === 'up' ? '📈' : '📉';
-      toast.success(`${emoji} Round #${data.roundNumber} Ended: ${data.result.toUpperCase()}!`, { duration: 4000 });
+      toast.success(`${emoji} Round #${data.roundNumber} Ended: ${data.result?.toUpperCase()}!`, { duration: 4000 });
     });
 
     // Round locked
     socket.on('round_lock', (data) => {
       console.log('🔒 Round locked:', data);
       fetchAllRounds();
-      toast('🔒 Betting closed for this round!', { icon: '⏰' });
+      toast('🔒 Betting closed!', { icon: '⏰', duration: 3000 });
     });
 
-    // ✅ NEW: Balance update for current user
+    // Balance update for current user
     socket.on('balance_update', (data) => {
       console.log('💰 Balance update:', data);
       setWalletData(prev => ({
@@ -576,16 +696,16 @@ const Dashboard = () => {
       }));
     });
 
-    // ✅ NEW: Bet result for current user
+    // Bet result for current user
     socket.on('bet_result', (data) => {
       console.log('🎯 Bet result:', data);
       fetchMyBets();
       fetchWalletData();
       
       if (data.result === 'win') {
-        toast.success(`🎉 You WON ₦${data.payout?.toLocaleString()}!`, { duration: 5000 });
+        toast.success(`🎉 You WON ₦${data.payout?.toLocaleString()}! (${data.multiplier}x)`, { duration: 5000 });
       } else if (data.result === 'loss') {
-        toast.error(`😢 You lost this round. Better luck next time!`, { duration: 4000 });
+        toast.error(`😢 You lost ₦${Math.abs(data.profit || data.amount)?.toLocaleString()}`, { duration: 4000 });
       } else if (data.result === 'refund') {
         toast.success(`🔄 Refunded ₦${data.payout?.toLocaleString()}`, { duration: 4000 });
       }
@@ -644,6 +764,11 @@ const Dashboard = () => {
       return;
     }
 
+    if (betAmount > 100000) {
+      toast.error('💰 Maximum bet is ₦100,000');
+      return;
+    }
+
     if (betAmount > availableBalance) {
       toast.error(`❌ Insufficient balance! You have ₦${availableBalance.toLocaleString()} available`);
       return;
@@ -659,7 +784,12 @@ const Dashboard = () => {
       });
 
       console.log('✅ Bet placed:', data);
-      toast.success(`✅ Bet placed on ${prediction.toUpperCase()}! Good luck! 🍀`, { duration: 4000 });
+      
+      const potentialWin = data.bet?.potentialPayout || (betAmount * 1.7);
+      toast.success(
+        `✅ Bet ₦${betAmount.toLocaleString()} on ${prediction.toUpperCase()}!\nPotential Win: ₦${potentialWin.toLocaleString()}`,
+        { duration: 4000 }
+      );
 
       // Refresh data
       await Promise.all([
@@ -669,25 +799,11 @@ const Dashboard = () => {
       ]);
 
     } catch (err) {
-      console.error('❌ Bet error:', err);
+      console.error('Bet error:', err);
       toast.error(err.message || 'Failed to place bet');
     } finally {
       setLoading(false);
     }
-  };
-
-  // ========== HELPER FUNCTIONS ==========
-  const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const formatCurrency = (amount) => {
-    return parseFloat(amount || 0).toLocaleString('en-NG', {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    });
   };
 
   // ========== LOADING STATE ==========
@@ -707,7 +823,7 @@ const Dashboard = () => {
 
   // ========== MAIN RENDER ==========
   return (
-    <div className="min-h-screen bg-darker pb-20 lg:pb-8">
+    <div className="min-h-screen bg-darker pb-24 lg:pb-8">
       {/* User Guide Modal */}
       <UserGuideModal isOpen={showGuide} onClose={() => setShowGuide(false)} />
 
@@ -715,7 +831,7 @@ const Dashboard = () => {
       {!isConnected && (
         <div className="bg-yellow-500/10 border-b border-yellow-500/30 px-4 py-3 flex items-center justify-center gap-2">
           <WifiOff className="text-yellow-500" size={18} />
-          <p className="text-yellow-500 text-sm">Reconnecting to live data...</p>
+          <p className="text-yellow-500 text-sm font-medium">Reconnecting to live data...</p>
         </div>
       )}
 
@@ -731,9 +847,13 @@ const Dashboard = () => {
             </h1>
             <p className="text-gray-400 text-sm lg:text-base flex items-center gap-2">
               BTC/USD 5-Minute Prediction
-              {isConnected && (
-                <span className="flex items-center gap-1 text-green-500 text-xs">
+              {isConnected ? (
+                <span className="flex items-center gap-1 text-green-500 text-xs font-medium">
                   <Wifi size={12} /> Live
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-yellow-500 text-xs font-medium">
+                  <WifiOff size={12} /> Connecting...
                 </span>
               )}
             </p>
@@ -744,7 +864,7 @@ const Dashboard = () => {
             {/* Help Button */}
             <button
               onClick={() => setShowGuide(true)}
-              className="p-3 bg-slate-800 text-gray-400 hover:text-white rounded-xl border border-slate-700 transition"
+              className="p-3 bg-slate-800 text-gray-400 hover:text-white rounded-xl border border-slate-700 transition hover:border-primary"
               title="How to Play"
             >
               <HelpCircle size={20} />
@@ -754,7 +874,7 @@ const Dashboard = () => {
             <button
               onClick={handleRefresh}
               disabled={refreshing}
-              className="p-3 bg-slate-800 text-gray-400 hover:text-white rounded-xl border border-slate-700 transition disabled:opacity-50"
+              className="p-3 bg-slate-800 text-gray-400 hover:text-white rounded-xl border border-slate-700 transition disabled:opacity-50 hover:border-primary"
               title="Refresh Data"
             >
               <RefreshCw size={20} className={refreshing ? 'animate-spin' : ''} />
@@ -762,14 +882,14 @@ const Dashboard = () => {
 
             {/* Balance Display */}
             <div className="flex-1 lg:flex-none flex items-center gap-4 bg-gradient-to-r from-green-500/10 to-emerald-500/10 p-4 rounded-2xl border border-green-500/30">
-              <div className="text-right flex-1">
+              <div className="flex-1">
                 <p className="text-xs text-gray-400 uppercase tracking-wider">Available Balance</p>
-                <p className="text-xl lg:text-2xl font-black text-green-400">
+                <p className="text-xl lg:text-2xl font-black text-green-400 tabular-nums">
                   ₦{formatCurrency(availableBalance)}
                 </p>
                 {lockedBalance > 0 && (
                   <p className="text-xs text-orange-400">
-                    Locked: ₦{formatCurrency(lockedBalance)}
+                    🔒 Locked: ₦{formatCurrency(lockedBalance)}
                   </p>
                 )}
               </div>
@@ -785,7 +905,7 @@ const Dashboard = () => {
           <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
             <div className="flex items-center gap-4">
               <div className="p-3 bg-orange-500/20 rounded-xl text-orange-500">
-                <TrendingUp size={24} />
+                <TrendUp size={24} />
               </div>
               <div>
                 <p className="text-xs text-gray-400 uppercase flex items-center gap-2">
@@ -793,7 +913,7 @@ const Dashboard = () => {
                   <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
                 </p>
                 <h2 className="text-2xl lg:text-3xl font-black text-white tabular-nums">
-                  ${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  ${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </h2>
               </div>
             </div>
@@ -803,9 +923,10 @@ const Dashboard = () => {
                 priceChange >= 0 ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'
               }`}>
                 {priceChange >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
-                <span className="font-bold tabular-nums">
+                <span className="font-bold tabular-nums text-lg">
                   {priceChange >= 0 ? '+' : ''}{priceChange.toFixed(3)}%
                 </span>
+                <span className="text-xs opacity-70">from round start</span>
               </div>
             )}
           </div>
@@ -819,11 +940,11 @@ const Dashboard = () => {
               <button
                 onClick={() => setActiveSlide(prev => Math.max(0, prev - 1))}
                 disabled={activeSlide === 0}
-                className="p-2 bg-slate-800 rounded-lg text-gray-400 hover:text-white disabled:opacity-30 transition"
+                className="p-2 bg-slate-800 rounded-lg text-gray-400 hover:text-white disabled:opacity-30 transition border border-slate-700"
               >
                 <ChevronLeft size={20} />
               </button>
-              <span className="text-sm text-gray-400 min-w-[160px] text-center font-medium">
+              <span className="text-sm text-gray-400 min-w-[180px] text-center font-medium">
                 {activeSlide === 0 ? '📊 Previous Round' :
                  activeSlide === 1 ? '🔴 LIVE - Current Round' :
                  '⏳ Upcoming Round'}
@@ -831,7 +952,7 @@ const Dashboard = () => {
               <button
                 onClick={() => setActiveSlide(prev => Math.min(2, prev + 1))}
                 disabled={activeSlide === 2}
-                className="p-2 bg-slate-800 rounded-lg text-gray-400 hover:text-white disabled:opacity-30 transition"
+                className="p-2 bg-slate-800 rounded-lg text-gray-400 hover:text-white disabled:opacity-30 transition border border-slate-700"
               >
                 <ChevronRight size={20} />
               </button>
@@ -873,8 +994,8 @@ const Dashboard = () => {
                           ? 'bg-red-500/20 text-red-500'
                           : 'bg-yellow-500/20 text-yellow-500'
                       }`}>
-                        {previousRound.result === 'up' ? '📈 UP' :
-                         previousRound.result === 'down' ? '📉 DOWN' : '➖ TIE'}
+                        {previousRound.result === 'up' ? '📈 UP WON' :
+                         previousRound.result === 'down' ? '📉 DOWN WON' : '➖ TIE'}
                       </div>
                     </div>
 
@@ -899,30 +1020,36 @@ const Dashboard = () => {
                             : 'text-red-500'
                         }`}>
                           {previousRound.startPrice > 0 
-                            ? (((previousRound.endPrice - previousRound.startPrice) / previousRound.startPrice) * 100).toFixed(2)
+                            ? (((previousRound.endPrice - previousRound.startPrice) / previousRound.startPrice) * 100).toFixed(3)
                             : 0}%
                         </p>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
-                      <div className="bg-green-500/10 p-4 rounded-xl">
+                      <div className={`p-4 rounded-xl ${previousRound.result === 'up' ? 'bg-green-500/20 ring-2 ring-green-500' : 'bg-green-500/10'}`}>
                         <div className="flex justify-between items-center">
-                          <span className="text-green-400 text-sm">Total UP</span>
+                          <span className="text-green-400 text-sm font-medium">UP Pool</span>
                           <span className="text-green-400 text-xs">{previousRound.totalUpBets || 0} bets</span>
                         </div>
                         <p className="text-xl font-bold text-green-500 mt-1">
                           ₦{formatCurrency(previousRound.totalUpAmount)}
                         </p>
+                        {previousRound.result === 'up' && (
+                          <p className="text-xs text-green-400 mt-1">🏆 Winners!</p>
+                        )}
                       </div>
-                      <div className="bg-red-500/10 p-4 rounded-xl">
+                      <div className={`p-4 rounded-xl ${previousRound.result === 'down' ? 'bg-red-500/20 ring-2 ring-red-500' : 'bg-red-500/10'}`}>
                         <div className="flex justify-between items-center">
-                          <span className="text-red-400 text-sm">Total DOWN</span>
+                          <span className="text-red-400 text-sm font-medium">DOWN Pool</span>
                           <span className="text-red-400 text-xs">{previousRound.totalDownBets || 0} bets</span>
                         </div>
                         <p className="text-xl font-bold text-red-500 mt-1">
                           ₦{formatCurrency(previousRound.totalDownAmount)}
                         </p>
+                        {previousRound.result === 'down' && (
+                          <p className="text-xs text-red-400 mt-1">🏆 Winners!</p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -948,15 +1075,21 @@ const Dashboard = () => {
                             <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
                           </span>
                           <p className="text-sm text-primary font-bold">
-                            {currentRound.status === 'active' ? 'LIVE' : 'LOCKED'} • Round #{currentRound.roundNumber}
+                            {currentRound.status === 'active' ? 'LIVE BETTING' : 'LOCKED'} • Round #{currentRound.roundNumber}
                           </p>
                         </div>
                         <h3 className="text-xl font-bold text-white">Current Round</h3>
                       </div>
 
                       {/* Timer */}
-                      <div className="bg-slate-900/80 px-5 py-3 rounded-2xl border border-slate-700">
-                        <p className="text-xs text-gray-400 text-center">Time Remaining</p>
+                      <div className={`px-5 py-3 rounded-2xl border ${
+                        timeLeft < 30 ? 'bg-red-500/20 border-red-500' :
+                        timeLeft < 60 ? 'bg-yellow-500/20 border-yellow-500' : 
+                        'bg-slate-900/80 border-slate-700'
+                      }`}>
+                        <p className="text-xs text-gray-400 text-center">
+                          {currentRound.status === 'active' ? 'Betting Ends' : 'Round Ends'}
+                        </p>
                         <p className={`text-3xl font-mono font-bold text-center tabular-nums ${
                           timeLeft < 30 ? 'text-red-500 animate-pulse' :
                           timeLeft < 60 ? 'text-yellow-500' : 'text-primary'
@@ -983,20 +1116,24 @@ const Dashboard = () => {
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-center gap-2 mt-2">
-                        <span className="text-gray-400 text-sm">Change:</span>
-                        <span className={`font-bold text-lg flex items-center gap-1 tabular-nums transition-colors duration-300 ${
+                      <div className="flex items-center justify-center gap-2 pt-2 border-t border-slate-700">
+                        <span className="text-gray-400 text-sm">Current Direction:</span>
+                        <span className={`font-bold text-lg flex items-center gap-1 ${
                           priceChange >= 0 ? 'text-green-500' : 'text-red-500'
                         }`}>
-                          {priceChange >= 0 ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
-                          {priceChange >= 0 ? '+' : ''}{priceChange.toFixed(3)}%
+                          {priceChange >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
+                          {priceChange >= 0 ? 'UP' : 'DOWN'} ({priceChange >= 0 ? '+' : ''}{priceChange.toFixed(3)}%)
                         </span>
                       </div>
                     </div>
 
                     {/* Professional TradingView Chart */}
                     <div className="bg-slate-900/50 rounded-xl p-2 mb-4">
-                      <TradingChart priceHistory={priceHistory} startPrice={roundStartPrice} />
+                      <TradingChart 
+                        priceHistory={priceHistory} 
+                        startPrice={roundStartPrice}
+                        currentPrice={currentPrice}
+                      />
                     </div>
 
                     {/* Live Pool Distribution */}
@@ -1011,97 +1148,156 @@ const Dashboard = () => {
 
                     {/* Betting Buttons */}
                     <div className="grid grid-cols-2 gap-4 mb-4">
-                      <button
-                        onClick={() => handlePlaceBet('up')}
-                        disabled={loading || !canBet}
-                        className="relative bg-green-500/10 hover:bg-green-500/20 border-2 border-green-500/50 hover:border-green-500 p-6 rounded-2xl transition-all disabled:opacity-30 disabled:cursor-not-allowed group overflow-hidden"
-                      >
-                        <div className="relative z-10">
-                          <ArrowUpRight
-                            size={36}
-                            className="text-green-500 mx-auto mb-2 group-hover:scale-110 transition-transform"
-                          />
-                          <p className="text-xl font-black text-green-500">PREDICT UP</p>
-                          <p className="text-sm text-green-400 mt-1 font-bold">
-                            {calculateMultiplier('up')}x Payout
-                          </p>
-                          <p className="text-xs text-green-400/70 mt-1">
-                            Potential: ₦{formatCurrency(betAmount * calculateMultiplier('up') * 0.8)}
-                          </p>
-                        </div>
-                        {loading && (
-                          <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                            <Loader2 className="w-8 h-8 text-green-500 animate-spin" />
-                          </div>
-                        )}
-                      </button>
+                      {/* UP BUTTON */}
+                      {(() => {
+                        const upCalc = calculatePotentialPayout('up');
+                        const currentMult = getCurrentMultiplier('up');
+                        return (
+                          <button
+                            onClick={() => handlePlaceBet('up')}
+                            disabled={loading || !canBet}
+                            className="relative bg-green-500/10 hover:bg-green-500/20 border-2 border-green-500/50 hover:border-green-500 p-4 lg:p-5 rounded-2xl transition-all disabled:opacity-40 disabled:cursor-not-allowed group overflow-hidden"
+                          >
+                            <div className="relative z-10">
+                              <ArrowUpRight
+                                size={32}
+                                className="text-green-500 mx-auto mb-2 group-hover:scale-110 transition-transform"
+                              />
+                              <p className="text-lg lg:text-xl font-black text-green-500">PREDICT UP</p>
+                              
+                              {/* Current Pool Multiplier */}
+                              <p className="text-xs text-gray-400 mt-2">
+                                Current Pool: {currentMult.display}
+                              </p>
+                              
+                              {/* Your Potential */}
+                              <div className="mt-3 pt-3 border-t border-green-500/30 space-y-1">
+                                {betAmount > 0 ? (
+                                  upCalc.hasOpponents ? (
+                                    <>
+                                      <p className="text-sm text-green-400 font-bold">
+                                        Your Payout: {upCalc.multiplier}x
+                                      </p>
+                                      <p className="text-lg font-black text-green-500">
+                                        Win: ₦{formatCurrency(upCalc.payout)}
+                                      </p>
+                                      <p className="text-xs text-green-400">
+                                        Profit: +₦{formatCurrency(upCalc.profit)}
+                                      </p>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <p className="text-sm text-yellow-400 font-bold">
+                                        1x (Refund)
+                                      </p>
+                                      <p className="text-xs text-yellow-400">
+                                        No DOWN bets yet
+                                      </p>
+                                      <p className="text-xs text-gray-400">
+                                        Refund if you win
+                                      </p>
+                                    </>
+                                  )
+                                ) : (
+                                  <p className="text-xs text-gray-400">Select bet amount</p>
+                                )}
+                              </div>
+                            </div>
+                            {loading && (
+                              <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                                <Loader2 className="w-8 h-8 text-green-500 animate-spin" />
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })()}
 
-                      <button
-                        onClick={() => handlePlaceBet('down')}
-                        disabled={loading || !canBet}
-                        className="relative bg-red-500/10 hover:bg-red-500/20 border-2 border-red-500/50 hover:border-red-500 p-6 rounded-2xl transition-all disabled:opacity-30 disabled:cursor-not-allowed group overflow-hidden"
-                      >
-                        <div className="relative z-10">
-                          <ArrowDownRight
-                            size={36}
-                            className="text-red-500 mx-auto mb-2 group-hover:scale-110 transition-transform"
-                          />
-                          <p className="text-xl font-black text-red-500">PREDICT DOWN</p>
-                          <p className="text-sm text-red-400 mt-1 font-bold">
-                            {calculateMultiplier('down')}x Payout
-                          </p>
-                          <p className="text-xs text-red-400/70 mt-1">
-                            Potential: ₦{formatCurrency(betAmount * calculateMultiplier('down') * 0.8)}
-                          </p>
-                        </div>
-                        {loading && (
-                          <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                            <Loader2 className="w-8 h-8 text-red-500 animate-spin" />
-                          </div>
-                        )}
-                      </button>
+                      {/* DOWN BUTTON */}
+                      {(() => {
+                        const downCalc = calculatePotentialPayout('down');
+                        const currentMult = getCurrentMultiplier('down');
+                        return (
+                          <button
+                            onClick={() => handlePlaceBet('down')}
+                            disabled={loading || !canBet}
+                            className="relative bg-red-500/10 hover:bg-red-500/20 border-2 border-red-500/50 hover:border-red-500 p-4 lg:p-5 rounded-2xl transition-all disabled:opacity-40 disabled:cursor-not-allowed group overflow-hidden"
+                          >
+                            <div className="relative z-10">
+                              <ArrowDownRight
+                                size={32}
+                                className="text-red-500 mx-auto mb-2 group-hover:scale-110 transition-transform"
+                              />
+                              <p className="text-lg lg:text-xl font-black text-red-500">PREDICT DOWN</p>
+                              
+                              {/* Current Pool Multiplier */}
+                              <p className="text-xs text-gray-400 mt-2">
+                                Current Pool: {currentMult.display}
+                              </p>
+                              
+                              {/* Your Potential */}
+                              <div className="mt-3 pt-3 border-t border-red-500/30 space-y-1">
+                                {betAmount > 0 ? (
+                                  downCalc.hasOpponents ? (
+                                    <>
+                                      <p className="text-sm text-red-400 font-bold">
+                                        Your Payout: {downCalc.multiplier}x
+                                      </p>
+                                      <p className="text-lg font-black text-red-500">
+                                        Win: ₦{formatCurrency(downCalc.payout)}
+                                      </p>
+                                      <p className="text-xs text-red-400">
+                                        Profit: +₦{formatCurrency(downCalc.profit)}
+                                      </p>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <p className="text-sm text-yellow-400 font-bold">
+                                        1x (Refund)
+                                      </p>
+                                      <p className="text-xs text-yellow-400">
+                                        No UP bets yet
+                                      </p>
+                                      <p className="text-xs text-gray-400">
+                                        Refund if you win
+                                      </p>
+                                    </>
+                                  )
+                                ) : (
+                                  <p className="text-xs text-gray-400">Select bet amount</p>
+                                )}
+                              </div>
+                            </div>
+                            {loading && (
+                              <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                                <Loader2 className="w-8 h-8 text-red-500 animate-spin" />
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })()}
                     </div>
 
                     {/* Status Messages */}
                     {!canBet && currentRound.status === 'locked' && (
-                      <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-3 text-center mb-4">
-                        <p className="text-yellow-500 text-sm flex items-center justify-center gap-2">
-                          <Clock size={16} />
+                      <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 text-center">
+                        <p className="text-yellow-500 font-medium flex items-center justify-center gap-2">
+                          <Clock size={18} />
                           Betting closed - Waiting for results...
+                        </p>
+                        <p className="text-yellow-400/70 text-sm mt-1">
+                          Round ends in {formatTime(timeLeft)}
                         </p>
                       </div>
                     )}
 
-                    {!canBet && currentRound.status === 'active' && timeLeft < 10 && (
-                      <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-center mb-4">
-                        <p className="text-red-500 text-sm flex items-center justify-center gap-2">
-                          <AlertCircle size={16} />
+                    {!canBet && currentRound.status === 'active' && timeLeft < 10 && timeLeft > 0 && (
+                      <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-center">
+                        <p className="text-red-500 font-medium flex items-center justify-center gap-2">
+                          <AlertCircle size={18} />
                           Round ending - Betting disabled
                         </p>
                       </div>
                     )}
-
-                    {/* Pool Statistics */}
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="bg-green-500/10 p-3 rounded-xl">
-                        <div className="flex justify-between items-center">
-                          <span className="text-green-400 text-sm">UP Pool</span>
-                          <span className="text-green-400 text-xs">{currentRound.totalUpBets || 0} bets</span>
-                        </div>
-                        <p className="text-lg font-bold text-green-500 tabular-nums">
-                          ₦{formatCurrency(currentRound.totalUpAmount)}
-                        </p>
-                      </div>
-                      <div className="bg-red-500/10 p-3 rounded-xl">
-                        <div className="flex justify-between items-center">
-                          <span className="text-red-400 text-sm">DOWN Pool</span>
-                          <span className="text-red-400 text-xs">{currentRound.totalDownBets || 0} bets</span>
-                        </div>
-                        <p className="text-lg font-bold text-red-500 tabular-nums">
-                          ₦{formatCurrency(currentRound.totalDownAmount)}
-                        </p>
-                      </div>
-                    </div>
                   </div>
                 ) : (
                   <div className="bg-slate-800/20 rounded-3xl p-12 border border-dashed border-slate-700 text-center">
@@ -1128,7 +1324,7 @@ const Dashboard = () => {
                         <p className="text-sm text-gray-400">Round #{upcomingRound.roundNumber}</p>
                         <h3 className="text-xl font-bold text-white">Upcoming Round</h3>
                       </div>
-                      <div className="bg-blue-500/20 px-4 py-2 rounded-xl">
+                      <div className="bg-blue-500/20 px-4 py-2 rounded-xl border border-blue-500/30">
                         <p className="text-sm font-bold text-blue-400">Coming Soon</p>
                       </div>
                     </div>
@@ -1151,8 +1347,9 @@ const Dashboard = () => {
                     </div>
 
                     <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
-                      <p className="text-blue-400 text-sm text-center">
-                        💡 Tip: Prepare your strategy while waiting!
+                      <p className="text-blue-400 text-sm text-center flex items-center justify-center gap-2">
+                        <Zap size={16} />
+                        Tip: Prepare your strategy while waiting!
                       </p>
                     </div>
                   </div>
@@ -1175,19 +1372,22 @@ const Dashboard = () => {
               <DollarSign size={20} className="text-primary" />
               <p className="text-white font-bold">Select Bet Amount</p>
             </div>
-            <p className="text-xs text-gray-500">
-              Fee: 20% • Stake: ₦{formatCurrency(betAmount * 0.8)}
+            <p className="text-sm text-gray-400">
+              Available: <span className="text-green-400 font-bold">₦{formatCurrency(availableBalance)}</span>
             </p>
           </div>
 
           <div className="flex flex-wrap gap-3 mb-4">
-            {[500, 1000, 2000, 5000, 10000, 50000].map(amt => (
+            {[100, 500, 1000, 2000, 5000, 10000, 50000].map(amt => (
               <button
                 key={amt}
                 onClick={() => setBetAmount(amt)}
-                className={`px-5 py-3 rounded-xl font-bold transition-all ${
+                disabled={amt > availableBalance}
+                className={`px-4 py-3 rounded-xl font-bold transition-all ${
                   betAmount === amt
                     ? 'bg-primary text-white scale-105 shadow-lg shadow-primary/30'
+                    : amt > availableBalance
+                    ? 'bg-slate-800 text-gray-600 cursor-not-allowed'
                     : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
                 }`}
               >
@@ -1195,15 +1395,17 @@ const Dashboard = () => {
               </button>
             ))}
 
-            <input
-              type="number"
-              placeholder="Custom"
-              value={betAmount}
-              min="100"
-              max={availableBalance}
-              className="bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white w-32 focus:outline-none focus:ring-2 focus:ring-primary"
-              onChange={(e) => setBetAmount(Number(e.target.value) || 0)}
-            />
+            <div className="relative">
+              <input
+                type="number"
+                placeholder="Custom"
+                value={betAmount || ''}
+                min="100"
+                max={availableBalance}
+                className="bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white w-32 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                onChange={(e) => setBetAmount(Number(e.target.value) || 0)}
+              />
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-4 text-sm text-gray-400">
@@ -1211,7 +1413,7 @@ const Dashboard = () => {
             <span>•</span>
             <span>Max: ₦100,000</span>
             <span>•</span>
-            <span className="text-green-400">Available: ₦{formatCurrency(availableBalance)}</span>
+            <span className="text-primary">No upfront fees!</span>
           </div>
         </div>
 
@@ -1236,11 +1438,10 @@ const Dashboard = () => {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {myActiveBets.map(bet => {
-                // ✅ Calculate LIVE potential payout
-                const stakeAmount = parseFloat(bet.stakeAmount || bet.amount * 0.8);
-                const liveMultiplier = bet.currentMultiplierRaw || calculateMultiplier(bet.prediction);
-                const potentialPayout = stakeAmount * liveMultiplier;
-                const potentialProfit = potentialPayout - parseFloat(bet.totalAmount || bet.amount);
+                const betAmount = parseFloat(bet.stakeAmount || bet.amount);
+                const multiplier = bet.currentMultiplierRaw || 1.7;
+                const potentialPayout = roundToTwo(betAmount * multiplier);
+                const potentialProfit = roundToTwo(potentialPayout - betAmount);
 
                 return (
                   <div
@@ -1260,10 +1461,7 @@ const Dashboard = () => {
                           {bet.prediction}
                         </p>
                         <p className="text-white font-bold text-lg">
-                          ₦{formatCurrency(bet.totalAmount || bet.amount)}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          Stake: ₦{formatCurrency(stakeAmount)}
+                          ₦{formatCurrency(bet.amount || bet.stakeAmount)}
                         </p>
                       </div>
                       <div className="text-right">
@@ -1272,29 +1470,24 @@ const Dashboard = () => {
                           ₦{formatCurrency(potentialPayout)}
                         </p>
                         <p className={`text-xs ${potentialProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                          {potentialProfit >= 0 ? '+' : ''}₦{formatCurrency(potentialProfit)}
+                          +₦{formatCurrency(potentialProfit)}
                         </p>
                       </div>
                     </div>
 
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-gray-500">Round #{bet.roundNumber || currentRound?.roundNumber || 'N/A'}</span>
-                      <span className={`px-2 py-1 rounded-full ${
-                        bet.isCurrentlyWinning 
-                          ? 'bg-green-500/20 text-green-500' 
-                          : 'bg-red-500/20 text-red-500'
-                      }`}>
-                        {bet.isCurrentlyWinning ? '✓ Winning' : '✗ Losing'}
-                      </span>
-                    </div>
-
-                    {/* Live Multiplier */}
-                    <div className="mt-3 pt-3 border-t border-slate-700">
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs text-gray-400">Live Multiplier</span>
-                        <span className="text-sm font-bold text-primary animate-pulse">
-                          {liveMultiplier}x
-                        </span>
+                    <div className="flex justify-between items-center text-xs pt-3 border-t border-slate-700">
+                      <span className="text-gray-500">Round #{bet.roundNumber}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-primary font-bold">{multiplier}x</span>
+                        {bet.isCurrentlyWinning !== undefined && (
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            bet.isCurrentlyWinning 
+                              ? 'bg-green-500/20 text-green-500' 
+                              : 'bg-red-500/20 text-red-500'
+                          }`}>
+                            {bet.isCurrentlyWinning ? '✓ Winning' : '✗ Losing'}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
