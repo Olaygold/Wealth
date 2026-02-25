@@ -1,32 +1,28 @@
 
-See mow help me out I wan to do. The admin page now for each admin frauteur oles help me I don't know how to start and that the admin will have asses to lothot hon and control and ......
-This is one of my code  but firl tell wlme what an what u will be put in I. The admin page and what will that do and how it will work and what will happen first 
-const { User, Wallet, Transaction, Round, Bet } = require('../models');
+// controllers/adminController.js
+const { User, Wallet, Transaction, Round, Bet, PendingDeposit, VirtualAccount } = require('../models');
 const { Op } = require('sequelize');
 const { sequelize } = require('../config/database');
 const { roundToTwo } = require('../utils/helpers');
+
+// =====================================================
+// DASHBOARD
+// =====================================================
 
 // @desc    Get admin dashboard statistics
 // @route   GET /api/admin/dashboard
 // @access  Private/Admin
 const getDashboardStats = async (req, res) => {
   try {
-    // Total users
+    // ===== USER STATISTICS =====
     const totalUsers = await User.count();
-    const activeUsers = await User.count({
-      where: { isActive: true }
+    const activeUsers = await User.count({ where: { isActive: true } });
+    const last24Hours = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const newUsers24h = await User.count({
+      where: { createdAt: { [Op.gte]: last24Hours } }
     });
 
-    // Total transactions
-    const totalTransactions = await Transaction.count();
-    const pendingWithdrawals = await Transaction.count({
-      where: {
-        type: 'withdrawal',
-        status: 'pending'
-      }
-    });
-
-    // Financial stats
+    // ===== FINANCIAL STATISTICS =====
     const financialStats = await Transaction.findAll({
       attributes: [
         [sequelize.fn('SUM', 
@@ -42,13 +38,19 @@ const getDashboardStats = async (req, res) => {
       raw: true
     });
 
-    // Round stats
-    const totalRounds = await Round.count();
-    const completedRounds = await Round.count({
-      where: { status: 'completed' }
+    // ===== WALLET TOTALS =====
+    const walletStats = await Wallet.findAll({
+      attributes: [
+        [sequelize.fn('SUM', sequelize.col('nairaBalance')), 'totalBalance'],
+        [sequelize.fn('SUM', sequelize.col('lockedBalance')), 'totalLocked']
+      ],
+      raw: true
     });
 
-    // Platform revenue from completed rounds
+    // ===== ROUND STATISTICS =====
+    const totalRounds = await Round.count();
+    const completedRounds = await Round.count({ where: { status: 'completed' } });
+    
     const roundRevenue = await Round.findAll({
       where: { status: 'completed' },
       attributes: [
@@ -58,34 +60,45 @@ const getDashboardStats = async (req, res) => {
       raw: true
     });
 
-    // Total bets
+    // ===== BET STATISTICS =====
     const totalBets = await Bet.count();
-    const totalBetVolume = await Bet.sum('totalAmount');
+    const totalBetVolume = await Bet.sum('totalAmount') || 0;
+    const newBets24h = await Bet.count({
+      where: { createdAt: { [Op.gte]: last24Hours } }
+    });
 
-    // Recent activity (last 24 hours)
-    const last24Hours = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    
-    const recentStats = {
-      newUsers: await User.count({
-        where: { createdAt: { [Op.gte]: last24Hours } }
-      }),
-      newDeposits: await Transaction.count({
-        where: {
-          type: 'deposit',
-          status: 'completed',
-          createdAt: { [Op.gte]: last24Hours }
+    // ===== PENDING ACTIONS =====
+    const pendingWithdrawals = await Transaction.count({
+      where: { type: 'withdrawal', status: 'pending' }
+    });
+
+    const amountMismatches = await PendingDeposit.count({
+      where: {
+        status: 'pending',
+        webhookData: {
+          [Op.ne]: null
         }
-      }),
-      newBets: await Bet.count({
-        where: { createdAt: { [Op.gte]: last24Hours } }
-      })
-    };
+      }
+    });
 
-    // Calculate total platform revenue
+    const flaggedUsers = await User.count({
+      where: { isActive: false }
+    });
+
+    // ===== CALCULATE TOTAL REVENUE =====
     const totalRevenue = 
-      parseFloat(financialStats[0].totalFees || 0) +
-      parseFloat(roundRevenue[0].entryFees || 0) +
-      parseFloat(roundRevenue[0].platformCuts || 0);
+      parseFloat(financialStats[0]?.totalFees || 0) +
+      parseFloat(roundRevenue[0]?.entryFees || 0) +
+      parseFloat(roundRevenue[0]?.platformCuts || 0);
+
+    // ===== RECENT ACTIVITY =====
+    const recentDeposits = await Transaction.count({
+      where: {
+        type: 'deposit',
+        status: 'completed',
+        createdAt: { [Op.gte]: last24Hours }
+      }
+    });
 
     res.json({
       success: true,
@@ -94,34 +107,42 @@ const getDashboardStats = async (req, res) => {
           total: totalUsers,
           active: activeUsers,
           inactive: totalUsers - activeUsers,
-          new24h: recentStats.newUsers
-        },
-        transactions: {
-          total: totalTransactions,
-          pendingWithdrawals
+          new24h: newUsers24h
         },
         financials: {
-          totalDeposits: roundToTwo(parseFloat(financialStats[0].totalDeposits) || 0),
-          totalWithdrawals: roundToTwo(parseFloat(financialStats[0].totalWithdrawals) || 0),
+          totalDeposits: roundToTwo(parseFloat(financialStats[0]?.totalDeposits) || 0),
+          totalWithdrawals: roundToTwo(parseFloat(financialStats[0]?.totalWithdrawals) || 0),
           totalRevenue: roundToTwo(totalRevenue),
-          entryFees: roundToTwo(parseFloat(roundRevenue[0].entryFees) || 0),
-          platformCuts: roundToTwo(parseFloat(roundRevenue[0].platformCuts) || 0)
+          entryFees: roundToTwo(parseFloat(roundRevenue[0]?.entryFees) || 0),
+          platformCuts: roundToTwo(parseFloat(roundRevenue[0]?.platformCuts) || 0),
+          totalUserBalance: roundToTwo(parseFloat(walletStats[0]?.totalBalance) || 0),
+          totalLocked: roundToTwo(parseFloat(walletStats[0]?.totalLocked) || 0)
         },
         rounds: {
           total: totalRounds,
-          completed: completedRounds
+          completed: completedRounds,
+          active: totalRounds - completedRounds
         },
         bets: {
           total: totalBets,
-          volume: roundToTwo(totalBetVolume || 0),
-          new24h: recentStats.newBets
+          volume: roundToTwo(totalBetVolume),
+          new24h: newBets24h
         },
-        recentActivity: recentStats
+        pending: {
+          withdrawals: pendingWithdrawals,
+          amountMismatches: amountMismatches,
+          flaggedUsers: flaggedUsers
+        },
+        recentActivity: {
+          newUsers: newUsers24h,
+          newDeposits: recentDeposits,
+          newBets: newBets24h
+        }
       }
     });
 
   } catch (error) {
-    console.error('Get dashboard stats error:', error.message);
+    console.error('❌ Dashboard stats error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to get dashboard stats',
@@ -129,6 +150,10 @@ const getDashboardStats = async (req, res) => {
     });
   }
 };
+
+// =====================================================
+// USER MANAGEMENT
+// =====================================================
 
 // @desc    Get all users with filters
 // @route   GET /api/admin/users
@@ -168,7 +193,7 @@ const getAllUsers = async (req, res) => {
       include: [{
         model: Wallet,
         as: 'wallet',
-        attributes: ['nairaBalance', 'totalDeposited', 'totalWithdrawn', 'totalWon', 'totalLost']
+        attributes: ['nairaBalance', 'lockedBalance', 'totalDeposited', 'totalWithdrawn', 'totalWon', 'totalLost']
       }],
       order: [[sortBy, order.toUpperCase()]],
       limit: parseInt(limit),
@@ -179,17 +204,38 @@ const getAllUsers = async (req, res) => {
     res.json({
       success: true,
       data: {
-        users: users.rows,
+        users: users.rows.map(u => ({
+          id: u.id,
+          username: u.username,
+          email: u.email,
+          fullName: u.fullName,
+          phoneNumber: u.phoneNumber,
+          isActive: u.isActive,
+          isVerified: u.isVerified,
+          kycStatus: u.kycStatus,
+          role: u.role,
+          createdAt: u.createdAt,
+          lastLogin: u.lastLogin,
+          wallet: u.wallet ? {
+            balance: parseFloat(u.wallet.nairaBalance),
+            locked: parseFloat(u.wallet.lockedBalance),
+            totalDeposited: parseFloat(u.wallet.totalDeposited),
+            totalWithdrawn: parseFloat(u.wallet.totalWithdrawn),
+            totalWon: parseFloat(u.wallet.totalWon),
+            totalLost: parseFloat(u.wallet.totalLost)
+          } : null
+        })),
         pagination: {
           total: users.count,
           page: parseInt(page),
+          limit: parseInt(limit),
           pages: Math.ceil(users.count / parseInt(limit))
         }
       }
     });
 
   } catch (error) {
-    console.error('Get all users error:', error.message);
+    console.error('❌ Get users error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to get users',
@@ -239,14 +285,14 @@ const getUserDetails = async (req, res) => {
       raw: true
     });
 
-    // Recent transactions
+    // Recent transactions (last 20)
     const recentTransactions = await Transaction.findAll({
       where: { userId },
       order: [['createdAt', 'DESC']],
-      limit: 10
+      limit: 20
     });
 
-    // Recent bets
+    // Recent bets (last 20)
     const recentBets = await Bet.findAll({
       where: { userId },
       include: [{
@@ -255,7 +301,16 @@ const getUserDetails = async (req, res) => {
         attributes: ['roundNumber', 'startPrice', 'endPrice', 'result']
       }],
       order: [['createdAt', 'DESC']],
-      limit: 10
+      limit: 20
+    });
+
+    // Pending deposits
+    const pendingDeposits = await PendingDeposit.findAll({
+      where: { userId, status: 'pending' },
+      include: [{
+        model: VirtualAccount,
+        as: 'virtualAccount'
+      }]
     });
 
     res.json({
@@ -264,24 +319,25 @@ const getUserDetails = async (req, res) => {
         user: user.toJSON(),
         statistics: {
           bets: {
-            total: parseInt(betStats[0].totalBets) || 0,
-            wins: parseInt(betStats[0].wins) || 0,
-            losses: parseInt(betStats[0].losses) || 0,
-            winRate: betStats[0].totalBets > 0 
+            total: parseInt(betStats[0]?.totalBets) || 0,
+            wins: parseInt(betStats[0]?.wins) || 0,
+            losses: parseInt(betStats[0]?.losses) || 0,
+            winRate: betStats[0]?.totalBets > 0 
               ? roundToTwo((betStats[0].wins / betStats[0].totalBets) * 100) 
               : 0,
-            totalWagered: roundToTwo(parseFloat(betStats[0].totalWagered) || 0),
-            netProfit: roundToTwo(parseFloat(betStats[0].netProfit) || 0)
+            totalWagered: roundToTwo(parseFloat(betStats[0]?.totalWagered) || 0),
+            netProfit: roundToTwo(parseFloat(betStats[0]?.netProfit) || 0)
           },
           referrals: user.referrals.length
         },
         recentTransactions,
-        recentBets
+        recentBets,
+        pendingDeposits
       }
     });
 
   } catch (error) {
-    console.error('Get user details error:', error.message);
+    console.error('❌ Get user details error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to get user details',
@@ -296,7 +352,7 @@ const getUserDetails = async (req, res) => {
 const updateUserStatus = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { isActive, kycStatus } = req.body;
+    const { isActive, kycStatus, reason } = req.body;
 
     const user = await User.findByPk(userId);
 
@@ -315,6 +371,8 @@ const updateUserStatus = async (req, res) => {
 
     await user.update(updateData);
 
+    console.log(`✅ Admin ${req.user.id} updated user ${userId}:`, updateData, 'Reason:', reason);
+
     res.json({
       success: true,
       message: 'User status updated successfully',
@@ -322,7 +380,7 @@ const updateUserStatus = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Update user status error:', error.message);
+    console.error('❌ Update user status error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to update user status',
@@ -330,6 +388,10 @@ const updateUserStatus = async (req, res) => {
     });
   }
 };
+
+// =====================================================
+// TRANSACTION MANAGEMENT
+// =====================================================
 
 // @desc    Get all transactions
 // @route   GET /api/admin/transactions
@@ -363,7 +425,7 @@ const getAllTransactions = async (req, res) => {
       include: [{
         model: User,
         as: 'user',
-        attributes: ['username', 'email']
+        attributes: ['id', 'username', 'email']
       }],
       order: [['createdAt', 'DESC']],
       limit: parseInt(limit),
@@ -377,13 +439,14 @@ const getAllTransactions = async (req, res) => {
         pagination: {
           total: transactions.count,
           page: parseInt(page),
+          limit: parseInt(limit),
           pages: Math.ceil(transactions.count / parseInt(limit))
         }
       }
     });
 
   } catch (error) {
-    console.error('Get all transactions error:', error.message);
+    console.error('❌ Get transactions error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to get transactions',
@@ -391,6 +454,10 @@ const getAllTransactions = async (req, res) => {
     });
   }
 };
+
+// =====================================================
+// WITHDRAWAL MANAGEMENT
+// =====================================================
 
 // @desc    Get pending withdrawals
 // @route   GET /api/admin/withdrawals/pending
@@ -405,7 +472,12 @@ const getPendingWithdrawals = async (req, res) => {
       include: [{
         model: User,
         as: 'user',
-        attributes: ['id', 'username', 'email', 'phoneNumber', 'kycStatus']
+        attributes: ['id', 'username', 'email', 'phoneNumber', 'kycStatus'],
+        include: [{
+          model: Wallet,
+          as: 'wallet',
+          attributes: ['nairaBalance', 'totalDeposited', 'totalWithdrawn']
+        }]
       }],
       order: [['createdAt', 'ASC']]
     });
@@ -414,12 +486,13 @@ const getPendingWithdrawals = async (req, res) => {
       success: true,
       data: {
         withdrawals,
-        total: withdrawals.length
+        total: withdrawals.length,
+        totalAmount: withdrawals.reduce((sum, w) => sum + parseFloat(w.amount), 0)
       }
     });
 
   } catch (error) {
-    console.error('Get pending withdrawals error:', error.message);
+    console.error('❌ Get pending withdrawals error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to get pending withdrawals',
@@ -436,7 +509,7 @@ const processWithdrawal = async (req, res) => {
 
   try {
     const { transactionId } = req.params;
-    const { action, reason } = req.body; // action: 'approve' or 'reject'
+    const { action, reason } = req.body;
 
     if (!['approve', 'reject'].includes(action)) {
       return res.status(400).json({
@@ -482,6 +555,8 @@ const processWithdrawal = async (req, res) => {
 
       await dbTransaction.commit();
 
+      console.log(`✅ Withdrawal ${transactionId} approved by admin ${req.user.id}`);
+
       res.json({
         success: true,
         message: 'Withdrawal approved successfully',
@@ -491,7 +566,8 @@ const processWithdrawal = async (req, res) => {
     } else {
       // Reject - refund user
       const wallet = await Wallet.findOne({
-        where: { userId: transaction.userId }
+        where: { userId: transaction.userId },
+        transaction: dbTransaction
       });
 
       const amount = parseFloat(transaction.amount);
@@ -519,14 +595,18 @@ const processWithdrawal = async (req, res) => {
         type: 'refund',
         method: 'internal',
         amount,
+        currency: 'NGN',
         status: 'completed',
         description: `Withdrawal refund: ${reason || 'Withdrawal rejected'}`,
         metadata: {
-          originalTransactionId: transaction.id
+          originalTransactionId: transaction.id,
+          refundedBy: req.user.id
         }
       }, { transaction: dbTransaction });
 
       await dbTransaction.commit();
+
+      console.log(`❌ Withdrawal ${transactionId} rejected by admin ${req.user.id}`);
 
       res.json({
         success: true,
@@ -537,7 +617,7 @@ const processWithdrawal = async (req, res) => {
 
   } catch (error) {
     await dbTransaction.rollback();
-    console.error('Process withdrawal error:', error.message);
+    console.error('❌ Process withdrawal error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to process withdrawal',
@@ -545,6 +625,200 @@ const processWithdrawal = async (req, res) => {
     });
   }
 };
+
+// =====================================================
+// DEPOSIT AMOUNT MISMATCHES
+// =====================================================
+
+// @desc    Get deposits with amount mismatch
+// @route   GET /api/admin/deposits/mismatches
+// @access  Private/Admin
+const getAmountMismatches = async (req, res) => {
+  try {
+    const mismatches = await PendingDeposit.findAll({
+      where: {
+        status: 'pending',
+        webhookData: {
+          [Op.ne]: null
+        }
+      },
+      include: [
+        {
+          model: User,
+          as: 'user',
+          attributes: ['id', 'username', 'email', 'phoneNumber']
+        },
+        {
+          model: VirtualAccount,
+          as: 'virtualAccount',
+          attributes: ['accountNumber', 'accountName', 'bankName']
+        }
+      ],
+      order: [['createdAt', 'DESC']],
+      limit: 100
+    });
+
+    // Filter only those requiring manual review
+    const flaggedDeposits = mismatches.filter(deposit => 
+      deposit.webhookData?.requiresManualReview === true
+    );
+
+    res.json({
+      success: true,
+      data: {
+        count: flaggedDeposits.length,
+        deposits: flaggedDeposits.map(d => ({
+          id: d.id,
+          reference: d.reference,
+          user: {
+            id: d.user.id,
+            username: d.user.username,
+            email: d.user.email,
+            phone: d.user.phoneNumber
+          },
+          account: {
+            number: d.virtualAccount.accountNumber,
+            name: d.virtualAccount.accountName,
+            bank: d.virtualAccount.bankName
+          },
+          expectedAmount: parseFloat(d.amount),
+          receivedAmount: d.webhookData?.receivedAmount,
+          difference: d.webhookData?.amountDifference,
+          payer: d.webhookData?.payer,
+          aspfiyRef: d.webhookData?.aspfiyReference,
+          createdAt: d.createdAt,
+          webhookReceivedAt: d.webhookData?.receivedAt
+        }))
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Get mismatches error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get amount mismatches'
+    });
+  }
+};
+
+// @desc    Manually approve amount mismatch
+// @route   POST /api/admin/deposits/approve-mismatch/:reference
+// @access  Private/Admin
+const approveAmountMismatch = async (req, res) => {
+  const transaction = await sequelize.transaction();
+  
+  try {
+    const { reference } = req.params;
+    const { creditAmount } = req.body;
+
+    if (!creditAmount || creditAmount <= 0) {
+      await transaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid credit amount'
+      });
+    }
+
+    const pendingDeposit = await PendingDeposit.findOne({
+      where: { reference },
+      include: [
+        {
+          model: User,
+          as: 'user',
+          include: [{ model: Wallet, as: 'wallet' }]
+        }
+      ],
+      lock: transaction.LOCK.UPDATE,
+      transaction
+    });
+
+    if (!pendingDeposit) {
+      await transaction.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'Deposit not found'
+      });
+    }
+
+    const wallet = pendingDeposit.user?.wallet;
+    if (!wallet) {
+      await transaction.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'Wallet not found'
+      });
+    }
+
+    // Credit the wallet
+    const balanceBefore = parseFloat(wallet.nairaBalance) || 0;
+    const balanceAfter = balanceBefore + creditAmount;
+
+    await wallet.update({
+      nairaBalance: balanceAfter,
+      totalDeposited: parseFloat(wallet.totalDeposited || 0) + creditAmount
+    }, { transaction });
+
+    // Update pending deposit
+    await pendingDeposit.update({
+      status: 'completed',
+      completedAt: new Date(),
+      webhookData: {
+        ...pendingDeposit.webhookData,
+        manuallyApproved: true,
+        approvedBy: req.user.id,
+        approvedAt: new Date(),
+        creditedAmount: creditAmount
+      }
+    }, { transaction });
+
+    // Update transaction
+    await Transaction.update({
+      status: 'completed',
+      balanceBefore,
+      balanceAfter,
+      amount: creditAmount,
+      metadata: {
+        manuallyApproved: true,
+        approvedBy: req.user.id,
+        approvedAt: new Date(),
+        originalAmount: pendingDeposit.amount,
+        receivedAmount: pendingDeposit.webhookData?.receivedAmount,
+        creditedAmount: creditAmount,
+        reason: 'Amount mismatch - manually approved'
+      }
+    }, {
+      where: { reference },
+      transaction
+    });
+
+    await transaction.commit();
+
+    console.log(`✅ Amount mismatch approved: ${reference} by admin ${req.user.id}`);
+
+    res.json({
+      success: true,
+      message: 'Deposit manually approved and credited',
+      data: {
+        reference,
+        creditedAmount: creditAmount,
+        newBalance: balanceAfter,
+        userId: pendingDeposit.userId
+      }
+    });
+
+  } catch (error) {
+    await transaction.rollback();
+    console.error('❌ Approve mismatch error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to approve deposit'
+    });
+  }
+};
+
+// =====================================================
+// ROUND MANAGEMENT
+// =====================================================
 
 // @desc    Get all rounds
 // @route   GET /api/admin/rounds
@@ -570,13 +844,14 @@ const getAllRounds = async (req, res) => {
         pagination: {
           total: rounds.count,
           page: parseInt(page),
+          limit: parseInt(limit),
           pages: Math.ceil(rounds.count / parseInt(limit))
         }
       }
     });
 
   } catch (error) {
-    console.error('Get all rounds error:', error.message);
+    console.error('❌ Get rounds error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to get rounds',
@@ -611,7 +886,7 @@ const getRoundDetailsAdmin = async (req, res) => {
       });
     }
 
-    // Calculate additional statistics
+    // Calculate statistics
     const stats = {
       totalBets: round.bets.length,
       upBets: round.bets.filter(b => b.prediction === 'up').length,
@@ -620,7 +895,9 @@ const getRoundDetailsAdmin = async (req, res) => {
       losers: round.bets.filter(b => b.result === 'loss').length,
       totalPaidOut: round.bets
         .filter(b => b.result === 'win')
-        .reduce((sum, bet) => sum + parseFloat(bet.payout), 0)
+        .reduce((sum, bet) => sum + parseFloat(bet.payout), 0),
+      totalWagered: round.bets
+        .reduce((sum, bet) => sum + parseFloat(bet.totalAmount), 0)
     };
 
     res.json({
@@ -632,7 +909,7 @@ const getRoundDetailsAdmin = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get round details error:', error.message);
+    console.error('❌ Get round details error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to get round details',
@@ -641,7 +918,7 @@ const getRoundDetailsAdmin = async (req, res) => {
   }
 };
 
-// @desc    Manual round cancellation (emergency)
+// @desc    Cancel round (emergency)
 // @route   PUT /api/admin/rounds/:roundId/cancel
 // @access  Private/Admin
 const cancelRound = async (req, res) => {
@@ -651,9 +928,10 @@ const cancelRound = async (req, res) => {
     const { roundId } = req.params;
     const { reason } = req.body;
 
-    const round = await Round.findByPk(roundId);
+    const round = await Round.findByPk(roundId, { transaction });
 
     if (!round) {
+      await transaction.rollback();
       return res.status(404).json({
         success: false,
         message: 'Round not found'
@@ -661,21 +939,24 @@ const cancelRound = async (req, res) => {
     }
 
     if (round.status === 'completed') {
+      await transaction.rollback();
       return res.status(400).json({
         success: false,
         message: 'Cannot cancel completed round'
       });
     }
 
-    // Get all bets for this round
+    // Get all bets
     const bets = await Bet.findAll({
-      where: { roundId: round.id }
+      where: { roundId: round.id },
+      transaction
     });
 
     // Refund all bets
     for (const bet of bets) {
       const wallet = await Wallet.findOne({
-        where: { userId: bet.userId }
+        where: { userId: bet.userId },
+        transaction
       });
 
       await wallet.update({
@@ -696,6 +977,7 @@ const cancelRound = async (req, res) => {
         type: 'refund',
         method: 'internal',
         amount: parseFloat(bet.totalAmount),
+        currency: 'NGN',
         status: 'completed',
         description: `Round #${round.roundNumber} cancelled: ${reason || 'Admin action'}`,
         metadata: {
@@ -706,13 +988,15 @@ const cancelRound = async (req, res) => {
       }, { transaction });
     }
 
-    // Update round status
+    // Update round
     await round.update({
       status: 'cancelled',
       result: 'cancelled'
     }, { transaction });
 
     await transaction.commit();
+
+    console.log(`🚫 Round ${round.roundNumber} cancelled by admin ${req.user.id}`);
 
     res.json({
       success: true,
@@ -726,7 +1010,7 @@ const cancelRound = async (req, res) => {
 
   } catch (error) {
     await transaction.rollback();
-    console.error('Cancel round error:', error.message);
+    console.error('❌ Cancel round error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to cancel round',
@@ -734,6 +1018,10 @@ const cancelRound = async (req, res) => {
     });
   }
 };
+
+// =====================================================
+// PLATFORM SETTINGS
+// =====================================================
 
 // @desc    Get platform settings
 // @route   GET /api/admin/settings
@@ -743,16 +1031,25 @@ const getSettings = async (req, res) => {
     res.json({
       success: true,
       data: {
-        platformFeePercentage: process.env.PLATFORM_FEE_PERCENTAGE,
-        losersPoolPlatformCut: process.env.LOSERS_POOL_PLATFORM_CUT,
-        minBetAmount: process.env.MIN_BET_AMOUNT,
-        maxBetAmount: process.env.MAX_BET_AMOUNT,
-        roundDurationMinutes: process.env.ROUND_DURATION_MINUTES
+        fees: {
+          platformFeePercentage: process.env.PLATFORM_FEE_PERCENTAGE || 1,
+          losersPoolPlatformCut: process.env.LOSERS_POOL_PLATFORM_CUT || 30
+        },
+        betting: {
+          minBetAmount: process.env.MIN_BET_AMOUNT || 100,
+          maxBetAmount: process.env.MAX_BET_AMOUNT || 1000000,
+          roundDurationMinutes: process.env.ROUND_DURATION_MINUTES || 5
+        },
+        payments: {
+          minDeposit: 100,
+          maxDeposit: 5000000,
+          minWithdrawal: 1000
+        }
       }
     });
 
   } catch (error) {
-    console.error('Get settings error:', error.message);
+    console.error('❌ Get settings error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to get settings',
@@ -761,16 +1058,34 @@ const getSettings = async (req, res) => {
   }
 };
 
+// =====================================================
+// EXPORTS
+// =====================================================
 module.exports = {
+  // Dashboard
   getDashboardStats,
+  
+  // User Management
   getAllUsers,
   getUserDetails,
   updateUserStatus,
+  
+  // Transactions
   getAllTransactions,
+  
+  // Withdrawals
   getPendingWithdrawals,
   processWithdrawal,
+  
+  // Deposits
+  getAmountMismatches,
+  approveAmountMismatch,
+  
+  // Rounds
   getAllRounds,
   getRoundDetailsAdmin,
   cancelRound,
+  
+  // Settings
   getSettings
 };
