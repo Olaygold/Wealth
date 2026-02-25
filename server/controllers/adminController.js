@@ -704,36 +704,46 @@ const getAmountMismatches = async (req, res) => {
 // @desc    Manually approve amount mismatch
 // @route   POST /api/admin/deposits/approve-mismatch/:reference
 // @access  Private/Admin
+// @desc    Manually approve amount mismatch
+// @route   POST /api/admin/deposits/approve-mismatch/:reference
+// @access  Private/Admin
 const approveAmountMismatch = async (req, res) => {
-  const transaction = await sequelize.transaction();
+  const dbTransaction = await sequelize.transaction();
   
   try {
     const { reference } = req.params;
     const { creditAmount } = req.body;
 
     if (!creditAmount || creditAmount <= 0) {
-      await transaction.rollback();
+      await dbTransaction.rollback();
       return res.status(400).json({
         success: false,
         message: 'Invalid credit amount'
       });
     }
 
+    // ✅ STEP 1: Find deposit WITHOUT lock (to avoid outer join lock error)
     const pendingDeposit = await PendingDeposit.findOne({
       where: { reference },
       include: [
         {
           model: User,
           as: 'user',
-          include: [{ model: Wallet, as: 'wallet' }]
+          attributes: ['id', 'username', 'email', 'phoneNumber'],
+          include: [
+            { 
+              model: Wallet, 
+              as: 'wallet',
+              attributes: ['id', 'userId', 'nairaBalance', 'totalDeposited']
+            }
+          ]
         }
-      ],
-      lock: transaction.LOCK.UPDATE,
-      transaction
+      ]
+      // NO lock here!
     });
 
     if (!pendingDeposit) {
-      await transaction.rollback();
+      await dbTransaction.rollback();
       return res.status(404).json({
         success: false,
         message: 'Deposit not found'
@@ -742,23 +752,47 @@ const approveAmountMismatch = async (req, res) => {
 
     const wallet = pendingDeposit.user?.wallet;
     if (!wallet) {
-      await transaction.rollback();
+      await dbTransaction.rollback();
       return res.status(404).json({
         success: false,
         message: 'Wallet not found'
       });
     }
 
-    // Credit the wallet
-    const balanceBefore = parseFloat(wallet.nairaBalance) || 0;
-    const balanceAfter = balanceBefore + creditAmount;
+    // ✅ STEP 2: Now lock ONLY the wallet (no outer joins = no error)
+    const lockedWallet = await Wallet.findOne({
+      where: { id: wallet.id },
+      lock: dbTransaction.LOCK.UPDATE,
+      transaction: dbTransaction
+    });
 
-    await wallet.update({
+    if (!lockedWallet) {
+      await dbTransaction.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'Failed to lock wallet'
+      });
+    }
+
+    // Check if already processed
+    if (pendingDeposit.status !== 'pending') {
+      await dbTransaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: `Deposit already ${pendingDeposit.status}`
+      });
+    }
+
+    // ✅ STEP 3: Credit the wallet (use lockedWallet, not wallet)
+    const balanceBefore = parseFloat(lockedWallet.nairaBalance) || 0;
+    const balanceAfter = balanceBefore + parseFloat(creditAmount);
+
+    await lockedWallet.update({
       nairaBalance: balanceAfter,
-      totalDeposited: parseFloat(wallet.totalDeposited || 0) + creditAmount
-    }, { transaction });
+      totalDeposited: parseFloat(lockedWallet.totalDeposited || 0) + parseFloat(creditAmount)
+    }, { transaction: dbTransaction });
 
-    // Update pending deposit
+    // ✅ STEP 4: Update pending deposit
     await pendingDeposit.update({
       status: 'completed',
       completedAt: new Date(),
@@ -767,51 +801,68 @@ const approveAmountMismatch = async (req, res) => {
         manuallyApproved: true,
         approvedBy: req.user.id,
         approvedAt: new Date(),
-        creditedAmount: creditAmount
+        creditedAmount: parseFloat(creditAmount)
       }
-    }, { transaction });
+    }, { transaction: dbTransaction });
 
-    // Update transaction
+    // ✅ STEP 5: Update transaction record
     await Transaction.update({
       status: 'completed',
       balanceBefore,
       balanceAfter,
-      amount: creditAmount,
+      amount: parseFloat(creditAmount),
       metadata: {
         manuallyApproved: true,
         approvedBy: req.user.id,
         approvedAt: new Date(),
-        originalAmount: pendingDeposit.amount,
+        originalAmount: parseFloat(pendingDeposit.amount),
         receivedAmount: pendingDeposit.webhookData?.receivedAmount,
-        creditedAmount: creditAmount,
-        reason: 'Amount mismatch - manually approved'
+        creditedAmount: parseFloat(creditAmount),
+        reason: 'Amount mismatch - manually approved by admin'
       }
     }, {
       where: { reference },
-      transaction
+      transaction: dbTransaction
     });
 
-    await transaction.commit();
+    await dbTransaction.commit();
 
-    console.log(`✅ Amount mismatch approved: ${reference} by admin ${req.user.id}`);
+    console.log(`✅ Manual approval success: ${reference} by admin ${req.user.id}`);
+    console.log(`   User: ${pendingDeposit.userId} (${pendingDeposit.user?.username})`);
+    console.log(`   Amount: ₦${creditAmount}`);
+    console.log(`   New balance: ₦${balanceAfter}`);
+
+    // ✅ STEP 6: Send real-time notification
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user_${pendingDeposit.userId}`).emit('deposit_confirmed', {
+        amount: parseFloat(creditAmount),
+        newBalance: balanceAfter,
+        reference: pendingDeposit.reference,
+        timestamp: new Date(),
+        message: `Your deposit of ₦${parseFloat(creditAmount).toLocaleString()} has been approved by admin! 🎉`
+      });
+    }
 
     res.json({
       success: true,
-      message: 'Deposit manually approved and credited',
+      message: 'Deposit manually approved and credited successfully',
       data: {
-        reference,
-        creditedAmount: creditAmount,
+        reference: pendingDeposit.reference,
+        creditedAmount: parseFloat(creditAmount),
         newBalance: balanceAfter,
-        userId: pendingDeposit.userId
+        userId: pendingDeposit.userId,
+        username: pendingDeposit.user?.username
       }
     });
 
   } catch (error) {
-    await transaction.rollback();
+    await dbTransaction.rollback();
     console.error('❌ Approve mismatch error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to approve deposit'
+      message: 'Failed to approve deposit',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 };
