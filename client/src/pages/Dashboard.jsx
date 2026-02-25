@@ -277,13 +277,13 @@ const UserGuideModal = ({ isOpen, onClose }) => {
     {
       icon: <Target className="w-12 h-12 text-primary" />,
       title: "Welcome to Wealth Trading! 🎯",
-      content: "Predict if Bitcoin price will go UP ⬆️ or DOWN ⬇️ in the next 5 minutes and win big!",
+      content: "Predict if Bitcoin price will go UP ⬆️ or DOWN ⬇️ in the next 10 minutes and win big!",
       tip: "It's simple - just pick a direction and place your bet!"
     },
     {
       icon: <Clock className="w-12 h-12 text-blue-500" />,
       title: "How Rounds Work ⏰",
-      content: "Each round has 2 phases:\n• Betting Phase: Place your bets\n• Locked Phase: Wait for results\n\nBetting closes 10 seconds before round ends.",
+      content: "Each round has 2 phases:\n• Betting Phase: Place your bets\n• Locked Phase: Wait for results\n\nBetting closes 5 minutes before round ends.",
       tip: "Watch the countdown timer - don't miss your chance to bet!"
     },
     {
