@@ -8,7 +8,7 @@ import {
   Activity,
   Target
 } from 'lucide-react';
-import adminApi from '../../services/adminApi';
+import adminService from '../../services/adminService'; // ✅ FIXED
 import StatCard from '../../components/admin/StatCard';
 
 const Dashboard = () => {
@@ -21,8 +21,8 @@ const Dashboard = () => {
 
   const loadDashboard = async () => {
     try {
-      const res = await adminApi.getDashboard();
-      setStats(res.data.data);
+      const res = await adminService.getDashboardStats(); // ✅ FIXED
+      setStats(res.data); // ✅ FIXED - backend returns { success: true, data: {...} }
     } catch (error) {
       console.error('Failed to load dashboard:', error);
     } finally {
@@ -74,7 +74,7 @@ const Dashboard = () => {
         <StatCard
           title="Total Users"
           value={stats?.users?.total?.toLocaleString()}
-          change={`+${stats?.users?.new24h} today`}
+          change={`+${stats?.users?.new24h || 0} today`}
           icon={Users}
           color="blue"
         />
@@ -82,7 +82,7 @@ const Dashboard = () => {
         {/* Revenue */}
         <StatCard
           title="Total Revenue"
-          value={`₦${stats?.financials?.totalRevenue?.toLocaleString()}`}
+          value={`₦${stats?.financials?.totalRevenue?.toLocaleString() || 0}`}
           subtitle="Platform earnings"
           icon={DollarSign}
           color="green"
@@ -91,7 +91,7 @@ const Dashboard = () => {
         {/* Deposits */}
         <StatCard
           title="Total Deposits"
-          value={`₦${stats?.financials?.totalDeposits?.toLocaleString()}`}
+          value={`₦${stats?.financials?.totalDeposits?.toLocaleString() || 0}`}
           subtitle="All time deposits"
           icon={TrendingUp}
           color="purple"
@@ -100,8 +100,8 @@ const Dashboard = () => {
         {/* Bets */}
         <StatCard
           title="Total Bets"
-          value={stats?.bets?.total?.toLocaleString()}
-          change={`+${stats?.bets?.new24h} today`}
+          value={stats?.bets?.total?.toLocaleString() || 0}
+          change={`+${stats?.bets?.new24h || 0} today`}
           icon={Target}
           color="orange"
         />
@@ -114,10 +114,10 @@ const Dashboard = () => {
           <h3 className="text-sm font-medium text-gray-500">Active Users</h3>
           <div className="mt-2 flex items-baseline">
             <p className="text-2xl font-semibold text-gray-900">
-              {stats?.users?.active?.toLocaleString()}
+              {stats?.users?.active?.toLocaleString() || 0}
             </p>
             <p className="ml-2 text-sm text-gray-600">
-              of {stats?.users?.total?.toLocaleString()}
+              of {stats?.users?.total?.toLocaleString() || 0}
             </p>
           </div>
         </div>
@@ -126,7 +126,7 @@ const Dashboard = () => {
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-sm font-medium text-gray-500">Total Bet Volume</h3>
           <p className="mt-2 text-2xl font-semibold text-gray-900">
-            ₦{stats?.bets?.volume?.toLocaleString()}
+            ₦{stats?.bets?.volume?.toLocaleString() || 0}
           </p>
         </div>
 
@@ -135,10 +135,10 @@ const Dashboard = () => {
           <h3 className="text-sm font-medium text-gray-500">Completed Rounds</h3>
           <div className="mt-2 flex items-baseline">
             <p className="text-2xl font-semibold text-gray-900">
-              {stats?.rounds?.completed?.toLocaleString()}
+              {stats?.rounds?.completed?.toLocaleString() || 0}
             </p>
             <p className="ml-2 text-sm text-gray-600">
-              of {stats?.rounds?.total?.toLocaleString()}
+              of {stats?.rounds?.total?.toLocaleString() || 0}
             </p>
           </div>
         </div>
@@ -154,22 +154,22 @@ const Dashboard = () => {
             <div>
               <p className="text-sm text-gray-600">Total User Balance</p>
               <p className="text-xl font-semibold text-gray-900 mt-1">
-                ₦{stats?.financials?.totalUserBalance?.toLocaleString()}
+                ₦{stats?.financials?.totalUserBalance?.toLocaleString() || 0}
               </p>
               <p className="text-xs text-gray-500 mt-1">
-                Locked: ₦{stats?.financials?.totalLocked?.toLocaleString()}
+                Locked: ₦{stats?.financials?.totalLocked?.toLocaleString() || 0}
               </p>
             </div>
             <div>
               <p className="text-sm text-gray-600">Entry Fees Collected</p>
               <p className="text-xl font-semibold text-gray-900 mt-1">
-                ₦{stats?.financials?.entryFees?.toLocaleString()}
+                ₦{stats?.financials?.entryFees?.toLocaleString() || 0}
               </p>
             </div>
             <div>
               <p className="text-sm text-gray-600">Platform Cuts</p>
               <p className="text-xl font-semibold text-gray-900 mt-1">
-                ₦{stats?.financials?.platformCuts?.toLocaleString()}
+                ₦{stats?.financials?.platformCuts?.toLocaleString() || 0}
               </p>
             </div>
           </div>
@@ -188,19 +188,19 @@ const Dashboard = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="text-center">
               <p className="text-3xl font-bold text-blue-600">
-                {stats?.recentActivity?.newUsers}
+                {stats?.recentActivity?.newUsers || 0}
               </p>
               <p className="text-sm text-gray-600 mt-1">New Users</p>
             </div>
             <div className="text-center">
               <p className="text-3xl font-bold text-green-600">
-                {stats?.recentActivity?.newDeposits}
+                {stats?.recentActivity?.newDeposits || 0}
               </p>
               <p className="text-sm text-gray-600 mt-1">New Deposits</p>
             </div>
             <div className="text-center">
               <p className="text-3xl font-bold text-purple-600">
-                {stats?.recentActivity?.newBets}
+                {stats?.recentActivity?.newBets || 0}
               </p>
               <p className="text-sm text-gray-600 mt-1">New Bets</p>
             </div>
