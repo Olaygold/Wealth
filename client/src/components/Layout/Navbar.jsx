@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
@@ -10,7 +11,8 @@ import {
   Menu, 
   X,
   User,
-  Settings
+  Settings,
+  Shield // Add this for admin icon
 } from 'lucide-react';
 
 const Navbar = () => {
@@ -32,6 +34,7 @@ const Navbar = () => {
   ];
 
   const isActive = (path) => location.pathname === path;
+  const isAdminActive = location.pathname.startsWith('/admin');
 
   return (
     <nav className="sticky top-0 z-50 bg-slate-900/95 backdrop-blur-lg border-b border-slate-800 shadow-xl">
@@ -64,13 +67,35 @@ const Navbar = () => {
                 {item.label}
               </Link>
             ))}
+
+            {/* Admin Panel Link - Desktop */}
+            {user?.role === 'admin' && (
+              <Link
+                to="/admin"
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all ${
+                  isAdminActive
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
+                    : 'bg-purple-600/20 text-purple-400 hover:text-white hover:bg-purple-600/40'
+                }`}
+              >
+                <Shield size={18} />
+                Admin Panel
+              </Link>
+            )}
           </div>
 
           {/* User Menu */}
           <div className="flex items-center gap-4">
             <div className="hidden md:block text-right">
               <p className="text-sm text-gray-400">Welcome back,</p>
-              <p className="text-white font-bold">{user?.username}</p>
+              <p className="text-white font-bold">
+                {user?.username}
+                {user?.role === 'admin' && (
+                  <span className="ml-2 text-xs bg-purple-600/20 text-purple-400 px-2 py-1 rounded-md">
+                    Admin
+                  </span>
+                )}
+              </p>
             </div>
             <button
               onClick={handleLogout}
@@ -95,8 +120,17 @@ const Navbar = () => {
           <div className="md:hidden py-4 border-t border-slate-800">
             <div className="mb-4 p-4 bg-slate-800/50 rounded-xl">
               <p className="text-sm text-gray-400">Logged in as</p>
-              <p className="text-white font-bold text-lg">{user?.username}</p>
+              <p className="text-white font-bold text-lg">
+                {user?.username}
+                {user?.role === 'admin' && (
+                  <span className="ml-2 text-xs bg-purple-600/20 text-purple-400 px-2 py-1 rounded-md">
+                    Admin
+                  </span>
+                )}
+              </p>
             </div>
+
+            {/* Regular Nav Items - Mobile */}
             {navItems.map(item => (
               <Link
                 key={item.path}
@@ -112,6 +146,22 @@ const Navbar = () => {
                 {item.label}
               </Link>
             ))}
+
+            {/* Admin Panel Link - Mobile */}
+            {user?.role === 'admin' && (
+              <Link
+                to="/admin"
+                onClick={() => setMobileMenuOpen(false)}
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl font-medium mb-2 transition-all ${
+                  isAdminActive
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
+                    : 'bg-purple-600/20 text-purple-400 hover:bg-purple-600/40 hover:text-white'
+                }`}
+              >
+                <Shield size={20} />
+                Admin Panel
+              </Link>
+            )}
           </div>
         )}
       </div>
