@@ -1,3 +1,6 @@
+
+See mow help me out I wan to do. The admin page now for each admin frauteur oles help me I don't know how to start and that the admin will have asses to lothot hon and control and ......
+This is one of my code  but firl tell wlme what an what u will be put in I. The admin page and what will that do and how it will work and what will happen first 
 const { User, Wallet, Transaction, Round, Bet } = require('../models');
 const { Op } = require('sequelize');
 const { sequelize } = require('../config/database');
