@@ -14,10 +14,53 @@ import {
   Building,
   Phone,
   Mail,
-  Shield
+  Shield,
+  Copy,
+  Check
 } from 'lucide-react';
-import adminService from '../../services/adminService'; // ✅ Changed from adminApi
+import adminService from '../../services/adminService';
 import toast from 'react-hot-toast';
+
+// Bank codes to names mapping (Nigerian banks)
+const BANK_NAMES = {
+  '044': 'Access Bank',
+  '023': 'Citibank Nigeria',
+  '063': 'Diamond Bank',
+  '050': 'Ecobank Nigeria',
+  '084': 'Enterprise Bank',
+  '070': 'Fidelity Bank',
+  '011': 'First Bank of Nigeria',
+  '214': 'First City Monument Bank',
+  '058': 'Guaranty Trust Bank (GTBank)',
+  '030': 'Heritage Bank',
+  '301': 'Jaiz Bank',
+  '082': 'Keystone Bank',
+  '526': 'Parallex Bank',
+  '076': 'Polaris Bank',
+  '101': 'Providus Bank',
+  '221': 'Stanbic IBTC Bank',
+  '068': 'Standard Chartered Bank',
+  '232': 'Sterling Bank',
+  '100': 'Suntrust Bank',
+  '032': 'Union Bank of Nigeria',
+  '033': 'United Bank for Africa (UBA)',
+  '215': 'Unity Bank',
+  '035': 'Wema Bank',
+  '057': 'Zenith Bank',
+  '999': 'NIP Virtual Bank',
+  '090110': 'VFD Microfinance Bank',
+  '090267': 'Kuda Bank',
+  '090115': 'TCF MFB',
+  '100004': 'Opay',
+  '100033': 'PalmPay',
+  '090405': 'Moniepoint MFB',
+  '120001': 'PocketMoni',
+};
+
+const getBankName = (bankCode) => {
+  if (!bankCode) return 'Unknown Bank';
+  return BANK_NAMES[bankCode] || `Bank (${bankCode})`;
+};
 
 const Withdrawals = () => {
   const [withdrawals, setWithdrawals] = useState([]);
@@ -25,6 +68,7 @@ const Withdrawals = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [processing, setProcessing] = useState(null);
   const [totalAmount, setTotalAmount] = useState(0);
+  const [copiedField, setCopiedField] = useState(null);
 
   useEffect(() => {
     loadWithdrawals();
@@ -35,7 +79,6 @@ const Withdrawals = () => {
     try {
       const res = await adminService.getPendingWithdrawals();
       
-      // ✅ Fixed data extraction - backend returns { success, data: { withdrawals, total, totalAmount } }
       if (res.success) {
         setWithdrawals(res.data.withdrawals || []);
         setTotalAmount(res.data.totalAmount || 0);
@@ -58,14 +101,42 @@ const Withdrawals = () => {
     loadWithdrawals();
   };
 
+  // ✅ Copy to clipboard function
+  const copyToClipboard = async (text, fieldId) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedField(fieldId);
+      toast.success('Copied to clipboard!', { duration: 1500 });
+      
+      // Reset after 2 seconds
+      setTimeout(() => {
+        setCopiedField(null);
+      }, 2000);
+    } catch (err) {
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      
+      setCopiedField(fieldId);
+      toast.success('Copied to clipboard!', { duration: 1500 });
+      
+      setTimeout(() => {
+        setCopiedField(null);
+      }, 2000);
+    }
+  };
+
   const handleProcess = async (transactionId, action, withdrawal) => {
     const actionText = action === 'approve' ? 'approve' : 'reject';
     const actionPast = action === 'approve' ? 'approved' : 'rejected';
     
-    // Confirmation with details
     const confirmMessage = action === 'approve'
-      ? `Approve withdrawal of ₦${parseFloat(withdrawal.amount).toLocaleString()} for ${withdrawal.user?.username}?\n\nBank: ${withdrawal.metadata?.accountNumber || 'N/A'}\nAccount: ${withdrawal.metadata?.accountName || 'N/A'}`
-      : `Reject withdrawal of ₦${parseFloat(withdrawal.amount).toLocaleString()} for ${withdrawal.user?.username}?\n\nThe amount will be refunded to user's wallet.`;
+      ? `Approve withdrawal of ₦${formatCurrency(withdrawal.amount)} for ${withdrawal.user?.username}?\n\nBank: ${getBankName(withdrawal.metadata?.bankCode)}\nAccount: ${withdrawal.metadata?.accountNumber}\nName: ${withdrawal.metadata?.accountName}`
+      : `Reject withdrawal of ₦${formatCurrency(withdrawal.amount)} for ${withdrawal.user?.username}?\n\nThe amount will be refunded to user's wallet.`;
 
     if (!window.confirm(confirmMessage)) {
       return;
@@ -77,7 +148,6 @@ const Withdrawals = () => {
         : 'Enter rejection reason (required):'
     );
     
-    // For rejection, reason is required
     if (action === 'reject' && (!reason || !reason.trim())) {
       toast.error('Rejection reason is required');
       return;
@@ -94,10 +164,10 @@ const Withdrawals = () => {
       if (res.success) {
         toast.success(
           action === 'approve'
-            ? `✅ Withdrawal approved! ₦${parseFloat(withdrawal.amount).toLocaleString()} sent to ${withdrawal.user?.username}`
-            : `❌ Withdrawal rejected and ₦${parseFloat(withdrawal.amount).toLocaleString()} refunded to ${withdrawal.user?.username}`
+            ? `✅ Withdrawal approved! ₦${formatCurrency(withdrawal.amount)} to be sent to ${withdrawal.user?.username}`
+            : `❌ Withdrawal rejected and ₦${formatCurrency(withdrawal.amount)} refunded to ${withdrawal.user?.username}`
         );
-        loadWithdrawals(); // Refresh list
+        loadWithdrawals();
       } else {
         toast.error(res.message || `Failed to ${actionText} withdrawal`);
       }
@@ -124,6 +194,29 @@ const Withdrawals = () => {
       hour: '2-digit',
       minute: '2-digit'
     });
+  };
+
+  // ✅ Copy Button Component
+  const CopyButton = ({ text, fieldId, label }) => {
+    const isCopied = copiedField === fieldId;
+    
+    return (
+      <button
+        onClick={() => copyToClipboard(text, fieldId)}
+        className={`ml-2 p-1.5 rounded-lg transition-all ${
+          isCopied 
+            ? 'bg-green-100 text-green-600' 
+            : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700'
+        }`}
+        title={isCopied ? 'Copied!' : `Copy ${label}`}
+      >
+        {isCopied ? (
+          <Check size={14} />
+        ) : (
+          <Copy size={14} />
+        )}
+      </button>
+    );
   };
 
   if (loading) {
@@ -217,9 +310,17 @@ const Withdrawals = () => {
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-3xl font-black text-gray-900">
-                      ₦{formatCurrency(withdrawal.amount)}
-                    </p>
+                    {/* ✅ Amount with Copy Button */}
+                    <div className="flex items-center justify-end">
+                      <p className="text-3xl font-black text-gray-900">
+                        ₦{formatCurrency(withdrawal.amount)}
+                      </p>
+                      <CopyButton 
+                        text={parseFloat(withdrawal.amount).toString()} 
+                        fieldId={`amount-${withdrawal.id}`}
+                        label="amount"
+                      />
+                    </div>
                     <p className="text-xs text-gray-500 flex items-center gap-1 justify-end mt-1">
                       <Clock size={12} />
                       {formatDate(withdrawal.createdAt)}
@@ -235,27 +336,74 @@ const Withdrawals = () => {
                     <Building size={14} />
                     Bank Details
                   </h4>
-                  <div className="grid grid-cols-1 gap-2">
-                    <div className="flex justify-between">
+                  <div className="space-y-3">
+                    {/* Bank Name */}
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">Bank Name:</span>
+                      <span className="text-sm font-bold text-gray-900 bg-blue-50 px-3 py-1 rounded-lg">
+                        🏦 {getBankName(withdrawal.metadata?.bankCode)}
+                      </span>
+                    </div>
+
+                    {/* Account Name */}
+                    <div className="flex justify-between items-center">
                       <span className="text-sm text-gray-600">Account Name:</span>
-                      <span className="text-sm font-semibold text-gray-900 text-right">
+                      <span className="text-sm font-semibold text-gray-900 text-right max-w-[60%]">
                         {withdrawal.metadata?.accountName || 'N/A'}
                       </span>
                     </div>
-                    <div className="flex justify-between">
+
+                    {/* ✅ Account Number with Copy Button */}
+                    <div className="flex justify-between items-center bg-white p-2 rounded-lg border border-gray-200">
                       <span className="text-sm text-gray-600">Account Number:</span>
-                      <span className="text-sm font-mono font-semibold text-gray-900">
-                        {withdrawal.metadata?.accountNumber || 'N/A'}
-                      </span>
+                      <div className="flex items-center">
+                        <span className="text-lg font-mono font-bold text-gray-900 tracking-wider">
+                          {withdrawal.metadata?.accountNumber || 'N/A'}
+                        </span>
+                        {withdrawal.metadata?.accountNumber && (
+                          <CopyButton 
+                            text={withdrawal.metadata.accountNumber} 
+                            fieldId={`account-${withdrawal.id}`}
+                            label="account number"
+                          />
+                        )}
+                      </div>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-gray-600">Bank Code:</span>
-                      <span className="text-sm font-semibold text-gray-900">
+
+                    {/* Bank Code (smaller) */}
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-gray-400">Bank Code:</span>
+                      <span className="text-gray-500 font-mono">
                         {withdrawal.metadata?.bankCode || 'N/A'}
                       </span>
                     </div>
                   </div>
                 </div>
+
+                {/* ✅ Quick Copy All Button */}
+                <button
+                  onClick={() => {
+                    const details = `Bank: ${getBankName(withdrawal.metadata?.bankCode)}\nAccount Name: ${withdrawal.metadata?.accountName}\nAccount Number: ${withdrawal.metadata?.accountNumber}\nAmount: ₦${formatCurrency(withdrawal.amount)}`;
+                    copyToClipboard(details, `all-${withdrawal.id}`);
+                  }}
+                  className={`w-full mt-3 py-2 px-4 rounded-lg text-sm font-medium transition flex items-center justify-center gap-2 ${
+                    copiedField === `all-${withdrawal.id}`
+                      ? 'bg-green-100 text-green-700'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {copiedField === `all-${withdrawal.id}` ? (
+                    <>
+                      <Check size={16} />
+                      All Details Copied!
+                    </>
+                  ) : (
+                    <>
+                      <Copy size={16} />
+                      Copy All Bank Details
+                    </>
+                  )}
+                </button>
 
                 {/* User Wallet Info */}
                 <div className="bg-blue-50 rounded-xl p-4 mt-3">
@@ -351,10 +499,15 @@ const Withdrawals = () => {
                 </div>
 
                 {/* Reference */}
-                <div className="mt-4 pt-3 border-t border-gray-100">
-                  <p className="text-xs text-gray-400 text-center font-mono">
+                <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-center gap-2">
+                  <p className="text-xs text-gray-400 font-mono">
                     Ref: {withdrawal.reference}
                   </p>
+                  <CopyButton 
+                    text={withdrawal.reference} 
+                    fieldId={`ref-${withdrawal.id}`}
+                    label="reference"
+                  />
                 </div>
               </div>
             </div>
@@ -365,7 +518,7 @@ const Withdrawals = () => {
       {/* Help Text */}
       <div className="bg-gray-50 rounded-xl p-4 text-center">
         <p className="text-sm text-gray-500">
-          💡 <strong>Tip:</strong> Always verify bank details before approving. Rejected withdrawals are automatically refunded to user's wallet.
+          💡 <strong>Tip:</strong> Click the copy buttons to quickly copy account details for bank transfers. Rejected withdrawals are automatically refunded.
         </p>
       </div>
     </div>
