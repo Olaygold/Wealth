@@ -8,9 +8,7 @@ const Bet = require('./Bet');
 const VirtualAccount = require('./VirtualAccount');
 const PendingDeposit = require('./PendingDeposit');
 
-// ========================================
-// DEFINE ALL ASSOCIATIONS
-// ========================================
+// Define relationships AFTER all models are loaded
 
 // User <-> Wallet (One-to-One)
 User.hasOne(Wallet, { foreignKey: 'userId', as: 'wallet', onDelete: 'CASCADE' });
@@ -36,15 +34,13 @@ PendingDeposit.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 VirtualAccount.hasMany(PendingDeposit, { foreignKey: 'virtualAccountId', as: 'deposits' });
 PendingDeposit.belongsTo(VirtualAccount, { foreignKey: 'virtualAccountId', as: 'virtualAccount' });
 
-// User <-> VirtualAccount (One-to-Many)
-User.hasMany(VirtualAccount, { foreignKey: 'userId', as: 'virtualAccounts' });
-VirtualAccount.belongsTo(User, { foreignKey: 'userId', as: 'user' });
-
-// ✅ ========================================
-// ✅ USER SELF-REFERRAL (UNCOMMENTED!)
-// ✅ ========================================
+// ✅ USER SELF-REFERRAL
 User.hasMany(User, { foreignKey: 'referredBy', as: 'referrals' });
 User.belongsTo(User, { foreignKey: 'referredBy', as: 'referrer' });
+
+// ❌ REMOVED - VirtualAccount doesn't have userId field:
+// User.hasMany(VirtualAccount, { foreignKey: 'userId', as: 'virtualAccounts' });
+// VirtualAccount.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
 module.exports = {
   User,
