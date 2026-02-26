@@ -1,4 +1,5 @@
 
+// controllers/authController.js
 const { User, Wallet } = require('../models');
 const { generateToken } = require('../middleware/auth');
 const { sequelize } = require('../config/database');
@@ -198,7 +199,7 @@ const register = async (req, res) => {
   try {
     const { username, email, password, fullName, phoneNumber, referralCode } = req.body;
 
-    console.log('📝 Registration attempt:', { username, email, fullName, phoneNumber });
+    console.log('📝 Registration attempt:', { username, email, fullName, phoneNumber, referralCode: referralCode || 'none' });
 
     // ===== REQUIRED FIELDS VALIDATION =====
     if (!username || !email || !password || !fullName || !phoneNumber) {
@@ -306,11 +307,14 @@ const register = async (req, res) => {
       }
     }
 
-    // ===== CHECK REFERRAL CODE =====
+    // ===== CHECK REFERRAL CODE (UPDATED) =====
     let referrerId = null;
+    let referrer = null;
+
     if (referralCode && referralCode.trim()) {
-      const referrer = await User.findOne({
-        where: { referralCode: referralCode.trim().toUpperCase() }
+      referrer = await User.findOne({
+        where: { referralCode: referralCode.trim().toUpperCase() },
+        transaction
       });
 
       if (!referrer) {
@@ -321,7 +325,17 @@ const register = async (req, res) => {
         });
       }
 
+      // Cannot refer yourself (edge case)
+      if (referrer.email.toLowerCase() === email.toLowerCase()) {
+        await transaction.rollback();
+        return res.status(400).json({
+          success: false,
+          message: 'You cannot use your own referral code'
+        });
+      }
+
       referrerId = referrer.id;
+      console.log(`📎 Referral code valid: ${referralCode} belongs to ${referrer.username}`);
     }
 
     // ===== CREATE USER =====
@@ -331,7 +345,14 @@ const register = async (req, res) => {
       password, // Will be hashed by beforeCreate hook
       fullName: fullName.trim(),
       phoneNumber: cleanPhoneNumber,
-      referredBy: referrerId
+      referredBy: referrerId,
+      // ✅ New referral fields (defaults)
+      referralType: 'normal',
+      influencerPercentage: 0,
+      referralBalance: 0,
+      totalReferralEarnings: 0,
+      referralCount: 0,
+      hasPlacedFirstBet: false
     }, { transaction });
 
     // ===== CREATE WALLET =====
@@ -339,16 +360,31 @@ const register = async (req, res) => {
       userId: user.id
     }, { transaction });
 
+    // ===== UPDATE REFERRER'S COUNT (NEW) =====
+    if (referrer) {
+      await referrer.update({
+        referralCount: (referrer.referralCount || 0) + 1
+      }, { transaction });
+
+      console.log(`✅ Updated ${referrer.username}'s referral count to ${referrer.referralCount + 1}`);
+    }
+
     await transaction.commit();
 
-    console.log('✅ User registered successfully:', user.username);
+    console.log('✅ User registered successfully:', user.username, referrer ? `(referred by ${referrer.username})` : '');
 
     // ===== GENERATE TOKEN =====
     const token = generateToken(user.id);
 
+    // ===== GENERATE REFERRAL LINK =====
+    const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const referralLink = `${baseUrl}/register?ref=${user.referralCode}`;
+
     res.status(201).json({
       success: true,
-      message: 'Registration successful! Welcome to Wealth.',
+      message: referrer 
+        ? `Registration successful! You were referred by ${referrer.username}.`
+        : 'Registration successful! Welcome to Wealth.',
       data: {
         user: {
           id: user.id,
@@ -357,7 +393,9 @@ const register = async (req, res) => {
           fullName: user.fullName,
           phoneNumber: user.phoneNumber,
           referralCode: user.referralCode,
-          isVerified: user.isVerified
+          referralLink,
+          isVerified: user.isVerified,
+          referredBy: referrer ? referrer.username : null
         },
         token
       }
@@ -454,6 +492,10 @@ const login = async (req, res) => {
     // Generate token
     const token = generateToken(user.id);
 
+    // Generate referral link
+    const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const referralLink = `${baseUrl}/register?ref=${user.referralCode}`;
+
     console.log('✅ User logged in:', user.username);
 
     res.json({
@@ -469,7 +511,13 @@ const login = async (req, res) => {
           role: user.role,
           isVerified: user.isVerified,
           kycStatus: user.kycStatus,
-          referralCode: user.referralCode
+          // ✅ Referral info
+          referralCode: user.referralCode,
+          referralLink,
+          referralType: user.referralType,
+          referralBalance: parseFloat(user.referralBalance) || 0,
+          totalReferralEarnings: parseFloat(user.totalReferralEarnings) || 0,
+          referralCount: user.referralCount || 0
         },
         wallet: user.wallet ? {
           nairaBalance: parseFloat(user.wallet.nairaBalance) || 0,
@@ -509,6 +557,15 @@ const getMe = async (req, res) => {
       });
     }
 
+    // Generate referral link
+    const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const referralLink = `${baseUrl}/register?ref=${user.referralCode}`;
+
+    // Calculate referral percentage based on type
+    const referralPercentage = user.referralType === 'influencer' 
+      ? parseFloat(user.influencerPercentage) 
+      : 5;
+
     res.json({
       success: true,
       data: {
@@ -521,8 +578,15 @@ const getMe = async (req, res) => {
           role: user.role,
           isVerified: user.isVerified,
           kycStatus: user.kycStatus,
+          createdAt: user.createdAt,
+          // ✅ Full referral info
           referralCode: user.referralCode,
-          createdAt: user.createdAt
+          referralLink,
+          referralType: user.referralType,
+          referralPercentage,
+          referralBalance: parseFloat(user.referralBalance) || 0,
+          totalReferralEarnings: parseFloat(user.totalReferralEarnings) || 0,
+          referralCount: user.referralCount || 0
         },
         wallet: user.wallet ? {
           nairaBalance: parseFloat(user.wallet.nairaBalance) || 0,
@@ -685,16 +749,26 @@ const changePassword = async (req, res) => {
   }
 };
 
-// @desc    Get referral stats
+// @desc    Get referral stats (UPDATED - More detailed)
 // @route   GET /api/auth/referrals
 // @access  Private
 const getReferrals = async (req, res) => {
   try {
     const user = await User.findByPk(req.user.id, {
+      attributes: [
+        'id', 'username', 'referralCode', 'referralType',
+        'influencerPercentage', 'referralBalance', 
+        'totalReferralEarnings', 'referralCount'
+      ],
       include: [{
         model: User,
         as: 'referrals',
-        attributes: ['id', 'username', 'createdAt']
+        attributes: ['id', 'username', 'createdAt', 'hasPlacedFirstBet', 'isActive'],
+        include: [{
+          model: Wallet,
+          as: 'wallet',
+          attributes: ['totalDeposited', 'totalLost']
+        }]
       }]
     });
 
@@ -705,12 +779,51 @@ const getReferrals = async (req, res) => {
       });
     }
 
+    // Generate referral link
+    const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const referralLink = `${baseUrl}/register?ref=${user.referralCode}`;
+
+    // Calculate percentage based on type
+    const percentage = user.referralType === 'influencer' 
+      ? parseFloat(user.influencerPercentage) 
+      : 5;
+
+    // Format referred users
+    const referredUsers = (user.referrals || []).map(u => ({
+      id: u.id,
+      username: u.username,
+      joinedAt: u.createdAt,
+      isActive: u.isActive,
+      hasPlacedBet: u.hasPlacedFirstBet,
+      totalDeposited: u.wallet ? parseFloat(u.wallet.totalDeposited || 0) : 0,
+      totalLost: u.wallet ? parseFloat(u.wallet.totalLost || 0) : 0
+    }));
+
     res.json({
       success: true,
       data: {
+        // Referral code and link
         referralCode: user.referralCode,
-        totalReferrals: user.referrals?.length || 0,
-        referrals: user.referrals || []
+        referralLink,
+        
+        // Type and percentage
+        referralType: user.referralType,
+        percentage,
+        
+        // Earnings
+        referralBalance: parseFloat(user.referralBalance) || 0,
+        totalReferralEarnings: parseFloat(user.totalReferralEarnings) || 0,
+        
+        // Count
+        totalReferrals: user.referralCount || 0,
+        
+        // List of referred users
+        referrals: referredUsers,
+        
+        // Explanation
+        explanation: user.referralType === 'influencer'
+          ? `You earn ${percentage}% commission on every loss from users you refer.`
+          : `You earn 5% commission on the first bet of each user you refer.`
       }
     });
 
@@ -870,6 +983,49 @@ const resetPassword = async (req, res) => {
   }
 };
 
+// @desc    Validate referral code (Public - for registration form)
+// @route   GET /api/auth/validate-referral/:code
+// @access  Public
+const validateReferralCode = async (req, res) => {
+  try {
+    const { code } = req.params;
+
+    if (!code || code.trim().length < 3) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid referral code format'
+      });
+    }
+
+    const referrer = await User.findOne({
+      where: { referralCode: code.trim().toUpperCase() },
+      attributes: ['id', 'username']
+    });
+
+    if (!referrer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Referral code not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Valid referral code',
+      data: {
+        referrerUsername: referrer.username
+      }
+    });
+
+  } catch (error) {
+    console.error('Validate referral error:', error.message);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to validate referral code'
+    });
+  }
+};
+
 module.exports = {
   register,
   login,
@@ -878,5 +1034,6 @@ module.exports = {
   changePassword,
   getReferrals,
   forgotPassword,
-  resetPassword
+  resetPassword,
+  validateReferralCode // ✅ NEW
 };
