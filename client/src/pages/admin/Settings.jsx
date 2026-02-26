@@ -23,6 +23,7 @@ const Settings = () => {
   const [systemHealth, setSystemHealth] = useState(null);
   const [loading, setLoading] = useState(true);
   const [healthLoading, setHealthLoading] = useState(false);
+  const [cacheClearing, setCacheClearing] = useState(false);
 
   useEffect(() => {
     loadSettings();
@@ -32,16 +33,16 @@ const Settings = () => {
   const loadSettings = async () => {
     setLoading(true);
     try {
-      const response = await adminService.getSettings();
+      const data = await adminService.getSettings();
       
-      if (response.data?.success) {
-        setSettings(response.data.data);
+      if (data?.success) {
+        setSettings(data.data);
       } else {
-        throw new Error(response.data?.message || 'Failed to load settings');
+        throw new Error(data?.message || 'Failed to load settings');
       }
     } catch (error) {
       console.error('Failed to load settings:', error);
-      toast.error(error.response?.data?.message || 'Failed to load settings');
+      toast.error(error.message || 'Failed to load settings');
     } finally {
       setLoading(false);
     }
@@ -50,10 +51,10 @@ const Settings = () => {
   const loadSystemHealth = async () => {
     setHealthLoading(true);
     try {
-      const response = await adminService.getSystemHealth();
+      const data = await adminService.getSystemHealth();
       
-      if (response.data?.success) {
-        setSystemHealth(response.data.data);
+      if (data?.success) {
+        setSystemHealth(data.data);
       }
     } catch (error) {
       console.error('Failed to load system health:', error);
@@ -64,17 +65,20 @@ const Settings = () => {
   };
 
   const clearCache = async () => {
+    setCacheClearing(true);
     try {
-      const response = await adminService.clearCache();
+      const data = await adminService.clearCache();
       
-      if (response.data?.success) {
+      if (data?.success) {
         toast.success('Cache cleared successfully');
       } else {
-        throw new Error(response.data?.message || 'Failed to clear cache');
+        throw new Error(data?.message || 'Failed to clear cache');
       }
     } catch (error) {
       console.error('Failed to clear cache:', error);
-      toast.error(error.response?.data?.message || 'Failed to clear cache');
+      toast.error(error.message || 'Failed to clear cache');
+    } finally {
+      setCacheClearing(false);
     }
   };
 
@@ -94,7 +98,7 @@ const Settings = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
@@ -112,10 +116,11 @@ const Settings = () => {
           </button>
           <button
             onClick={clearCache}
-            className="flex items-center px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg font-medium transition-colors"
+            disabled={cacheClearing}
+            className="flex items-center px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg font-medium transition-colors disabled:opacity-50"
           >
-            <HardDrive className="h-4 w-4 mr-2" />
-            Clear Cache
+            <HardDrive className={`h-4 w-4 mr-2 ${cacheClearing ? 'animate-pulse' : ''}`} />
+            {cacheClearing ? 'Clearing...' : 'Clear Cache'}
           </button>
         </div>
       </div>
@@ -131,7 +136,7 @@ const Settings = () => {
             <button
               onClick={loadSystemHealth}
               disabled={healthLoading}
-              className="text-gray-500 hover:text-gray-700"
+              className="text-gray-500 hover:text-gray-700 p-1 rounded hover:bg-gray-100"
             >
               <RefreshCw className={`h-4 w-4 ${healthLoading ? 'animate-spin' : ''}`} />
             </button>
