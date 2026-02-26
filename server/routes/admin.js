@@ -30,7 +30,16 @@ const {
   cancelRound,
   
   // Settings
-  getSettings
+  getSettings,
+
+  // ✅ NEW: Influencer Management
+  getAllInfluencers,
+  getInfluencerDetails,
+  upgradeToInfluencer,
+  updateInfluencerPercentage,
+  downgradeInfluencer,
+  getReferralStats,
+  searchUsersForInfluencer
 } = require('../controllers/adminController');
 
 // Middleware
@@ -64,6 +73,14 @@ router.get('/dashboard', getDashboardStats);
  * @query   ?page=1&limit=20&search=username&status=active&kycStatus=approved
  */
 router.get('/users', getAllUsers);
+
+/**
+ * @route   GET /api/admin/users/search
+ * @desc    Search users (for influencer upgrade)
+ * @access  Private/Admin
+ * @query   ?q=username
+ */
+router.get('/users/search', searchUsersForInfluencer);
 
 /**
  * @route   GET /api/admin/users/:userId
@@ -162,6 +179,57 @@ router.put('/rounds/:roundId/cancel', cancelRound);
  * @access  Private/Admin
  */
 router.get('/settings', getSettings);
+
+// =====================================================
+// ✅ NEW: INFLUENCER MANAGEMENT
+// =====================================================
+/**
+ * @route   GET /api/admin/influencers
+ * @desc    Get all influencers with stats
+ * @access  Private/Admin
+ * @query   ?page=1&limit=20
+ */
+router.get('/influencers', getAllInfluencers);
+
+/**
+ * @route   GET /api/admin/influencers/:userId
+ * @desc    Get single influencer details
+ * @access  Private/Admin
+ */
+router.get('/influencers/:userId', getInfluencerDetails);
+
+/**
+ * @route   POST /api/admin/influencers/:userId
+ * @desc    Upgrade user to influencer
+ * @access  Private/Admin
+ * @body    { percentage: number } (1-10)
+ */
+router.post('/influencers/:userId', upgradeToInfluencer);
+
+/**
+ * @route   PUT /api/admin/influencers/:userId
+ * @desc    Update influencer percentage
+ * @access  Private/Admin
+ * @body    { percentage: number } (1-10)
+ */
+router.put('/influencers/:userId', updateInfluencerPercentage);
+
+/**
+ * @route   DELETE /api/admin/influencers/:userId
+ * @desc    Downgrade influencer to normal referrer
+ * @access  Private/Admin
+ */
+router.delete('/influencers/:userId', downgradeInfluencer);
+
+// =====================================================
+// ✅ NEW: REFERRAL STATS
+// =====================================================
+/**
+ * @route   GET /api/admin/referrals/stats
+ * @desc    Get platform-wide referral statistics
+ * @access  Private/Admin
+ */
+router.get('/referrals/stats', getReferralStats);
 
 // =====================================================
 // OPTIONAL: Additional useful routes
