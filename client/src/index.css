@@ -117,3 +117,154 @@ code {
   height: 40px;
   animation: spin 1s linear infinite;
 }
+
+
+
+/* ============================================
+   ADMIN PANEL ONLY STYLES
+   Add this at the END of the file
+   ============================================ */
+
+/* Admin panel has light background */
+.admin-panel {
+  background-color: #f3f4f6 !important;
+  color: #1f2937 !important;
+}
+
+.admin-panel * {
+  color: inherit;
+}
+
+/* Admin inputs */
+.admin-panel input,
+.admin-panel select,
+.admin-panel textarea {
+  color: #1f2937 !important;
+  background-color: white !important;
+}
+
+/* Admin read-only inputs */
+.admin-panel input[readonly],
+.admin-panel input:read-only {
+  color: #111827 !important;
+  background-color: #f3f4f6 !important;
+  font-weight: 500;
+}
+
+/* Admin disabled inputs */
+.admin-panel input:disabled,
+.admin-panel select:disabled {
+  color: #374151 !important;
+  background-color: #e5e7eb !important;
+  opacity: 1 !important;
+}
+
+/* Admin placeholder */
+.admin-panel input::placeholder {
+  color: #9ca3af !important;
+}
+
+/* Admin select */
+.admin-panel select {
+  color: #1f2937 !important;
+}
+
+.admin-panel select option {
+  color: #1f2937;
+  background-color: white;
+}
+
+/* Admin backgrounds with text */
+.admin-panel .bg-gray-50,
+.admin-panel .bg-gray-100,
+.admin-panel .bg-white {
+  color: #1f2937 !important;
+}
+
+.admin-panel .bg-gray-50 *,
+.admin-panel .bg-gray-100 *,
+.admin-panel .bg-white * {
+  color: #1f2937;
+}
+
+/* Admin table */
+.admin-panel table {
+  color: #1f2937 !important;
+}
+
+.admin-panel table td {
+  color: #1f2937 !important;
+}
+
+.admin-panel table th {
+  color: #6b7280 !important;
+}
+
+/* Admin cards */
+.admin-panel .rounded-lg {
+  color: #1f2937;
+}
+
+/* Admin headings */
+.admin-panel h1,
+.admin-panel h2,
+.admin-panel h3,
+.admin-panel h4,
+.admin-panel h5,
+.admin-panel h6 {
+  color: #111827 !important;
+}
+
+/* Admin paragraphs and labels */
+.admin-panel p,
+.admin-panel label,
+.admin-panel span {
+  color: #374151;
+}
+
+/* Keep colored text */
+.admin-panel .text-green-600 { color: #059669 !important; }
+.admin-panel .text-red-600 { color: #dc2626 !important; }
+.admin-panel .text-blue-600 { color: #2563eb !important; }
+.admin-panel .text-yellow-600 { color: #ca8a04 !important; }
+.admin-panel .text-purple-600 { color: #9333ea !important; }
+.admin-panel .text-gray-500 { color: #6b7280 !important; }
+.admin-panel .text-gray-600 { color: #4b5563 !important; }
+.admin-panel .text-gray-400 { color: #9ca3af !important; }
+
+/* Admin badges */
+.admin-panel .rounded-full {
+  font-weight: 600;
+}
+
+/* Admin code blocks */
+.admin-panel pre {
+  color: #34d399 !important;
+  background-color: #111827 !important;
+}
+
+/* Admin input prefix/suffix */
+.admin-panel .relative > span {
+  color: #6b7280 !important;
+}
+
+/* Admin stat values */
+.admin-panel .text-2xl,
+.admin-panel .text-3xl {
+  color: inherit !important;
+}
+
+/* Admin white backgrounds */
+.admin-panel .shadow {
+  background-color: white;
+  color: #1f2937;
+}
+
+/* Fix modal on dark overlay */
+.admin-panel .fixed.inset-0 .bg-white {
+  color: #1f2937 !important;
+}
+
+.admin-panel .fixed.inset-0 .bg-white * {
+  color: #1f2937;
+}
