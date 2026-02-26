@@ -1,17 +1,16 @@
 
-// User self-referral (OPTIONAL - add this later if needed)
-// User.hasMany(User, { foreignKey: 'referredBy', as: 'referrals' });
-// User.belongsTo(User, { foreignKey: 'referredBy', as: 'referrer' });
 // models/index.js
 const User = require('./User');
 const Wallet = require('./Wallet');
 const Transaction = require('./Transaction');
 const Round = require('./Round');
 const Bet = require('./Bet');
-const VirtualAccount = require('./VirtualAccount');  // ADD THIS
-const PendingDeposit = require('./PendingDeposit');  // ADD THIS
+const VirtualAccount = require('./VirtualAccount');
+const PendingDeposit = require('./PendingDeposit');
 
-// Define relationships AFTER all models are loaded
+// ========================================
+// DEFINE ALL ASSOCIATIONS
+// ========================================
 
 // User <-> Wallet (One-to-One)
 User.hasOne(Wallet, { foreignKey: 'userId', as: 'wallet', onDelete: 'CASCADE' });
@@ -29,13 +28,23 @@ Bet.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 Round.hasMany(Bet, { foreignKey: 'roundId', as: 'bets' });
 Bet.belongsTo(Round, { foreignKey: 'roundId', as: 'round' });
 
-// User <-> PendingDeposits (One-to-Many) - ADD THIS
+// User <-> PendingDeposits (One-to-Many)
 User.hasMany(PendingDeposit, { foreignKey: 'userId', as: 'pendingDeposits' });
 PendingDeposit.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
-// VirtualAccount <-> PendingDeposits (One-to-Many) - ADD THIS
+// VirtualAccount <-> PendingDeposits (One-to-Many)
 VirtualAccount.hasMany(PendingDeposit, { foreignKey: 'virtualAccountId', as: 'deposits' });
 PendingDeposit.belongsTo(VirtualAccount, { foreignKey: 'virtualAccountId', as: 'virtualAccount' });
+
+// User <-> VirtualAccount (One-to-Many)
+User.hasMany(VirtualAccount, { foreignKey: 'userId', as: 'virtualAccounts' });
+VirtualAccount.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+
+// ✅ ========================================
+// ✅ USER SELF-REFERRAL (UNCOMMENTED!)
+// ✅ ========================================
+User.hasMany(User, { foreignKey: 'referredBy', as: 'referrals' });
+User.belongsTo(User, { foreignKey: 'referredBy', as: 'referrer' });
 
 module.exports = {
   User,
@@ -43,6 +52,6 @@ module.exports = {
   Transaction,
   Round,
   Bet,
-  VirtualAccount,    // ADD THIS
-  PendingDeposit     // ADD THIS
+  VirtualAccount,
+  PendingDeposit
 };
