@@ -1,9 +1,11 @@
 
+// server/services/roundService.js
 const cron = require('node-cron');
 const { Round, Bet, Wallet, Transaction, User } = require('../models');
 const { Op } = require('sequelize');
 const priceService = require('./priceService');
 const { sequelize } = require('../config/database');
+const { processInfluencerCommission, processFirstBetBonus } = require('./referralService'); // ✅ ADD THIS
 
 // Helper function
 const roundToTwo = (num) => Math.round((num + Number.EPSILON) * 100) / 100;
@@ -288,7 +290,7 @@ class RoundService {
     try {
       const bets = await Bet.findAll({
         where: { roundId: round.id, result: 'pending' },
-        include: [{ model: User, as: 'user', attributes: ['id', 'username'] }],
+        include: [{ model: User, as: 'user', attributes: ['id', 'username', 'referredBy', 'hasPlacedFirstBet'] }], // ✅ Include referredBy
         transaction
       });
 
@@ -420,6 +422,15 @@ class RoundService {
 
         console.log(`   ✅ ${bet.user?.username}: Bet ₦${betAmount} → Won ₦${payout} (${multiplier}x)`);
 
+        // ✅ PROCESS FIRST BET BONUS (for normal referrers)
+        if (!bet.user.hasPlacedFirstBet) {
+          try {
+            await processFirstBetBonus(bet.userId, betAmount, bet.id, transaction);
+          } catch (bonusError) {
+            console.error(`   ⚠️ First bet bonus error for ${bet.user.username}:`, bonusError.message);
+          }
+        }
+
         if (this.io) {
           this.io.to(bet.userId).emit('bet_result', {
             betId: bet.id,
@@ -475,6 +486,32 @@ class RoundService {
         }, { transaction });
 
         console.log(`   ❌ ${bet.user?.username}: Lost ₦${betAmount}`);
+
+        // ✅ PROCESS INFLUENCER COMMISSION ON LOSSES
+        try {
+          const commissionResult = await processInfluencerCommission(
+            bet.userId,      // User who lost
+            betAmount,       // Amount they lost
+            bet.id,          // Bet ID
+            transaction      // DB transaction
+          );
+
+          if (commissionResult && commissionResult.success && !commissionResult.alreadyProcessed) {
+            console.log(`   💰 Influencer ${commissionResult.influencerUsername} earned ₦${commissionResult.commissionAmount.toFixed(2)} (${commissionResult.commissionPercentage}%)`);
+          }
+        } catch (commissionError) {
+          console.error(`   ⚠️ Commission error for ${bet.user?.username}:`, commissionError.message);
+          // Don't throw - continue with bet processing
+        }
+
+        // ✅ PROCESS FIRST BET BONUS (if applicable)
+        if (!bet.user.hasPlacedFirstBet) {
+          try {
+            await processFirstBetBonus(bet.userId, betAmount, bet.id, transaction);
+          } catch (bonusError) {
+            console.error(`   ⚠️ First bet bonus error for ${bet.user.username}:`, bonusError.message);
+          }
+        }
 
         if (this.io) {
           this.io.to(bet.userId).emit('bet_result', {
@@ -544,6 +581,31 @@ class RoundService {
       }, { transaction });
 
       console.log(`   ❌ ${bet.user?.username}: Lost ₦${betAmount}`);
+
+      // ✅ PROCESS INFLUENCER COMMISSION
+      try {
+        const commissionResult = await processInfluencerCommission(
+          bet.userId,
+          betAmount,
+          bet.id,
+          transaction
+        );
+
+        if (commissionResult && commissionResult.success && !commissionResult.alreadyProcessed) {
+          console.log(`   💰 Influencer ${commissionResult.influencerUsername} earned ₦${commissionResult.commissionAmount.toFixed(2)}`);
+        }
+      } catch (commissionError) {
+        console.error(`   ⚠️ Commission error:`, commissionError.message);
+      }
+
+      // ✅ PROCESS FIRST BET BONUS
+      if (!bet.user.hasPlacedFirstBet) {
+        try {
+          await processFirstBetBonus(bet.userId, betAmount, bet.id, transaction);
+        } catch (bonusError) {
+          console.error(`   ⚠️ First bet bonus error:`, bonusError.message);
+        }
+      }
 
       if (this.io) {
         this.io.to(bet.userId).emit('bet_result', {
