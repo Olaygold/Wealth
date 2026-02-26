@@ -14,7 +14,8 @@ import {
   X,
   LogOut,
   Bell,
-  ChevronDown
+  ChevronDown,
+  Star // ✅ Added Star icon
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -59,6 +60,11 @@ const AdminLayout = () => {
       icon: Target 
     },
     { 
+      name: 'Influencers', // ✅ Added Influencers
+      path: '/admin/influencers', 
+      icon: Star 
+    },
+    { 
       name: 'Settings', 
       path: '/admin/settings', 
       icon: Settings 
@@ -73,7 +79,6 @@ const AdminLayout = () => {
   };
 
   return (
-    // ✅ ONLY CHANGE: Added "admin-panel" class here
     <div className="admin-panel min-h-screen bg-gray-100">
       {/* Mobile menu overlay */}
       {mobileMenuOpen && (
