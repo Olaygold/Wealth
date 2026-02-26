@@ -4,6 +4,7 @@ import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 
+
 // User Components
 import Navbar from './components/Layout/Navbar';
 
@@ -16,6 +17,7 @@ import History from './pages/History';
 import Leaderboard from './pages/Leaderboard';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
+import Referrals from './pages/Referrals';
 
 // Admin Pages
 import AdminLayout from './pages/admin/AdminLayout';
@@ -117,6 +119,16 @@ function App() {
                 </PublicRoute>
               } 
             />
+            
+// Add this route inside your ProtectedRoute routes:
+<Route 
+  path="/referrals" 
+  element={
+    <ProtectedRoute>
+      <Referrals />
+    </ProtectedRoute>
+  } 
+/>
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
 
