@@ -1,7 +1,7 @@
 
 // src/pages/admin/Transactions.jsx
 import React, { useState, useEffect } from 'react';
-import { Search, Filter, Download, Calendar, RefreshCw, Eye } from 'lucide-react';
+import { Search, Filter, Download, Calendar, RefreshCw, Eye, X } from 'lucide-react';
 import adminService from '../../services/adminService';
 import toast from 'react-hot-toast';
 
@@ -28,24 +28,24 @@ const Transactions = () => {
   const loadTransactions = async () => {
     setLoading(true);
     try {
-      const response = await adminService.getAllTransactions(filters);
+      const data = await adminService.getAllTransactions(filters);
       
-      if (response.data?.success) {
-        setTransactions(response.data.data.transactions || []);
-        setPagination(response.data.data.pagination || { page: 1, pages: 1, total: 0 });
+      if (data?.success) {
+        setTransactions(data.data?.transactions || []);
+        setPagination(data.data?.pagination || { page: 1, pages: 1, total: 0 });
       } else {
-        throw new Error(response.data?.message || 'Failed to load transactions');
+        throw new Error(data?.message || 'Failed to load transactions');
       }
     } catch (error) {
       console.error('Failed to load transactions:', error);
-      toast.error(error.response?.data?.message || 'Failed to load transactions');
+      toast.error(error.message || 'Failed to load transactions');
       setTransactions([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const viewTransactionDetails = async (transaction) => {
+  const viewTransactionDetails = (transaction) => {
     setSelectedTransaction(transaction);
     setShowModal(true);
   };
@@ -65,7 +65,7 @@ const Transactions = () => {
       tx.method || 'N/A',
       tx.amount,
       tx.status,
-      tx.description?.replace(/,/g, ';') || '-',
+      (tx.description || '-').replace(/,/g, ';'),
       new Date(tx.createdAt).toLocaleString()
     ]);
 
@@ -96,7 +96,9 @@ const Transactions = () => {
       refund: 'bg-yellow-100 text-yellow-800',
       fee: 'bg-gray-100 text-gray-800',
       credit: 'bg-emerald-100 text-emerald-800',
-      debit: 'bg-pink-100 text-pink-800'
+      debit: 'bg-pink-100 text-pink-800',
+      win: 'bg-purple-100 text-purple-800',
+      bet: 'bg-blue-100 text-blue-800'
     };
     return colors[type] || 'bg-gray-100 text-gray-800';
   };
@@ -127,7 +129,7 @@ const Transactions = () => {
     setFilters(prev => ({
       ...prev,
       [key]: value,
-      page: 1 // Reset to page 1 when filter changes
+      page: 1
     }));
   };
 
@@ -143,7 +145,7 @@ const Transactions = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
@@ -389,7 +391,7 @@ const Transactions = () => {
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="text-sm text-gray-700">
                 Showing page <span className="font-medium">{pagination.page}</span> of{' '}
-                <span className="font-medium">{pagination.pages}</span> ({pagination.total} total transactions)
+                <span className="font-medium">{pagination.pages}</span> ({pagination.total} total)
               </div>
               <div className="flex space-x-2">
                 <button
@@ -438,11 +440,9 @@ const Transactions = () => {
                 <h2 className="text-xl font-bold text-gray-900">Transaction Details</h2>
                 <button
                   onClick={() => setShowModal(false)}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-gray-400 hover:text-gray-600 p-1"
                 >
-                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  <X className="h-6 w-6" />
                 </button>
               </div>
 
@@ -451,7 +451,7 @@ const Transactions = () => {
                 <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
                   <div>
                     <p className="text-sm text-gray-500">Reference</p>
-                    <p className="font-mono font-medium">{selectedTransaction.reference || selectedTransaction.id}</p>
+                    <p className="font-mono font-medium break-all">{selectedTransaction.reference || selectedTransaction.id}</p>
                   </div>
                   <div>
                     <p className="text-sm text-gray-500">Status</p>
@@ -495,7 +495,7 @@ const Transactions = () => {
                   </p>
                 </div>
 
-                {/* Balance Info (if available) */}
+                {/* Balance Info */}
                 {(selectedTransaction.balanceBefore !== undefined || selectedTransaction.balanceAfter !== undefined) && (
                   <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
                     <div>
@@ -527,7 +527,7 @@ const Transactions = () => {
                   </div>
                 </div>
 
-                {/* Metadata (if available) */}
+                {/* Metadata */}
                 {selectedTransaction.metadata && Object.keys(selectedTransaction.metadata).length > 0 && (
                   <div className="p-4 bg-gray-50 rounded-lg">
                     <p className="text-sm text-gray-500 mb-2">Additional Info</p>
