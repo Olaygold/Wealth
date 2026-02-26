@@ -1,4 +1,5 @@
 
+// src/pages/Register.jsx
 import { useState, useEffect } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -17,6 +18,94 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 
+// ========== INPUT FIELD COMPONENT (OUTSIDE TO PREVENT RE-RENDERS) ==========
+const InputField = ({ 
+  label, 
+  name, 
+  type = 'text', 
+  placeholder, 
+  required = false,
+  value,
+  onChange,
+  onBlur,
+  error,
+  showPassword,
+  showConfirmPassword,
+  onTogglePassword,
+  isPassword = false,
+  isConfirmPassword = false
+}) => {
+  const hasError = error;
+  const hasValue = value?.length > 0;
+  
+  const getInputType = () => {
+    if (isPassword) {
+      return showPassword ? 'text' : 'password';
+    }
+    if (isConfirmPassword) {
+      return showConfirmPassword ? 'text' : 'password';
+    }
+    return type;
+  };
+  
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-300 mb-2">
+        {label} {required && <span className="text-red-500">*</span>}
+      </label>
+      <div className="relative">
+        <input
+          type={getInputType()}
+          name={name}
+          value={value}
+          onChange={onChange}
+          onBlur={onBlur}
+          className={`w-full px-4 py-3 bg-slate-900/50 border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 transition pr-12 ${
+            hasError 
+              ? 'border-red-500 focus:ring-red-500' 
+              : hasValue && !hasError
+              ? 'border-green-500 focus:ring-green-500'
+              : 'border-slate-600 focus:ring-primary focus:border-transparent'
+          }`}
+          placeholder={placeholder}
+          required={required}
+          autoComplete="off"
+        />
+        
+        {/* Status Icon */}
+        <div className="absolute right-3 top-1/2 transform -translate-y-1/2 flex items-center gap-2">
+          {(isPassword || isConfirmPassword) && (
+            <button
+              type="button"
+              onClick={onTogglePassword}
+              className="text-gray-400 hover:text-white"
+            >
+              {(isPassword ? showPassword : showConfirmPassword) ? (
+                <EyeOff size={18} />
+              ) : (
+                <Eye size={18} />
+              )}
+            </button>
+          )}
+          {hasError && <XCircle size={18} className="text-red-500" />}
+          {hasValue && !hasError && !isPassword && !isConfirmPassword && (
+            <CheckCircle size={18} className="text-green-500" />
+          )}
+        </div>
+      </div>
+      
+      {/* Error Message */}
+      {hasError && (
+        <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+          <AlertCircle size={14} />
+          {hasError}
+        </p>
+      )}
+    </div>
+  );
+};
+
+// ========== MAIN REGISTER COMPONENT ==========
 const Register = () => {
   const [searchParams] = useSearchParams();
   const [formData, setFormData] = useState({
@@ -26,7 +115,7 @@ const Register = () => {
     confirmPassword: '',
     fullName: '',
     phoneNumber: '',
-    referralCode: searchParams.get('ref') || '', // Auto-fill from URL
+    referralCode: searchParams.get('ref') || '',
   });
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -46,7 +135,8 @@ const Register = () => {
     if (formData.referralCode) {
       validateReferralCode(formData.referralCode);
     }
-  }, []); // Run only on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ========== VALIDATION FUNCTIONS ==========
   const validateFullName = (name) => {
@@ -56,7 +146,6 @@ const Register = () => {
     if (name.trim().length > 100) {
       return 'Full name must be less than 100 characters';
     }
-    // Only letters and spaces
     if (!/^[a-zA-Z\s]+$/.test(name.trim())) {
       return 'Full name can only contain letters and spaces';
     }
@@ -67,7 +156,6 @@ const Register = () => {
     if (!phone) {
       return 'Phone number is required';
     }
-    // Remove any spaces or dashes
     const cleanPhone = phone.replace(/[\s-]/g, '');
     
     if (!cleanPhone.startsWith('0')) {
@@ -165,27 +253,31 @@ const Register = () => {
     }
   };
 
-  // ========== REAL-TIME VALIDATION ==========
+  // ========== DEBOUNCE TIMER REF ==========
+  const [referralTimer, setReferralTimer] = useState(null);
+
+  // ========== HANDLE INPUT CHANGE ==========
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData({ ...formData, [name]: value });
+    
+    setFormData(prev => ({ ...prev, [name]: value }));
 
     // Clear error when user starts typing
     if (errors[name]) {
-      setErrors({ ...errors, [name]: null });
+      setErrors(prev => ({ ...prev, [name]: null }));
     }
 
-    // Validate referral code in real-time with debounce
+    // Validate referral code with debounce
     if (name === 'referralCode') {
-      // Clear previous timeout
-      if (window.referralTimeout) {
-        clearTimeout(window.referralTimeout);
+      if (referralTimer) {
+        clearTimeout(referralTimer);
       }
       
-      // Set new timeout for validation
-      window.referralTimeout = setTimeout(() => {
+      const timer = setTimeout(() => {
         validateReferralCode(value);
-      }, 500); // Wait 500ms after user stops typing
+      }, 500);
+      
+      setReferralTimer(timer);
     }
   };
 
@@ -225,7 +317,7 @@ const Register = () => {
     }
 
     if (error) {
-      setErrors({ ...errors, [name]: error });
+      setErrors(prev => ({ ...prev, [name]: error }));
     }
   };
 
@@ -233,7 +325,6 @@ const Register = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Validate all fields
     const newErrors = {};
 
     const fullNameError = validateFullName(formData.fullName);
@@ -255,12 +346,10 @@ const Register = () => {
       newErrors.confirmPassword = 'Passwords do not match';
     }
 
-    // Check if referral code is provided but invalid
     if (formData.referralCode && !referralValidation.isValid) {
       newErrors.referralCode = 'Invalid referral code';
     }
 
-    // If there are errors, show them and stop
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       const firstError = Object.values(newErrors)[0];
@@ -273,10 +362,8 @@ const Register = () => {
     try {
       const { confirmPassword, ...registerData } = formData;
       
-      // Clean phone number (remove spaces/dashes)
       registerData.phoneNumber = registerData.phoneNumber.replace(/[\s-]/g, '');
       
-      // Clean referral code
       if (registerData.referralCode) {
         registerData.referralCode = registerData.referralCode.trim().toUpperCase();
       }
@@ -290,73 +377,6 @@ const Register = () => {
     } finally {
       setLoading(false);
     }
-  };
-
-  // ========== INPUT FIELD COMPONENT ==========
-  const InputField = ({ 
-    label, 
-    name, 
-    type = 'text', 
-    placeholder, 
-    required = false,
-    icon = null,
-    showToggle = false 
-  }) => {
-    const hasError = errors[name];
-    const hasValue = formData[name]?.length > 0;
-    
-    return (
-      <div>
-        <label className="block text-sm font-medium text-gray-300 mb-2">
-          {label} {required && <span className="text-red-500">*</span>}
-        </label>
-        <div className="relative">
-          <input
-            type={showToggle ? (name === 'password' ? (showPassword ? 'text' : 'password') : (showConfirmPassword ? 'text' : 'password')) : type}
-            name={name}
-            value={formData[name]}
-            onChange={handleChange}
-            onBlur={handleBlur}
-            className={`w-full px-4 py-3 bg-slate-900/50 border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 transition pr-12 ${
-              hasError 
-                ? 'border-red-500 focus:ring-red-500' 
-                : hasValue && !hasError
-                ? 'border-green-500 focus:ring-green-500'
-                : 'border-slate-600 focus:ring-primary focus:border-transparent'
-            }`}
-            placeholder={placeholder}
-            required={required}
-          />
-          
-          {/* Status Icon */}
-          <div className="absolute right-3 top-1/2 transform -translate-y-1/2 flex items-center gap-2">
-            {showToggle && (
-              <button
-                type="button"
-                onClick={() => name === 'password' ? setShowPassword(!showPassword) : setShowConfirmPassword(!showConfirmPassword)}
-                className="text-gray-400 hover:text-white"
-              >
-                {(name === 'password' ? showPassword : showConfirmPassword) ? (
-                  <EyeOff size={18} />
-                ) : (
-                  <Eye size={18} />
-                )}
-              </button>
-            )}
-            {hasError && <XCircle size={18} className="text-red-500" />}
-            {hasValue && !hasError && <CheckCircle size={18} className="text-green-500" />}
-          </div>
-        </div>
-        
-        {/* Error Message */}
-        {hasError && (
-          <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
-            <AlertCircle size={14} />
-            {hasError}
-          </p>
-        )}
-      </div>
-    );
   };
 
   return (
@@ -423,15 +443,19 @@ const Register = () => {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Full Name - REQUIRED */}
+              {/* Full Name */}
               <InputField
                 label="Full Name"
                 name="fullName"
                 placeholder="Enter your full name"
                 required={true}
+                value={formData.fullName}
+                onChange={handleChange}
+                onBlur={handleBlur}
+                error={errors.fullName}
               />
 
-              {/* Phone Number - REQUIRED */}
+              {/* Phone Number */}
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
                   Phone Number <span className="text-red-500">*</span>
@@ -453,6 +477,7 @@ const Register = () => {
                     placeholder="08012345678"
                     required
                     maxLength={11}
+                    autoComplete="off"
                   />
                   <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
                     {errors.phoneNumber && <XCircle size={18} className="text-red-500" />}
@@ -472,21 +497,29 @@ const Register = () => {
                 </p>
               </div>
 
-              {/* Username - REQUIRED */}
+              {/* Username */}
               <InputField
                 label="Username"
                 name="username"
                 placeholder="Choose a username"
                 required={true}
+                value={formData.username}
+                onChange={handleChange}
+                onBlur={handleBlur}
+                error={errors.username}
               />
 
-              {/* Email - REQUIRED */}
+              {/* Email */}
               <InputField
                 label="Email"
                 name="email"
                 type="email"
                 placeholder="your@email.com"
                 required={true}
+                value={formData.email}
+                onChange={handleChange}
+                onBlur={handleBlur}
+                error={errors.email}
               />
 
               {/* Password Fields */}
@@ -511,6 +544,7 @@ const Register = () => {
                       }`}
                       placeholder="••••••••"
                       required
+                      autoComplete="new-password"
                     />
                     <button
                       type="button"
@@ -545,6 +579,7 @@ const Register = () => {
                       }`}
                       placeholder="••••••••"
                       required
+                      autoComplete="new-password"
                     />
                     <button
                       type="button"
@@ -583,7 +618,7 @@ const Register = () => {
                 </div>
               </div>
 
-              {/* Referral Code - OPTIONAL with Validation */}
+              {/* Referral Code */}
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
                   Referral Code <span className="text-gray-500">(Optional)</span>
@@ -603,7 +638,8 @@ const Register = () => {
                         : 'border-slate-600 focus:ring-primary focus:border-transparent'
                     }`}
                     placeholder="Enter referral code"
-                    maxLength={10}
+                    maxLength={15}
+                    autoComplete="off"
                   />
                   <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
                     {referralValidation.isValidating && (
@@ -618,7 +654,6 @@ const Register = () => {
                   </div>
                 </div>
                 
-                {/* Referral Validation Messages */}
                 {referralValidation.message && (
                   <p className={`mt-1 text-sm flex items-center gap-1 ${
                     referralValidation.isValid ? 'text-green-500' : 'text-red-500'
