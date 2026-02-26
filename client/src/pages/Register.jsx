@@ -105,7 +105,6 @@ const Register = () => {
 
   // ========== VALIDATE REFERRAL CODE ==========
   const validateReferralCode = async (code, isInitialLoad = false) => {
-    // Clear if empty
     if (!code || code.trim().length === 0) {
       setReferralValidation({
         isValidating: false,
@@ -118,7 +117,6 @@ const Register = () => {
 
     const cleanCode = code.trim().toUpperCase();
     
-    // Don't validate if too short
     if (cleanCode.length < 3) {
       setReferralValidation({
         isValidating: false,
@@ -138,50 +136,67 @@ const Register = () => {
     try {
       const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
       
-      console.log(`🔍 Validating referral code: ${cleanCode}`); // Debug log
+      console.log(`🔍 Validating referral code: ${cleanCode}`);
       
       const response = await axios.get(`${API_URL}/auth/validate-referral/${cleanCode}`, {
-        timeout: 10000 // 10 second timeout
+        timeout: 10000
       });
       
-      console.log('✅ Validation response:', response.data); // Debug log
+      console.log('✅ Full response:', response.data);
       
-      if (response.data.success && response.data.valid) {
+      const responseData = response.data;
+      
+      // Check multiple ways the API might indicate success
+      const isSuccess = responseData.success === true || responseData.success === 'true';
+      const isValidCode = responseData.valid === true || responseData.valid === 'true';
+      
+      // Handle different response structures
+      const referrerName = responseData.data?.referrerUsername || 
+                           responseData.data?.username || 
+                           responseData.referrerUsername ||
+                           responseData.username ||
+                           null;
+      
+      // Check if message contains "valid" (case insensitive) as backup
+      const messageIndicatesValid = responseData.message && 
+        responseData.message.toLowerCase().includes('valid') && 
+        !responseData.message.toLowerCase().includes('invalid');
+      
+      // If success OR valid is true OR message indicates valid, treat as valid
+      if (isSuccess || isValidCode || messageIndicatesValid) {
+        const displayName = referrerName || 'a friend';
+        
         setReferralValidation({
           isValidating: false,
           isValid: true,
-          referrerName: response.data.data.referrerUsername,
-          message: `✓ Referred by: ${response.data.data.referrerUsername}`
+          referrerName: displayName,
+          message: `Referred by: ${displayName}`
         });
         
         if (isInitialLoad) {
-          toast.success(`Welcome! You were referred by ${response.data.data.referrerUsername}`);
+          toast.success(`Welcome! You were referred by ${displayName}`);
         }
+        
+        console.log('✅ Referral is VALID');
       } else {
         setReferralValidation({
           isValidating: false,
           isValid: false,
           referrerName: '',
-          message: response.data.message || 'Invalid referral code'
+          message: responseData.message || 'Invalid referral code'
         });
+        
+        console.log('❌ Referral is INVALID');
       }
     } catch (error) {
-      console.error('❌ Referral validation error:', error); // Debug log
+      console.error('❌ Referral validation error:', error);
       
       let errorMessage = 'Invalid referral code';
       
       if (error.response) {
-        // Server responded with error
         errorMessage = error.response.data?.message || 'Referral code not found';
-        console.log('Server error:', error.response.status, error.response.data);
       } else if (error.request) {
-        // No response received
         errorMessage = 'Could not validate code. Please try again.';
-        console.log('No response received');
-      } else {
-        // Request setup error
-        errorMessage = 'Validation failed. Please try again.';
-        console.log('Request error:', error.message);
       }
       
       setReferralValidation({
@@ -198,14 +213,23 @@ const Register = () => {
     if (initialRefCode && !hasValidatedInitialRef.current) {
       hasValidatedInitialRef.current = true;
       
-      // Add small delay to ensure API is ready
       const timer = setTimeout(() => {
         validateReferralCode(initialRefCode, true);
       }, 500);
       
       return () => clearTimeout(timer);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialRefCode]);
+
+  // ========== CLEANUP ==========
+  useEffect(() => {
+    return () => {
+      if (referralTimerRef.current) {
+        clearTimeout(referralTimerRef.current);
+      }
+    };
+  }, []);
 
   // ========== VALIDATION FUNCTIONS ==========
   const validateFullName = (name) => {
@@ -308,7 +332,7 @@ const Register = () => {
       
       referralTimerRef.current = setTimeout(() => {
         validateReferralCode(value, false);
-      }, 800); // Wait 800ms after user stops typing
+      }, 800);
     }
   };
 
@@ -339,7 +363,6 @@ const Register = () => {
         }
         break;
       case 'referralCode':
-        // Validate immediately on blur if there's a value
         if (value && value.trim().length >= 3) {
           if (referralTimerRef.current) {
             clearTimeout(referralTimerRef.current);
@@ -410,7 +433,7 @@ const Register = () => {
       if (registerData.referralCode && referralValidation.isValid) {
         registerData.referralCode = registerData.referralCode.trim().toUpperCase();
       } else {
-        delete registerData.referralCode; // Remove if invalid or empty
+        delete registerData.referralCode;
       }
       
       await register(registerData);
@@ -423,15 +446,6 @@ const Register = () => {
       setLoading(false);
     }
   };
-
-  // ========== CLEANUP ==========
-  useEffect(() => {
-    return () => {
-      if (referralTimerRef.current) {
-        clearTimeout(referralTimerRef.current);
-      }
-    };
-  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-darker via-dark to-slate-900 flex">
@@ -685,10 +699,10 @@ const Register = () => {
                     onChange={handleChange}
                     onBlur={handleBlur}
                     className={`w-full px-4 py-3 bg-slate-900/50 border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 transition pr-10 uppercase ${
-                      errors.referralCode || (!referralValidation.isValidating && formData.referralCode && !referralValidation.isValid && referralValidation.message)
-                        ? 'border-red-500 focus:ring-red-500'
-                        : referralValidation.isValid
+                      referralValidation.isValid === true
                         ? 'border-green-500 focus:ring-green-500'
+                        : (errors.referralCode || (formData.referralCode && formData.referralCode.length >= 3 && !referralValidation.isValidating && !referralValidation.isValid && referralValidation.message))
+                        ? 'border-red-500 focus:ring-red-500'
                         : 'border-slate-600 focus:ring-primary focus:border-transparent'
                     }`}
                     placeholder="Enter referral code (e.g., ABC123)"
@@ -696,19 +710,28 @@ const Register = () => {
                     autoComplete="off"
                   />
                   <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                    {/* Loading Spinner */}
                     {referralValidation.isValidating && (
                       <Loader2 size={18} className="text-blue-500 animate-spin" />
                     )}
-                    {!referralValidation.isValidating && referralValidation.isValid && (
+                    
+                    {/* Green Checkmark - ONLY when isValid is TRUE */}
+                    {!referralValidation.isValidating && referralValidation.isValid === true && (
                       <CheckCircle size={18} className="text-green-500" />
                     )}
-                    {!referralValidation.isValidating && formData.referralCode && formData.referralCode.length >= 3 && !referralValidation.isValid && referralValidation.message && (
+                    
+                    {/* Red X - ONLY when NOT valid and has message */}
+                    {!referralValidation.isValidating && 
+                     formData.referralCode && 
+                     formData.referralCode.length >= 3 && 
+                     referralValidation.isValid === false && 
+                     referralValidation.message && (
                       <XCircle size={18} className="text-red-500" />
                     )}
                   </div>
                 </div>
                 
-                {/* Referral Validation Messages */}
+                {/* Validation Messages */}
                 {referralValidation.isValidating && (
                   <p className="mt-1 text-sm text-blue-400 flex items-center gap-1">
                     <Loader2 size={14} className="animate-spin" />
@@ -716,15 +739,18 @@ const Register = () => {
                   </p>
                 )}
                 
-                {!referralValidation.isValidating && referralValidation.message && (
-                  <p className={`mt-1 text-sm flex items-center gap-1 ${
-                    referralValidation.isValid ? 'text-green-500' : 'text-red-500'
-                  }`}>
-                    {referralValidation.isValid ? (
-                      <CheckCircle size={14} />
-                    ) : (
-                      <AlertCircle size={14} />
-                    )}
+                {/* SUCCESS Message - Green */}
+                {!referralValidation.isValidating && referralValidation.isValid === true && referralValidation.message && (
+                  <p className="mt-1 text-sm text-green-500 flex items-center gap-1">
+                    <CheckCircle size={14} />
+                    {referralValidation.message}
+                  </p>
+                )}
+                
+                {/* ERROR Message - Red */}
+                {!referralValidation.isValidating && referralValidation.isValid === false && referralValidation.message && formData.referralCode && formData.referralCode.length >= 3 && (
+                  <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                    <AlertCircle size={14} />
                     {referralValidation.message}
                   </p>
                 )}
