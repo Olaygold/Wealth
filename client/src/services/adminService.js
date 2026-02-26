@@ -1,3 +1,4 @@
+
 // src/services/adminService.js
 import api from './api';
 
@@ -120,6 +121,20 @@ const adminService = {
       return response;
     } catch (error) {
       console.error('Debit User Wallet Error:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Search users (for upgrading to influencer)
+   * @param {string} query
+   */
+  searchUsers: async (query) => {
+    try {
+      const data = await api.get(`/admin/users/search?q=${encodeURIComponent(query)}`);
+      return data;
+    } catch (error) {
+      console.error('Search Users Error:', error);
       throw error;
     }
   },
@@ -376,97 +391,6 @@ const adminService = {
   },
 
   // =====================================================
-  // SETTINGS
-  // =====================================================
-  
-  /**
-   * Get platform settings
-   */
-  getSettings: async () => {
-    try {
-      const response = await api.get('/admin/settings');
-      return response;
-    } catch (error) {
-      console.error('Get Settings Error:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Update platform settings
-   * @param {Object} data - Settings to update
-   */
-  updateSettings: async (data) => {
-    try {
-      const response = await api.put('/admin/settings', data);
-      return response;
-    } catch (error) {
-      console.error('Update Settings Error:', error);
-      throw error;
-    }
-  },
-
-  // =====================================================
-  // BETS (Optional - if you need bet management)
-  // =====================================================
-  
-  /**
-   * Get all bets with filters
-   * @param {Object} params - Query parameters
-   */
-  getAllBets: async (params = {}) => {
-    try {
-      const cleanParams = Object.entries(params)
-        .filter(([_, value]) => value !== '' && value !== null && value !== undefined)
-        .reduce((acc, [key, value]) => ({ ...acc, [key]: value }), {});
-      
-      const queryString = new URLSearchParams(cleanParams).toString();
-      const response = await api.get(`/admin/bets${queryString ? `?${queryString}` : ''}`);
-      return response;
-    } catch (error) {
-      console.error('Get Bets Error:', error);
-      throw error;
-    }
-  },
-
-  // =====================================================
-  // REPORTS (Optional)
-  // =====================================================
-  
-  /**
-   * Get financial report
-   * @param {Object} params - Date range and filters
-   */
-  getFinancialReport: async (params = {}) => {
-    try {
-      const queryString = new URLSearchParams(params).toString();
-      const response = await api.get(`/admin/reports/financial${queryString ? `?${queryString}` : ''}`);
-      return response;
-    } catch (error) {
-      console.error('Get Financial Report Error:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Get user activity report
-   * @param {Object} params - Date range and filters
-   */
-  getUserActivityReport: async (params = {}) => {
-    try {
-      const queryString = new URLSearchParams(params).toString();
-      const response = await api.get(`/admin/reports/users${queryString ? `?${queryString}` : ''}`);
-      return response;
-    } catch (error) {
-      console.error('Get User Activity Report Error:', error);
-      throw error;
-    }
-  },
-
-
-  // Add these methods to your existing adminService.js
-
-  // =====================================================
   // INFLUENCER MANAGEMENT
   // =====================================================
 
@@ -556,19 +480,94 @@ const adminService = {
     }
   },
 
+  // =====================================================
+  // SETTINGS
+  // =====================================================
+  
   /**
-   * Search users (for upgrading to influencer)
-   * @param {string} query
+   * Get platform settings
    */
-  searchUsers: async (query) => {
+  getSettings: async () => {
     try {
-      const data = await api.get(`/admin/users/search?q=${encodeURIComponent(query)}`);
-      return data;
+      const response = await api.get('/admin/settings');
+      return response;
     } catch (error) {
-      console.error('Search Users Error:', error);
+      console.error('Get Settings Error:', error);
       throw error;
     }
-  }
+  },
+
+  /**
+   * Update platform settings
+   * @param {Object} data - Settings to update
+   */
+  updateSettings: async (data) => {
+    try {
+      const response = await api.put('/admin/settings', data);
+      return response;
+    } catch (error) {
+      console.error('Update Settings Error:', error);
+      throw error;
+    }
+  },
+
+  // =====================================================
+  // BETS (Optional - if you need bet management)
+  // =====================================================
+  
+  /**
+   * Get all bets with filters
+   * @param {Object} params - Query parameters
+   */
+  getAllBets: async (params = {}) => {
+    try {
+      const cleanParams = Object.entries(params)
+        .filter(([_, value]) => value !== '' && value !== null && value !== undefined)
+        .reduce((acc, [key, value]) => ({ ...acc, [key]: value }), {});
+      
+      const queryString = new URLSearchParams(cleanParams).toString();
+      const response = await api.get(`/admin/bets${queryString ? `?${queryString}` : ''}`);
+      return response;
+    } catch (error) {
+      console.error('Get Bets Error:', error);
+      throw error;
+    }
+  },
+
+  // =====================================================
+  // REPORTS (Optional)
+  // =====================================================
+  
+  /**
+   * Get financial report
+   * @param {Object} params - Date range and filters
+   */
+  getFinancialReport: async (params = {}) => {
+    try {
+      const queryString = new URLSearchParams(params).toString();
+      const response = await api.get(`/admin/reports/financial${queryString ? `?${queryString}` : ''}`);
+      return response;
+    } catch (error) {
+      console.error('Get Financial Report Error:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get user activity report
+   * @param {Object} params - Date range and filters
+   */
+  getUserActivityReport: async (params = {}) => {
+    try {
+      const queryString = new URLSearchParams(params).toString();
+      const response = await api.get(`/admin/reports/users${queryString ? `?${queryString}` : ''}`);
+      return response;
+    } catch (error) {
+      console.error('Get User Activity Report Error:', error);
+      throw error;
+    }
+  },
+
   // =====================================================
   // SYSTEM (Optional)
   // =====================================================
@@ -597,7 +596,7 @@ const adminService = {
       console.error('Clear Cache Error:', error);
       throw error;
     }
-  },
+  }
 };
 
 export default adminService;
