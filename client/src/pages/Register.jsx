@@ -1,6 +1,6 @@
 
 // src/pages/Register.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
@@ -28,25 +28,10 @@ const InputField = ({
   value,
   onChange,
   onBlur,
-  error,
-  showPassword,
-  showConfirmPassword,
-  onTogglePassword,
-  isPassword = false,
-  isConfirmPassword = false
+  error
 }) => {
   const hasError = error;
   const hasValue = value?.length > 0;
-  
-  const getInputType = () => {
-    if (isPassword) {
-      return showPassword ? 'text' : 'password';
-    }
-    if (isConfirmPassword) {
-      return showConfirmPassword ? 'text' : 'password';
-    }
-    return type;
-  };
   
   return (
     <div>
@@ -55,7 +40,7 @@ const InputField = ({
       </label>
       <div className="relative">
         <input
-          type={getInputType()}
+          type={type}
           name={name}
           value={value}
           onChange={onChange}
@@ -72,29 +57,12 @@ const InputField = ({
           autoComplete="off"
         />
         
-        {/* Status Icon */}
         <div className="absolute right-3 top-1/2 transform -translate-y-1/2 flex items-center gap-2">
-          {(isPassword || isConfirmPassword) && (
-            <button
-              type="button"
-              onClick={onTogglePassword}
-              className="text-gray-400 hover:text-white"
-            >
-              {(isPassword ? showPassword : showConfirmPassword) ? (
-                <EyeOff size={18} />
-              ) : (
-                <Eye size={18} />
-              )}
-            </button>
-          )}
           {hasError && <XCircle size={18} className="text-red-500" />}
-          {hasValue && !hasError && !isPassword && !isConfirmPassword && (
-            <CheckCircle size={18} className="text-green-500" />
-          )}
+          {hasValue && !hasError && <CheckCircle size={18} className="text-green-500" />}
         </div>
       </div>
       
-      {/* Error Message */}
       {hasError && (
         <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
           <AlertCircle size={14} />
@@ -108,6 +76,8 @@ const InputField = ({
 // ========== MAIN REGISTER COMPONENT ==========
 const Register = () => {
   const [searchParams] = useSearchParams();
+  const initialRefCode = searchParams.get('ref') || '';
+  
   const [formData, setFormData] = useState({
     username: '',
     email: '',
@@ -115,7 +85,7 @@ const Register = () => {
     confirmPassword: '',
     fullName: '',
     phoneNumber: '',
-    referralCode: searchParams.get('ref') || '',
+    referralCode: initialRefCode,
   });
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -127,16 +97,115 @@ const Register = () => {
     referrerName: '',
     message: ''
   });
+  
   const { register } = useAuth();
   const navigate = useNavigate();
+  const referralTimerRef = useRef(null);
+  const hasValidatedInitialRef = useRef(false);
 
-  // ========== VALIDATE REFERRAL CODE ON LOAD ==========
-  useEffect(() => {
-    if (formData.referralCode) {
-      validateReferralCode(formData.referralCode);
+  // ========== VALIDATE REFERRAL CODE ==========
+  const validateReferralCode = async (code, isInitialLoad = false) => {
+    // Clear if empty
+    if (!code || code.trim().length === 0) {
+      setReferralValidation({
+        isValidating: false,
+        isValid: false,
+        referrerName: '',
+        message: ''
+      });
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+
+    const cleanCode = code.trim().toUpperCase();
+    
+    // Don't validate if too short
+    if (cleanCode.length < 3) {
+      setReferralValidation({
+        isValidating: false,
+        isValid: false,
+        referrerName: '',
+        message: ''
+      });
+      return;
+    }
+
+    setReferralValidation(prev => ({ 
+      ...prev, 
+      isValidating: true,
+      message: 'Validating...'
+    }));
+
+    try {
+      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+      
+      console.log(`🔍 Validating referral code: ${cleanCode}`); // Debug log
+      
+      const response = await axios.get(`${API_URL}/auth/validate-referral/${cleanCode}`, {
+        timeout: 10000 // 10 second timeout
+      });
+      
+      console.log('✅ Validation response:', response.data); // Debug log
+      
+      if (response.data.success && response.data.valid) {
+        setReferralValidation({
+          isValidating: false,
+          isValid: true,
+          referrerName: response.data.data.referrerUsername,
+          message: `✓ Referred by: ${response.data.data.referrerUsername}`
+        });
+        
+        if (isInitialLoad) {
+          toast.success(`Welcome! You were referred by ${response.data.data.referrerUsername}`);
+        }
+      } else {
+        setReferralValidation({
+          isValidating: false,
+          isValid: false,
+          referrerName: '',
+          message: response.data.message || 'Invalid referral code'
+        });
+      }
+    } catch (error) {
+      console.error('❌ Referral validation error:', error); // Debug log
+      
+      let errorMessage = 'Invalid referral code';
+      
+      if (error.response) {
+        // Server responded with error
+        errorMessage = error.response.data?.message || 'Referral code not found';
+        console.log('Server error:', error.response.status, error.response.data);
+      } else if (error.request) {
+        // No response received
+        errorMessage = 'Could not validate code. Please try again.';
+        console.log('No response received');
+      } else {
+        // Request setup error
+        errorMessage = 'Validation failed. Please try again.';
+        console.log('Request error:', error.message);
+      }
+      
+      setReferralValidation({
+        isValidating: false,
+        isValid: false,
+        referrerName: '',
+        message: errorMessage
+      });
+    }
+  };
+
+  // ========== VALIDATE REFERRAL CODE ON LOAD (with delay) ==========
+  useEffect(() => {
+    if (initialRefCode && !hasValidatedInitialRef.current) {
+      hasValidatedInitialRef.current = true;
+      
+      // Add small delay to ensure API is ready
+      const timer = setTimeout(() => {
+        validateReferralCode(initialRefCode, true);
+      }, 500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [initialRefCode]);
 
   // ========== VALIDATION FUNCTIONS ==========
   const validateFullName = (name) => {
@@ -210,74 +279,36 @@ const Register = () => {
     return null;
   };
 
-  // ========== VALIDATE REFERRAL CODE ==========
-  const validateReferralCode = async (code) => {
-    if (!code || code.trim().length === 0) {
-      setReferralValidation({
-        isValidating: false,
-        isValid: false,
-        referrerName: '',
-        message: ''
-      });
-      return;
-    }
-
-    setReferralValidation(prev => ({ ...prev, isValidating: true }));
-
-    try {
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-      const response = await axios.get(`${API_URL}/auth/validate-referral/${code.trim().toUpperCase()}`);
-      
-      if (response.data.success && response.data.valid) {
-        setReferralValidation({
-          isValidating: false,
-          isValid: true,
-          referrerName: response.data.data.referrerUsername,
-          message: `Referred by: ${response.data.data.referrerUsername} (${response.data.data.bonus})`
-        });
-      } else {
-        setReferralValidation({
-          isValidating: false,
-          isValid: false,
-          referrerName: '',
-          message: 'Invalid referral code'
-        });
-      }
-    } catch (error) {
-      setReferralValidation({
-        isValidating: false,
-        isValid: false,
-        referrerName: '',
-        message: error.response?.data?.message || 'Invalid referral code'
-      });
-    }
-  };
-
-  // ========== DEBOUNCE TIMER REF ==========
-  const [referralTimer, setReferralTimer] = useState(null);
-
   // ========== HANDLE INPUT CHANGE ==========
   const handleChange = (e) => {
     const { name, value } = e.target;
     
     setFormData(prev => ({ ...prev, [name]: value }));
 
-    // Clear error when user starts typing
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: null }));
     }
 
     // Validate referral code with debounce
     if (name === 'referralCode') {
-      if (referralTimer) {
-        clearTimeout(referralTimer);
+      if (referralTimerRef.current) {
+        clearTimeout(referralTimerRef.current);
       }
       
-      const timer = setTimeout(() => {
-        validateReferralCode(value);
-      }, 500);
+      // Clear validation if empty
+      if (!value || value.trim().length === 0) {
+        setReferralValidation({
+          isValidating: false,
+          isValid: false,
+          referrerName: '',
+          message: ''
+        });
+        return;
+      }
       
-      setReferralTimer(timer);
+      referralTimerRef.current = setTimeout(() => {
+        validateReferralCode(value, false);
+      }, 800); // Wait 800ms after user stops typing
     }
   };
 
@@ -308,8 +339,12 @@ const Register = () => {
         }
         break;
       case 'referralCode':
-        if (value) {
-          validateReferralCode(value);
+        // Validate immediately on blur if there's a value
+        if (value && value.trim().length >= 3) {
+          if (referralTimerRef.current) {
+            clearTimeout(referralTimerRef.current);
+          }
+          validateReferralCode(value, false);
         }
         break;
       default:
@@ -346,8 +381,15 @@ const Register = () => {
       newErrors.confirmPassword = 'Passwords do not match';
     }
 
-    if (formData.referralCode && !referralValidation.isValid) {
-      newErrors.referralCode = 'Invalid referral code';
+    // Only check referral if provided AND validation completed AND invalid
+    if (formData.referralCode && formData.referralCode.trim().length >= 3) {
+      if (referralValidation.isValidating) {
+        toast.error('Please wait for referral code validation');
+        return;
+      }
+      if (!referralValidation.isValid) {
+        newErrors.referralCode = 'Invalid referral code. Please check and try again.';
+      }
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -364,8 +406,11 @@ const Register = () => {
       
       registerData.phoneNumber = registerData.phoneNumber.replace(/[\s-]/g, '');
       
-      if (registerData.referralCode) {
+      // Only include referral code if valid
+      if (registerData.referralCode && referralValidation.isValid) {
         registerData.referralCode = registerData.referralCode.trim().toUpperCase();
+      } else {
+        delete registerData.referralCode; // Remove if invalid or empty
       }
       
       await register(registerData);
@@ -378,6 +423,15 @@ const Register = () => {
       setLoading(false);
     }
   };
+
+  // ========== CLEANUP ==========
+  useEffect(() => {
+    return () => {
+      if (referralTimerRef.current) {
+        clearTimeout(referralTimerRef.current);
+      }
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-darker via-dark to-slate-900 flex">
@@ -631,13 +685,13 @@ const Register = () => {
                     onChange={handleChange}
                     onBlur={handleBlur}
                     className={`w-full px-4 py-3 bg-slate-900/50 border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 transition pr-10 uppercase ${
-                      errors.referralCode
+                      errors.referralCode || (!referralValidation.isValidating && formData.referralCode && !referralValidation.isValid && referralValidation.message)
                         ? 'border-red-500 focus:ring-red-500'
                         : referralValidation.isValid
                         ? 'border-green-500 focus:ring-green-500'
                         : 'border-slate-600 focus:ring-primary focus:border-transparent'
                     }`}
-                    placeholder="Enter referral code"
+                    placeholder="Enter referral code (e.g., ABC123)"
                     maxLength={15}
                     autoComplete="off"
                   />
@@ -648,13 +702,21 @@ const Register = () => {
                     {!referralValidation.isValidating && referralValidation.isValid && (
                       <CheckCircle size={18} className="text-green-500" />
                     )}
-                    {!referralValidation.isValidating && formData.referralCode && !referralValidation.isValid && (
+                    {!referralValidation.isValidating && formData.referralCode && formData.referralCode.length >= 3 && !referralValidation.isValid && referralValidation.message && (
                       <XCircle size={18} className="text-red-500" />
                     )}
                   </div>
                 </div>
                 
-                {referralValidation.message && (
+                {/* Referral Validation Messages */}
+                {referralValidation.isValidating && (
+                  <p className="mt-1 text-sm text-blue-400 flex items-center gap-1">
+                    <Loader2 size={14} className="animate-spin" />
+                    Validating referral code...
+                  </p>
+                )}
+                
+                {!referralValidation.isValidating && referralValidation.message && (
                   <p className={`mt-1 text-sm flex items-center gap-1 ${
                     referralValidation.isValid ? 'text-green-500' : 'text-red-500'
                   }`}>
@@ -667,10 +729,16 @@ const Register = () => {
                   </p>
                 )}
                 
-                {errors.referralCode && (
+                {errors.referralCode && !referralValidation.message && (
                   <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
                     <AlertCircle size={14} />
                     {errors.referralCode}
+                  </p>
+                )}
+                
+                {!formData.referralCode && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    Have a referral code? Enter it to get bonus rewards!
                   </p>
                 )}
               </div>
@@ -678,7 +746,7 @@ const Register = () => {
               {/* Submit Button */}
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || referralValidation.isValidating}
                 className="w-full bg-gradient-to-r from-primary to-secondary text-white font-semibold py-4 rounded-lg hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 mt-6"
               >
                 {loading ? (
