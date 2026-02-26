@@ -96,7 +96,7 @@ const fixMissedCommissions = async () => {
             percentage: percentage,
             betAmount: betAmount,
             earnedAmount: commission,
-            status: 'completed',
+            status: 'credited',
             description: `First bet bonus: 5% of ${user.username}'s first bet (${firstBet.result})`
           }, { transaction: dbTransaction });
 
@@ -211,7 +211,7 @@ const fixMissedCommissions = async () => {
               percentage: percentage,
               betAmount: betAmount,
               earnedAmount: commission,
-              status: 'completed',
+              status: 'credited',
               description: `Loss commission: ${percentage}% of ${user.username}'s loss of ₦${betAmount}`
             }, { transaction: dbTransaction });
 
