@@ -5,7 +5,7 @@ const { Round, Bet, Wallet, Transaction, User } = require('../models');
 const { Op } = require('sequelize');
 const priceService = require('./priceService');
 const { sequelize } = require('../config/database');
-const { processFirstBetBonus, processInfluencerCommission } = require('./referralService'); // ✅ UPDATED IMPORT
+const { processFirstBetBonus, processInfluencerCommission } = require('./referralService'); // ✅ ADD THIS
 
 // Helper function
 const roundToTwo = (num) => Math.round((num + Number.EPSILON) * 100) / 100;
@@ -284,7 +284,7 @@ class RoundService {
   }
 
   // ============================================================
-  // ✅ UPDATED BET PROCESSING WITH CORRECT REFERRAL LOGIC
+  // ✅ CORRECT SETTLEMENT WITH REFERRALS ADDED
   // ============================================================
   async processBets(round, result, transaction) {
     try {
@@ -293,7 +293,7 @@ class RoundService {
         include: [{ 
           model: User, 
           as: 'user', 
-          attributes: ['id', 'username', 'referredBy', 'hasPlacedFirstBet']
+          attributes: ['id', 'username', 'referredBy', 'hasPlacedFirstBet'] // ✅ ADDED REFERRAL FIELDS
         }],
         transaction
       });
@@ -315,7 +315,7 @@ class RoundService {
       console.log(`   📈 UP bets: ${upBets.length} (₦${totalUpPool.toLocaleString()})`);
       console.log(`   📉 DOWN bets: ${downBets.length} (₦${totalDownPool.toLocaleString()})`);
 
-      // ===== TIE - Refund everyone =====
+      // ===== CASE 1: TIE =====
       if (result === 'tie') {
         console.log('   ➖ TIE - Refunding all bets');
         await this.refundAllBets(round, bets, transaction, 'TIE - Price unchanged');
@@ -339,21 +339,21 @@ class RoundService {
       console.log(`   ✅ Winners: ${winners.length} (₦${winnerPool.toLocaleString()})`);
       console.log(`   ❌ Losers: ${losers.length} (₦${loserPool.toLocaleString()})`);
 
-      // ===== Everyone predicted WRONG =====
+      // ===== CASE 2: Everyone predicted WRONG =====
       if (winners.length === 0 && losers.length > 0) {
         console.log('   ❌ EVERYONE PREDICTED WRONG - All lose!');
         await this.processAllAsLosers(round, losers, transaction);
         return;
       }
 
-      // ===== Everyone predicted CORRECT but no opponents =====
+      // ===== CASE 3: Everyone predicted CORRECT but no opponents =====
       if (winners.length > 0 && losers.length === 0) {
         console.log('   🎯 NO OPPONENTS - Refunding winners');
         await this.refundAllBets(round, winners, transaction, 'No opposing bets');
         return;
       }
 
-      // ===== NORMAL CASE =====
+      // ===== CASE 4: NORMAL =====
       console.log('   🎮 NORMAL CASE - Processing payouts');
       
       const platformFee = roundToTwo(loserPool * 0.30);
@@ -424,7 +424,7 @@ class RoundService {
 
         console.log(`   ✅ ${bet.user?.username}: Bet ₦${betAmount} → Won ₦${payout} (${multiplier}x)`);
 
-        // ✅ FIRST BET BONUS FOR WINNERS
+        // ✅ PROCESS FIRST BET BONUS FOR WINNERS
         if (bet.user?.referredBy && !bet.user?.hasPlacedFirstBet) {
           try {
             const bonusResult = await processFirstBetBonus(
@@ -433,7 +433,7 @@ class RoundService {
               bet.id,
               transaction
             );
-            if (bonusResult?.success) {
+            if (bonusResult?.success && !bonusResult.alreadyProcessed) {
               console.log(`   🎁 First bet bonus: ${bonusResult.referrerUsername} earned ₦${bonusResult.bonusAmount.toFixed(2)}`);
             }
           } catch (commError) {
@@ -500,7 +500,7 @@ class RoundService {
         // ✅ PROCESS REFERRAL COMMISSIONS FOR LOSERS
         if (bet.user?.referredBy) {
           try {
-            // Step 1: First bet bonus (normal referrers only)
+            // First bet bonus (normal referrers only)
             if (!bet.user.hasPlacedFirstBet) {
               const bonusResult = await processFirstBetBonus(
                 bet.userId,
@@ -508,12 +508,12 @@ class RoundService {
                 bet.id,
                 transaction
               );
-              if (bonusResult?.success) {
+              if (bonusResult?.success && !bonusResult.alreadyProcessed) {
                 console.log(`   🎁 First bet bonus: ${bonusResult.referrerUsername} earned ₦${bonusResult.bonusAmount.toFixed(2)}`);
               }
             }
 
-            // Step 2: Influencer commission (on EVERY loss)
+            // Influencer commission (on EVERY loss)
             const influencerResult = await processInfluencerCommission(
               bet.userId,
               betAmount,
@@ -549,7 +549,7 @@ class RoundService {
   }
 
   // ============================================================
-  // ALL LOSE SCENARIO
+  // ALL LOSE
   // ============================================================
   async processAllAsLosers(round, losers, transaction) {
     let totalLost = 0;
@@ -608,7 +608,7 @@ class RoundService {
               bet.id,
               transaction
             );
-            if (bonusResult?.success) {
+            if (bonusResult?.success && !bonusResult.alreadyProcessed) {
               console.log(`   🎁 First bet bonus: ${bonusResult.referrerUsername} earned ₦${bonusResult.bonusAmount.toFixed(2)}`);
             }
           }
@@ -650,7 +650,7 @@ class RoundService {
   }
 
   // ============================================================
-  // REFUND ALL BETS
+  // REFUND
   // ============================================================
   async refundAllBets(round, bets, transaction, reason) {
     for (const bet of bets) {
@@ -692,7 +692,7 @@ class RoundService {
 
       console.log(`   🔄 ${bet.user?.username}: Refunded ₦${betAmount}`);
 
-      // ✅ FIRST BET BONUS (even on refunds, if applicable)
+      // ✅ FIRST BET BONUS (even on refunds)
       if (bet.user?.referredBy && !bet.user?.hasPlacedFirstBet) {
         try {
           const bonusResult = await processFirstBetBonus(
@@ -701,7 +701,7 @@ class RoundService {
             bet.id,
             transaction
           );
-          if (bonusResult?.success) {
+          if (bonusResult?.success && !bonusResult.alreadyProcessed) {
             console.log(`   🎁 First bet bonus: ${bonusResult.referrerUsername} earned ₦${bonusResult.bonusAmount.toFixed(2)}`);
           }
         } catch (commError) {
