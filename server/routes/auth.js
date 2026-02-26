@@ -1,3 +1,5 @@
+
+// server/routes/auth.js
 const express = require('express');
 const router = express.Router();
 const {
@@ -8,7 +10,8 @@ const {
   changePassword,
   getReferrals,
   forgotPassword,
-  resetPassword
+  resetPassword,
+  validateReferralCode  // ✅ ADD THIS IMPORT
 } = require('../controllers/authController');
 const { protect } = require('../middleware/auth');
 const { authLimiter } = require('../middleware/rateLimiter');
@@ -16,15 +19,14 @@ const { authLimiter } = require('../middleware/rateLimiter');
 // Public routes
 router.post('/register', authLimiter, register);
 router.post('/login', authLimiter, login);
-router.post('/forgot-password', forgotPassword);  // ADD THIS
-router.post('/reset-password', resetPassword);    // ADD THIS
+router.post('/forgot-password', forgotPassword);
+router.post('/reset-password', resetPassword);
+router.get('/validate-referral/:code', validateReferralCode);  // ✅ MOVED HERE (public route)
 
 // Protected routes
 router.get('/me', protect, getMe);
 router.put('/profile', protect, updateProfile);
 router.put('/change-password', protect, changePassword);
 router.get('/referrals', protect, getReferrals);
-// Add this to your auth routes
-router.get('/validate-referral/:code', validateReferralCode);
 
 module.exports = router;
