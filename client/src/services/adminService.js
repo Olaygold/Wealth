@@ -463,6 +463,112 @@ const adminService = {
     }
   },
 
+
+  // Add these methods to your existing adminService.js
+
+  // =====================================================
+  // INFLUENCER MANAGEMENT
+  // =====================================================
+
+  /**
+   * Get all influencers
+   * @param {Object} params - { page, limit }
+   */
+  getAllInfluencers: async (params = {}) => {
+    try {
+      const queryString = new URLSearchParams(params).toString();
+      const data = await api.get(`/admin/influencers${queryString ? `?${queryString}` : ''}`);
+      return data;
+    } catch (error) {
+      console.error('Get Influencers Error:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get influencer details
+   * @param {string} userId
+   */
+  getInfluencerDetails: async (userId) => {
+    try {
+      const data = await api.get(`/admin/influencers/${userId}`);
+      return data;
+    } catch (error) {
+      console.error('Get Influencer Details Error:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Upgrade user to influencer
+   * @param {string} userId
+   * @param {number} percentage (1-10)
+   */
+  upgradeToInfluencer: async (userId, percentage) => {
+    try {
+      const data = await api.post(`/admin/influencers/${userId}`, { percentage });
+      return data;
+    } catch (error) {
+      console.error('Upgrade to Influencer Error:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Update influencer percentage
+   * @param {string} userId
+   * @param {number} percentage (1-10)
+   */
+  updateInfluencerPercentage: async (userId, percentage) => {
+    try {
+      const data = await api.put(`/admin/influencers/${userId}`, { percentage });
+      return data;
+    } catch (error) {
+      console.error('Update Influencer Error:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Downgrade influencer to normal
+   * @param {string} userId
+   */
+  downgradeInfluencer: async (userId) => {
+    try {
+      const data = await api.delete(`/admin/influencers/${userId}`);
+      return data;
+    } catch (error) {
+      console.error('Downgrade Influencer Error:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get platform referral stats
+   */
+  getReferralStats: async () => {
+    try {
+      const data = await api.get('/admin/referrals/stats');
+      return data;
+    } catch (error) {
+      console.error('Get Referral Stats Error:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Search users (for upgrading to influencer)
+   * @param {string} query
+   */
+  searchUsers: async (query) => {
+    try {
+      const data = await api.get(`/admin/users/search?q=${encodeURIComponent(query)}`);
+      return data;
+    } catch (error) {
+      console.error('Search Users Error:', error);
+      throw error;
+    }
+  }
   // =====================================================
   // SYSTEM (Optional)
   // =====================================================
