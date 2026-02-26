@@ -1,5 +1,5 @@
 
-// models/ReferralEarning.js
+// server/models/ReferralEarning.js
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
 
@@ -12,52 +12,60 @@ const ReferralEarning = sequelize.define('ReferralEarning', {
   referrerId: {
     type: DataTypes.UUID,
     allowNull: false,
-    comment: 'The user who referred and earned the commission'
+    references: {
+      model: 'Users',
+      key: 'id'
+    }
   },
   referredUserId: {
     type: DataTypes.UUID,
     allowNull: false,
-    comment: 'The user who was referred and placed the bet'
+    references: {
+      model: 'Users',
+      key: 'id'
+    }
   },
   betId: {
     type: DataTypes.UUID,
     allowNull: true,
-    comment: 'The bet that triggered this earning'
+    references: {
+      model: 'Bets',
+      key: 'id'
+    }
   },
   type: {
-    type: DataTypes.ENUM('first_bet', 'loss_commission'),
-    allowNull: false,
-    comment: 'first_bet = normal referrer (5% once), loss_commission = influencer (X% every loss)'
-  },
-  percentage: {
-    type: DataTypes.DECIMAL(5, 2),
-    allowNull: false,
-    comment: 'The percentage used to calculate commission'
+    type: DataTypes.ENUM('first_bet', 'loss_commission', 'signup_bonus'),
+    allowNull: false
   },
   betAmount: {
     type: DataTypes.DECIMAL(15, 2),
-    allowNull: false,
-    comment: 'The original bet amount'
+    defaultValue: 0
+  },
+  percentage: {
+    type: DataTypes.DECIMAL(5, 2),
+    defaultValue: 0
   },
   earnedAmount: {
     type: DataTypes.DECIMAL(15, 2),
-    allowNull: false,
-    comment: 'The commission earned (betAmount * percentage / 100)'
+    allowNull: false
   },
   status: {
-    type: DataTypes.ENUM('pending', 'credited', 'withdrawn'),
-    defaultValue: 'credited',
-    comment: 'pending = awaiting, credited = added to balance, withdrawn = moved to wallet'
+    type: DataTypes.ENUM('pending', 'completed', 'cancelled'),
+    defaultValue: 'completed'
+  },
+  description: {
+    type: DataTypes.STRING,
+    allowNull: true
   }
 }, {
-  timestamps: true,
   tableName: 'referral_earnings',
-  underscored: false,
+  timestamps: true,
   indexes: [
     { fields: ['referrerId'] },
     { fields: ['referredUserId'] },
     { fields: ['betId'] },
     { fields: ['type'] },
+    { fields: ['status'] },
     { fields: ['createdAt'] }
   ]
 });
