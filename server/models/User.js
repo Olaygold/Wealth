@@ -65,21 +65,19 @@ const User = sequelize.define('User', {
   referredBy: {
     type: DataTypes.UUID,
     allowNull: true
-    // REMOVED the references - we'll add it AFTER table is created
   },
   lastLogin: {
     type: DataTypes.DATE,
     allowNull: true
   },
-  // In models/User.js - add these fields
-passwordResetToken: {
-  type: DataTypes.STRING,
-  allowNull: true
-},
-passwordResetExpires: {
-  type: DataTypes.DATE,
-  allowNull: true
-}
+  passwordResetToken: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  passwordResetExpires: {
+    type: DataTypes.DATE,
+    allowNull: true
+  }
 }, {
   timestamps: true,
   tableName: 'users',
@@ -89,6 +87,47 @@ passwordResetExpires: {
     { fields: ['referralCode'] }
   ]
 });
+
+// ✅ ADD THIS: Define associations
+User.associate = function(models) {
+  // Self-referential: A user can refer many users
+  User.hasMany(models.User, {
+    as: 'referrals',
+    foreignKey: 'referredBy'
+  });
+
+  // Self-referential: A user can be referred by one user
+  User.belongsTo(models.User, {
+    as: 'referrer',
+    foreignKey: 'referredBy'
+  });
+
+  // Other associations
+  User.hasOne(models.Wallet, {
+    foreignKey: 'userId',
+    as: 'wallet'
+  });
+
+  User.hasMany(models.Bet, {
+    foreignKey: 'userId',
+    as: 'bets'
+  });
+
+  User.hasMany(models.Transaction, {
+    foreignKey: 'userId',
+    as: 'transactions'
+  });
+
+  User.hasMany(models.PendingDeposit, {
+    foreignKey: 'userId',
+    as: 'pendingDeposits'
+  });
+
+  User.hasMany(models.VirtualAccount, {
+    foreignKey: 'userId',
+    as: 'virtualAccounts'
+  });
+};
 
 // Hash password before saving
 User.beforeCreate(async (user) => {
