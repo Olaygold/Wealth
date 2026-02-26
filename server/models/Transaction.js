@@ -1,3 +1,5 @@
+
+// server/models/Transaction.js
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
 
@@ -16,7 +18,17 @@ const Transaction = sequelize.define('Transaction', {
     }
   },
   type: {
-    type: DataTypes.ENUM('deposit', 'withdrawal', 'bet_place', 'bet_win', 'bet_loss', 'fee', 'refund'),
+    type: DataTypes.ENUM(
+      'deposit', 
+      'withdrawal', 
+      'bet_place', 
+      'bet_win', 
+      'bet_loss', 
+      'fee', 
+      'refund',
+      'referral_bonus',      // ✅ ADDED
+      'referral_commission'  // ✅ ADDED
+    ),
     allowNull: false
   },
   method: {
@@ -46,7 +58,7 @@ const Transaction = sequelize.define('Transaction', {
   metadata: {
     type: DataTypes.JSONB,
     defaultValue: {},
-    comment: 'Payment gateway response, etc.'
+    comment: 'Payment gateway response, referral info, etc.'
   },
   balanceBefore: {
     type: DataTypes.DECIMAL(15, 2),
