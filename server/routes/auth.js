@@ -24,5 +24,7 @@ router.get('/me', protect, getMe);
 router.put('/profile', protect, updateProfile);
 router.put('/change-password', protect, changePassword);
 router.get('/referrals', protect, getReferrals);
+// Add this to your auth routes
+router.get('/validate-referral/:code', validateReferralCode);
 
 module.exports = router;
