@@ -1,10 +1,11 @@
 
-
+// server/services/roundService.js
 const cron = require('node-cron');
 const { Round, Bet, Wallet, Transaction, User } = require('../models');
 const { Op } = require('sequelize');
 const priceService = require('./priceService');
 const { sequelize } = require('../config/database');
+const { processReferralCommission } = require('../utils/referralCommission'); // ✅ ADD THIS
 
 // Helper function
 const roundToTwo = (num) => Math.round((num + Number.EPSILON) * 100) / 100;
@@ -289,7 +290,11 @@ class RoundService {
     try {
       const bets = await Bet.findAll({
         where: { roundId: round.id, result: 'pending' },
-        include: [{ model: User, as: 'user', attributes: ['id', 'username'] }],
+        include: [{ 
+          model: User, 
+          as: 'user', 
+          attributes: ['id', 'username', 'referredBy', 'hasPlacedFirstBet'] // ✅ UPDATED: Added referral fields
+        }],
         transaction
       });
 
@@ -421,6 +426,24 @@ class RoundService {
 
         console.log(`   ✅ ${bet.user?.username}: Bet ₦${betAmount} → Won ₦${payout} (${multiplier}x)`);
 
+        // ✅ PROCESS FIRST BET COMMISSION FOR WINNERS (Normal referrers only)
+        if (bet.user?.referredBy && !bet.user?.hasPlacedFirstBet) {
+          try {
+            const commissionResult = await processReferralCommission(
+              bet.userId,
+              bet.id,
+              betAmount,
+              'first_bet',
+              transaction
+            );
+            if (commissionResult) {
+              console.log(`   🎁 First bet bonus: ${commissionResult.referrerUsername} earned ₦${commissionResult.commission.toFixed(2)}`);
+            }
+          } catch (commError) {
+            console.error(`   ⚠️ First bet commission error:`, commError.message);
+          }
+        }
+
         if (this.io) {
           this.io.to(bet.userId).emit('bet_result', {
             betId: bet.id,
@@ -476,6 +499,40 @@ class RoundService {
         }, { transaction });
 
         console.log(`   ❌ ${bet.user?.username}: Lost ₦${betAmount}`);
+
+        // ✅ PROCESS REFERRAL COMMISSIONS FOR LOSERS
+        if (bet.user?.referredBy) {
+          try {
+            // First bet bonus (for normal referrers - only on first bet)
+            if (!bet.user.hasPlacedFirstBet) {
+              const firstBetResult = await processReferralCommission(
+                bet.userId,
+                bet.id,
+                betAmount,
+                'first_bet',
+                transaction
+              );
+              if (firstBetResult) {
+                console.log(`   🎁 First bet bonus: ${firstBetResult.referrerUsername} earned ₦${firstBetResult.commission.toFixed(2)}`);
+              }
+            }
+
+            // ✅ INFLUENCER COMMISSION ON EVERY LOSS
+            const lossCommissionResult = await processReferralCommission(
+              bet.userId,
+              bet.id,
+              betAmount,
+              'bet_lost',
+              transaction
+            );
+            if (lossCommissionResult) {
+              console.log(`   💰 Influencer commission: ${lossCommissionResult.referrerUsername} earned ₦${lossCommissionResult.commission.toFixed(2)} (${lossCommissionResult.percentage}%)`);
+            }
+          } catch (commError) {
+            console.error(`   ⚠️ Referral commission error:`, commError.message);
+            // Don't throw - continue processing other bets
+          }
+        }
 
         if (this.io) {
           this.io.to(bet.userId).emit('bet_result', {
@@ -545,6 +602,39 @@ class RoundService {
       }, { transaction });
 
       console.log(`   ❌ ${bet.user?.username}: Lost ₦${betAmount}`);
+
+      // ✅ PROCESS REFERRAL COMMISSIONS
+      if (bet.user?.referredBy) {
+        try {
+          // First bet bonus
+          if (!bet.user.hasPlacedFirstBet) {
+            const firstBetResult = await processReferralCommission(
+              bet.userId,
+              bet.id,
+              betAmount,
+              'first_bet',
+              transaction
+            );
+            if (firstBetResult) {
+              console.log(`   🎁 First bet bonus: ${firstBetResult.referrerUsername} earned ₦${firstBetResult.commission.toFixed(2)}`);
+            }
+          }
+
+          // Influencer loss commission
+          const lossCommissionResult = await processReferralCommission(
+            bet.userId,
+            bet.id,
+            betAmount,
+            'bet_lost',
+            transaction
+          );
+          if (lossCommissionResult) {
+            console.log(`   💰 Influencer commission: ${lossCommissionResult.referrerUsername} earned ₦${lossCommissionResult.commission.toFixed(2)}`);
+          }
+        } catch (commError) {
+          console.error(`   ⚠️ Referral commission error:`, commError.message);
+        }
+      }
 
       if (this.io) {
         this.io.to(bet.userId).emit('bet_result', {
