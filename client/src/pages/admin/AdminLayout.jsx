@@ -1,6 +1,7 @@
+
 // src/pages/admin/AdminLayout.jsx
 import React, { useState } from 'react';
-import { Outlet, useLocation, Link } from 'react-router-dom';
+import { Outlet, useLocation, Link, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   Users,
@@ -15,9 +16,12 @@ import {
   Bell,
   ChevronDown
 } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 
 const AdminLayout = () => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -36,7 +40,7 @@ const AdminLayout = () => {
       name: 'Withdrawals', 
       path: '/admin/withdrawals', 
       icon: ArrowUpCircle,
-      badge: true // Show badge for pending items
+      badge: true
     },
     { 
       name: 'Deposits', 
@@ -63,8 +67,14 @@ const AdminLayout = () => {
 
   const isActive = (path) => location.pathname === path;
 
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
   return (
-    <div className="min-h-screen bg-gray-100">
+    // ✅ ONLY CHANGE: Added "admin-panel" class here
+    <div className="admin-panel min-h-screen bg-gray-100">
       {/* Mobile menu overlay */}
       {mobileMenuOpen && (
         <div 
@@ -130,7 +140,10 @@ const AdminLayout = () => {
 
         {/* Bottom Section */}
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-800">
-          <button className="flex items-center w-full px-4 py-3 text-gray-300 hover:bg-gray-800 hover:text-white rounded-lg transition-colors">
+          <button 
+            onClick={handleLogout}
+            className="flex items-center w-full px-4 py-3 text-gray-300 hover:bg-gray-800 hover:text-white rounded-lg transition-colors"
+          >
             <LogOut className="h-5 w-5" />
             {sidebarOpen && <span className="ml-3">Logout</span>}
           </button>
@@ -150,7 +163,7 @@ const AdminLayout = () => {
               onClick={() => setMobileMenuOpen(true)}
               className="p-2 rounded-lg hover:bg-gray-100 lg:hidden"
             >
-              <Menu className="h-6 w-6" />
+              <Menu className="h-6 w-6 text-gray-600" />
             </button>
 
             {/* Page Title */}
