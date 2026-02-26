@@ -1,4 +1,5 @@
 
+// src/components/Layout/Navbar.jsx
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
@@ -12,7 +13,8 @@ import {
   X,
   User,
   Settings,
-  Shield // Add this for admin icon
+  Shield,
+  Gift // ✅ Add this for referrals
 } from 'lucide-react';
 
 const Navbar = () => {
@@ -31,6 +33,7 @@ const Navbar = () => {
     { path: '/wallet', label: 'Wallet', icon: Wallet },
     { path: '/history', label: 'History', icon: History },
     { path: '/leaderboard', label: 'Leaderboard', icon: Trophy },
+    { path: '/referrals', label: 'Referrals', icon: Gift }, // ✅ NEW
   ];
 
   const isActive = (path) => location.pathname === path;
