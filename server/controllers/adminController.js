@@ -1110,6 +1110,571 @@ const getSettings = async (req, res) => {
 };
 
 // =====================================================
+// ADD THESE TO YOUR EXISTING adminController.js
+// =====================================================
+
+// Add ReferralEarning to your imports at the top
+const { User, Wallet, Transaction, Round, Bet, PendingDeposit, VirtualAccount, ReferralEarning } = require('../models');
+
+// =====================================================
+// INFLUENCER MANAGEMENT
+// =====================================================
+
+// @desc    Get all influencers
+// @route   GET /api/admin/influencers
+// @access  Private/Admin
+const getAllInfluencers = async (req, res) => {
+  try {
+    const { page = 1, limit = 20 } = req.query;
+
+    const influencers = await User.findAndCountAll({
+      where: { referralType: 'influencer' },
+      attributes: [
+        'id', 'username', 'email', 'phoneNumber', 'referralCode', 
+        'influencerPercentage', 'referralBalance', 
+        'totalReferralEarnings', 'referralCount', 'isActive', 'createdAt'
+      ],
+      order: [['totalReferralEarnings', 'DESC']],
+      limit: parseInt(limit),
+      offset: (parseInt(page) - 1) * parseInt(limit)
+    });
+
+    // Get earnings stats for each influencer
+    const influencerIds = influencers.rows.map(i => i.id);
+    
+    const earningsStats = await ReferralEarning.findAll({
+      where: { 
+        referrerId: { [Op.in]: influencerIds },
+        type: 'loss_commission'
+      },
+      attributes: [
+        'referrerId',
+        [sequelize.fn('COUNT', sequelize.col('id')), 'totalCommissions'],
+        [sequelize.fn('SUM', sequelize.col('earnedAmount')), 'totalEarned']
+      ],
+      group: ['referrerId'],
+      raw: true
+    });
+
+    const statsMap = earningsStats.reduce((acc, stat) => {
+      acc[stat.referrerId] = {
+        totalCommissions: parseInt(stat.totalCommissions || 0),
+        totalEarned: parseFloat(stat.totalEarned || 0)
+      };
+      return acc;
+    }, {});
+
+    res.json({
+      success: true,
+      data: {
+        influencers: influencers.rows.map(i => ({
+          id: i.id,
+          username: i.username,
+          email: i.email,
+          phoneNumber: i.phoneNumber,
+          referralCode: i.referralCode,
+          percentage: parseFloat(i.influencerPercentage),
+          referralBalance: parseFloat(i.referralBalance || 0),
+          totalEarnings: parseFloat(i.totalReferralEarnings || 0),
+          referralCount: i.referralCount || 0,
+          isActive: i.isActive,
+          createdAt: i.createdAt,
+          stats: statsMap[i.id] || { totalCommissions: 0, totalEarned: 0 }
+        })),
+        pagination: {
+          total: influencers.count,
+          page: parseInt(page),
+          limit: parseInt(limit),
+          pages: Math.ceil(influencers.count / parseInt(limit))
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Get influencers error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get influencers',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Get single influencer details
+// @route   GET /api/admin/influencers/:userId
+// @access  Private/Admin
+const getInfluencerDetails = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const user = await User.findByPk(userId, {
+      attributes: [
+        'id', 'username', 'email', 'phoneNumber', 'referralCode',
+        'referralType', 'influencerPercentage', 'referralBalance',
+        'totalReferralEarnings', 'referralCount', 'isActive', 'createdAt'
+      ]
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Get referred users
+    const referredUsers = await User.findAll({
+      where: { referredBy: userId },
+      attributes: ['id', 'username', 'createdAt', 'hasPlacedFirstBet', 'isActive'],
+      include: [{
+        model: Wallet,
+        as: 'wallet',
+        attributes: ['totalDeposited', 'totalLost']
+      }],
+      order: [['createdAt', 'DESC']],
+      limit: 50
+    });
+
+    // Get recent earnings
+    const recentEarnings = await ReferralEarning.findAll({
+      where: { referrerId: userId },
+      include: [{
+        model: User,
+        as: 'referredUser',
+        attributes: ['username']
+      }],
+      order: [['createdAt', 'DESC']],
+      limit: 30
+    });
+
+    // Get earnings summary
+    const earningsSummary = await ReferralEarning.findAll({
+      where: { referrerId: userId },
+      attributes: [
+        'type',
+        [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
+        [sequelize.fn('SUM', sequelize.col('earnedAmount')), 'total'],
+        [sequelize.fn('SUM', sequelize.col('betAmount')), 'totalBetAmount']
+      ],
+      group: ['type'],
+      raw: true
+    });
+
+    res.json({
+      success: true,
+      data: {
+        user: {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          phoneNumber: user.phoneNumber,
+          referralCode: user.referralCode,
+          referralType: user.referralType,
+          percentage: parseFloat(user.influencerPercentage),
+          referralBalance: parseFloat(user.referralBalance || 0),
+          totalEarnings: parseFloat(user.totalReferralEarnings || 0),
+          referralCount: user.referralCount || 0,
+          isActive: user.isActive,
+          createdAt: user.createdAt
+        },
+        earningsSummary: earningsSummary.map(s => ({
+          type: s.type,
+          count: parseInt(s.count || 0),
+          total: parseFloat(s.total || 0),
+          totalBetAmount: parseFloat(s.totalBetAmount || 0)
+        })),
+        referredUsers: referredUsers.map(u => ({
+          id: u.id,
+          username: u.username,
+          joinedAt: u.createdAt,
+          hasPlacedBet: u.hasPlacedFirstBet,
+          isActive: u.isActive,
+          totalDeposited: u.wallet ? parseFloat(u.wallet.totalDeposited || 0) : 0,
+          totalLost: u.wallet ? parseFloat(u.wallet.totalLost || 0) : 0
+        })),
+        recentEarnings: recentEarnings.map(e => ({
+          id: e.id,
+          username: e.referredUser?.username || 'Unknown',
+          type: e.type,
+          betAmount: parseFloat(e.betAmount),
+          earnedAmount: parseFloat(e.earnedAmount),
+          percentage: parseFloat(e.percentage),
+          createdAt: e.createdAt
+        }))
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Get influencer details error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get influencer details',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Upgrade user to influencer
+// @route   POST /api/admin/influencers/:userId
+// @access  Private/Admin
+const upgradeToInfluencer = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { percentage } = req.body;
+
+    // Validate percentage
+    if (!percentage || isNaN(percentage) || percentage < 1 || percentage > 10) {
+      return res.status(400).json({
+        success: false,
+        message: 'Percentage must be between 1 and 10'
+      });
+    }
+
+    const user = await User.findByPk(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    if (user.role === 'admin') {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot make admin an influencer'
+      });
+    }
+
+    if (user.referralType === 'influencer') {
+      return res.status(400).json({
+        success: false,
+        message: `${user.username} is already an influencer with ${user.influencerPercentage}% rate. Use update endpoint to change percentage.`
+      });
+    }
+
+    await user.update({
+      referralType: 'influencer',
+      influencerPercentage: parseFloat(percentage)
+    });
+
+    console.log(`✅ Admin ${req.user.id} upgraded ${user.username} to influencer (${percentage}%)`);
+
+    res.json({
+      success: true,
+      message: `${user.username} is now an influencer with ${percentage}% commission on referral losses`,
+      data: {
+        userId: user.id,
+        username: user.username,
+        email: user.email,
+        referralCode: user.referralCode,
+        referralType: 'influencer',
+        percentage: parseFloat(percentage),
+        referralCount: user.referralCount || 0
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Upgrade to influencer error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to upgrade user to influencer',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Update influencer percentage
+// @route   PUT /api/admin/influencers/:userId
+// @access  Private/Admin
+const updateInfluencerPercentage = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { percentage } = req.body;
+
+    // Validate percentage
+    if (!percentage || isNaN(percentage) || percentage < 1 || percentage > 10) {
+      return res.status(400).json({
+        success: false,
+        message: 'Percentage must be between 1 and 10'
+      });
+    }
+
+    const user = await User.findByPk(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    if (user.referralType !== 'influencer') {
+      return res.status(400).json({
+        success: false,
+        message: `${user.username} is not an influencer. Upgrade them first.`
+      });
+    }
+
+    const oldPercentage = parseFloat(user.influencerPercentage);
+
+    await user.update({
+      influencerPercentage: parseFloat(percentage)
+    });
+
+    console.log(`✅ Admin ${req.user.id} updated ${user.username}'s rate: ${oldPercentage}% → ${percentage}%`);
+
+    res.json({
+      success: true,
+      message: `${user.username}'s commission rate updated from ${oldPercentage}% to ${percentage}%`,
+      data: {
+        userId: user.id,
+        username: user.username,
+        previousPercentage: oldPercentage,
+        newPercentage: parseFloat(percentage)
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Update influencer percentage error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update influencer percentage',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Downgrade influencer to normal referrer
+// @route   DELETE /api/admin/influencers/:userId
+// @access  Private/Admin
+const downgradeInfluencer = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const user = await User.findByPk(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    if (user.referralType !== 'influencer') {
+      return res.status(400).json({
+        success: false,
+        message: `${user.username} is not an influencer`
+      });
+    }
+
+    const oldPercentage = parseFloat(user.influencerPercentage);
+
+    await user.update({
+      referralType: 'normal',
+      influencerPercentage: 0
+    });
+
+    console.log(`✅ Admin ${req.user.id} downgraded ${user.username} from influencer to normal`);
+
+    res.json({
+      success: true,
+      message: `${user.username} is now a normal referrer (5% on first bet only)`,
+      data: {
+        userId: user.id,
+        username: user.username,
+        previousType: 'influencer',
+        previousPercentage: oldPercentage,
+        newType: 'normal',
+        newPercentage: 5
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Downgrade influencer error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to downgrade influencer',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Get all referral stats (Admin overview)
+// @route   GET /api/admin/referrals/stats
+// @access  Private/Admin
+const getReferralStats = async (req, res) => {
+  try {
+    // Total referrers
+    const totalReferrers = await User.count({
+      where: { referralCount: { [Op.gt]: 0 } }
+    });
+
+    // Total influencers
+    const totalInfluencers = await User.count({
+      where: { referralType: 'influencer' }
+    });
+
+    // Total users referred
+    const totalReferred = await User.count({
+      where: { referredBy: { [Op.ne]: null } }
+    });
+
+    // Total earnings paid out
+    const earningsStats = await ReferralEarning.findAll({
+      attributes: [
+        'type',
+        [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
+        [sequelize.fn('SUM', sequelize.col('earnedAmount')), 'total']
+      ],
+      group: ['type'],
+      raw: true
+    });
+
+    // Total pending in referral balances
+    const pendingBalances = await User.sum('referralBalance', {
+      where: { referralBalance: { [Op.gt]: 0 } }
+    });
+
+    // Top referrers
+    const topReferrers = await User.findAll({
+      where: { referralCount: { [Op.gt]: 0 } },
+      attributes: [
+        'id', 'username', 'referralType', 'influencerPercentage',
+        'referralCount', 'totalReferralEarnings', 'referralBalance'
+      ],
+      order: [['totalReferralEarnings', 'DESC']],
+      limit: 10
+    });
+
+    // Recent earnings
+    const recentEarnings = await ReferralEarning.findAll({
+      include: [
+        { model: User, as: 'referrer', attributes: ['username'] },
+        { model: User, as: 'referredUser', attributes: ['username'] }
+      ],
+      order: [['createdAt', 'DESC']],
+      limit: 20
+    });
+
+    const earningsByType = earningsStats.reduce((acc, stat) => {
+      acc[stat.type] = {
+        count: parseInt(stat.count || 0),
+        total: parseFloat(stat.total || 0)
+      };
+      return acc;
+    }, {});
+
+    res.json({
+      success: true,
+      data: {
+        overview: {
+          totalReferrers,
+          totalInfluencers,
+          normalReferrers: totalReferrers - totalInfluencers,
+          totalReferred,
+          totalEarningsPaid: Object.values(earningsByType).reduce((sum, e) => sum + e.total, 0),
+          pendingInBalances: parseFloat(pendingBalances || 0)
+        },
+        earningsByType: {
+          firstBet: earningsByType['first_bet'] || { count: 0, total: 0 },
+          lossCommission: earningsByType['loss_commission'] || { count: 0, total: 0 }
+        },
+        topReferrers: topReferrers.map(u => ({
+          id: u.id,
+          username: u.username,
+          type: u.referralType,
+          percentage: u.referralType === 'influencer' ? parseFloat(u.influencerPercentage) : 5,
+          referralCount: u.referralCount,
+          totalEarnings: parseFloat(u.totalReferralEarnings || 0),
+          balance: parseFloat(u.referralBalance || 0)
+        })),
+        recentEarnings: recentEarnings.map(e => ({
+          id: e.id,
+          referrer: e.referrer?.username || 'Unknown',
+          referredUser: e.referredUser?.username || 'Unknown',
+          type: e.type,
+          betAmount: parseFloat(e.betAmount),
+          earnedAmount: parseFloat(e.earnedAmount),
+          percentage: parseFloat(e.percentage),
+          createdAt: e.createdAt
+        }))
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Get referral stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get referral stats',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Search users to make influencer
+// @route   GET /api/admin/users/search
+// @access  Private/Admin
+const searchUsersForInfluencer = async (req, res) => {
+  try {
+    const { q } = req.query;
+
+    if (!q || q.length < 2) {
+      return res.status(400).json({
+        success: false,
+        message: 'Search query must be at least 2 characters'
+      });
+    }
+
+    const users = await User.findAll({
+      where: {
+        [Op.and]: [
+          { role: 'user' }, // Only regular users
+          {
+            [Op.or]: [
+              { username: { [Op.iLike]: `%${q}%` } },
+              { email: { [Op.iLike]: `%${q}%` } },
+              { referralCode: { [Op.iLike]: `%${q}%` } }
+            ]
+          }
+        ]
+      },
+      attributes: [
+        'id', 'username', 'email', 'referralCode', 
+        'referralType', 'influencerPercentage', 'referralCount'
+      ],
+      limit: 20
+    });
+
+    res.json({
+      success: true,
+      data: {
+        users: users.map(u => ({
+          id: u.id,
+          username: u.username,
+          email: u.email,
+          referralCode: u.referralCode,
+          referralType: u.referralType,
+          percentage: u.referralType === 'influencer' ? parseFloat(u.influencerPercentage) : 5,
+          referralCount: u.referralCount || 0,
+          isInfluencer: u.referralType === 'influencer'
+        }))
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Search users error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to search users',
+      error: error.message
+    });
+  }
+};
+
+
+          
+// =====================================================
 // EXPORTS
 // =====================================================
 module.exports = {
@@ -1136,6 +1701,15 @@ module.exports = {
   getAllRounds,
   getRoundDetailsAdmin,
   cancelRound,
+
+// Influencer Management
+  getAllInfluencers,
+  getInfluencerDetails,
+  upgradeToInfluencer,
+  updateInfluencerPercentage,
+  downgradeInfluencer,
+  getReferralStats,
+  searchUsersForInfluencer,
   
   // Settings
   getSettings
