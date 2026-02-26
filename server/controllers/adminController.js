@@ -1,6 +1,6 @@
 
 // controllers/adminController.js
-const { User, Wallet, Transaction, Round, Bet, PendingDeposit, VirtualAccount } = require('../models');
+const { User, Wallet, Transaction, Round, Bet, PendingDeposit, VirtualAccount, ReferralEarning } = require('../models');
 const { Op } = require('sequelize');
 const { sequelize } = require('../config/database');
 const { roundToTwo } = require('../utils/helpers');
@@ -704,9 +704,6 @@ const getAmountMismatches = async (req, res) => {
 // @desc    Manually approve amount mismatch
 // @route   POST /api/admin/deposits/approve-mismatch/:reference
 // @access  Private/Admin
-// @desc    Manually approve amount mismatch
-// @route   POST /api/admin/deposits/approve-mismatch/:reference
-// @access  Private/Admin
 const approveAmountMismatch = async (req, res) => {
   const dbTransaction = await sequelize.transaction();
   
@@ -1069,52 +1066,6 @@ const cancelRound = async (req, res) => {
     });
   }
 };
-
-// =====================================================
-// PLATFORM SETTINGS
-// =====================================================
-
-// @desc    Get platform settings
-// @route   GET /api/admin/settings
-// @access  Private/Admin
-const getSettings = async (req, res) => {
-  try {
-    res.json({
-      success: true,
-      data: {
-        fees: {
-          platformFeePercentage: process.env.PLATFORM_FEE_PERCENTAGE || 1,
-          losersPoolPlatformCut: process.env.LOSERS_POOL_PLATFORM_CUT || 30
-        },
-        betting: {
-          minBetAmount: process.env.MIN_BET_AMOUNT || 100,
-          maxBetAmount: process.env.MAX_BET_AMOUNT || 1000000,
-          roundDurationMinutes: process.env.ROUND_DURATION_MINUTES || 5
-        },
-        payments: {
-          minDeposit: 100,
-          maxDeposit: 5000000,
-          minWithdrawal: 1000
-        }
-      }
-    });
-
-  } catch (error) {
-    console.error('❌ Get settings error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get settings',
-      error: error.message
-    });
-  }
-};
-
-// =====================================================
-// ADD THESE TO YOUR EXISTING adminController.js
-// =====================================================
-
-// Add ReferralEarning to your imports at the top
-const { User, Wallet, Transaction, Round, Bet, PendingDeposit, VirtualAccount, ReferralEarning } = require('../models');
 
 // =====================================================
 // INFLUENCER MANAGEMENT
@@ -1672,8 +1623,45 @@ const searchUsersForInfluencer = async (req, res) => {
   }
 };
 
+// =====================================================
+// PLATFORM SETTINGS
+// =====================================================
 
-          
+// @desc    Get platform settings
+// @route   GET /api/admin/settings
+// @access  Private/Admin
+const getSettings = async (req, res) => {
+  try {
+    res.json({
+      success: true,
+      data: {
+        fees: {
+          platformFeePercentage: process.env.PLATFORM_FEE_PERCENTAGE || 1,
+          losersPoolPlatformCut: process.env.LOSERS_POOL_PLATFORM_CUT || 30
+        },
+        betting: {
+          minBetAmount: process.env.MIN_BET_AMOUNT || 100,
+          maxBetAmount: process.env.MAX_BET_AMOUNT || 1000000,
+          roundDurationMinutes: process.env.ROUND_DURATION_MINUTES || 5
+        },
+        payments: {
+          minDeposit: 100,
+          maxDeposit: 5000000,
+          minWithdrawal: 1000
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Get settings error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get settings',
+      error: error.message
+    });
+  }
+};
+
 // =====================================================
 // EXPORTS
 // =====================================================
@@ -1702,7 +1690,7 @@ module.exports = {
   getRoundDetailsAdmin,
   cancelRound,
 
-// Influencer Management
+  // Influencer Management
   getAllInfluencers,
   getInfluencerDetails,
   upgradeToInfluencer,
