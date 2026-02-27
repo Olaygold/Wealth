@@ -394,7 +394,7 @@ const Referrals = () => {
                   <p className="text-gray-300 text-sm">
                     {dashboard?.referralType === 'influencer' 
                       ? 'As an influencer, you earn commission on every loss from your referrals. The more active users you bring, the more you earn!'
-                      : 'You earn a one-time 5% commission when each referred user places their first bet. Upgrade to Influencer status to earn on every loss!'
+                      : 'You earn a one-time 5% commission when each referred user places their first bet.'
                     }
                   </p>
                 </div>
