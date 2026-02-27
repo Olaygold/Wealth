@@ -5,9 +5,48 @@ const { Round, Bet, Wallet, Transaction, User } = require('../models');
 const { Op } = require('sequelize');
 const priceService = require('./priceService');
 const { sequelize } = require('../config/database');
-const { processFirstBetBonus, processInfluencerCommission } = require('./referralService'); // ✅ ADD THIS
 
+// ✅ SAFE IMPORT - Won't crash if referralService has issues
+let processFirstBetBonus = null;
+let processInfluencerCommission = null;
+
+try {
+  const referralService = require('./referralService');
+  processFirstBetBonus = referralService.processFirstBetBonus;
+  processInfluencerCommission = referralService.processInfluencerCommission;
+  console.log('✅ Referral service loaded successfully');
+} catch (error) {
+  console.warn('⚠️ Referral service not available:', error.message);
+}
+
+// Helper function
 const roundToTwo = (num) => Math.round((num + Number.EPSILON) * 100) / 100;
+
+// ✅ SAFE REFERRAL PROCESSING - Won't break betting if it fails
+const safeProcessReferral = async (type, userId, betAmount, betId, transaction) => {
+  try {
+    if (type === 'first_bet' && processFirstBetBonus) {
+      const result = await processFirstBetBonus(userId, betAmount, betId, transaction);
+      if (result?.success && !result.alreadyProcessed) {
+        console.log(`   🎁 First bet bonus: ${result.referrerUsername} earned ₦${result.bonusAmount?.toFixed(2)}`);
+      }
+      return result;
+    }
+    
+    if (type === 'influencer' && processInfluencerCommission) {
+      const result = await processInfluencerCommission(userId, betAmount, betId, transaction);
+      if (result?.success && !result.alreadyProcessed) {
+        console.log(`   💰 Influencer commission: ${result.influencerUsername} earned ₦${result.commissionAmount?.toFixed(2)}`);
+      }
+      return result;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error(`   ⚠️ Referral ${type} error (non-fatal):`, error.message);
+    return null; // Don't throw - let betting continue
+  }
+};
 
 class RoundService {
   constructor() {
@@ -256,6 +295,7 @@ class RoundService {
       await this.processBets(round, result, transaction);
 
       await transaction.commit();
+      console.log('   ✅ Transaction committed successfully');
 
       if (this.io) {
         this.io.emit('round_end', {
@@ -273,6 +313,7 @@ class RoundService {
     } catch (error) {
       await transaction.rollback();
       console.error('❌ Error ending round:', error.message);
+      console.error('❌ Stack:', error.stack);
 
       try {
         await round.update({ status: 'cancelled' });
@@ -284,12 +325,14 @@ class RoundService {
 
   async processBets(round, result, transaction) {
     try {
+      // ✅ SAFE QUERY - Only get fields that exist
       const bets = await Bet.findAll({
         where: { roundId: round.id, result: 'pending' },
         include: [{ 
           model: User, 
           as: 'user', 
-          attributes: ['id', 'username', 'referredBy', 'hasPlacedFirstBet'] // ✅ ADDED FIELDS
+          attributes: ['id', 'username', 'referredBy', 'hasPlacedFirstBet'],
+          required: false
         }],
         transaction
       });
@@ -311,6 +354,7 @@ class RoundService {
       console.log(`   📈 UP bets: ${upBets.length} (₦${totalUpPool.toLocaleString()})`);
       console.log(`   📉 DOWN bets: ${downBets.length} (₦${totalDownPool.toLocaleString()})`);
 
+      // TIE
       if (result === 'tie') {
         console.log('   ➖ TIE - Refunding all bets');
         await this.refundAllBets(round, bets, transaction, 'TIE - Price unchanged');
@@ -334,18 +378,21 @@ class RoundService {
       console.log(`   ✅ Winners: ${winners.length} (₦${winnerPool.toLocaleString()})`);
       console.log(`   ❌ Losers: ${losers.length} (₦${loserPool.toLocaleString()})`);
 
+      // Everyone predicted WRONG
       if (winners.length === 0 && losers.length > 0) {
         console.log('   ❌ EVERYONE PREDICTED WRONG - All lose!');
         await this.processAllAsLosers(round, losers, transaction);
         return;
       }
 
+      // Everyone predicted CORRECT but no opponents
       if (winners.length > 0 && losers.length === 0) {
         console.log('   🎯 NO OPPONENTS - Refunding winners');
         await this.refundAllBets(round, winners, transaction, 'No opposing bets');
         return;
       }
 
+      // NORMAL CASE
       console.log('   🎮 NORMAL CASE - Processing payouts');
       
       const platformFee = roundToTwo(loserPool * 0.30);
@@ -383,8 +430,13 @@ class RoundService {
           lock: transaction.LOCK.UPDATE
         });
 
-        const currentBalance = parseFloat(wallet.nairaBalance);
-        const currentLocked = parseFloat(wallet.lockedBalance);
+        if (!wallet) {
+          console.error(`   ❌ Wallet not found for user ${bet.userId}`);
+          continue;
+        }
+
+        const currentBalance = parseFloat(wallet.nairaBalance || 0);
+        const currentLocked = parseFloat(wallet.lockedBalance || 0);
 
         const newLockedBalance = roundToTwo(Math.max(0, currentLocked - betAmount));
         const newBalance = roundToTwo(currentBalance - betAmount + payout);
@@ -414,18 +466,11 @@ class RoundService {
           balanceAfter: newBalance
         }, { transaction });
 
-        console.log(`   ✅ ${bet.user?.username}: Bet ₦${betAmount} → Won ₦${payout} (${multiplier}x)`);
+        console.log(`   ✅ ${bet.user?.username || bet.userId}: Bet ₦${betAmount} → Won ₦${payout} (${multiplier}x)`);
 
-        // ✅ REFERRAL: First bet bonus for winners
+        // ✅ SAFE REFERRAL - First bet bonus for winners
         if (bet.user?.referredBy && !bet.user?.hasPlacedFirstBet) {
-          try {
-            const bonusResult = await processFirstBetBonus(bet.userId, betAmount, bet.id, transaction);
-            if (bonusResult?.success && !bonusResult.alreadyProcessed) {
-              console.log(`   🎁 First bet bonus: ${bonusResult.referrerUsername} earned ₦${bonusResult.bonusAmount.toFixed(2)}`);
-            }
-          } catch (commError) {
-            console.error(`   ⚠️ First bet bonus error:`, commError.message);
-          }
+          await safeProcessReferral('first_bet', bet.userId, betAmount, bet.id, transaction);
         }
 
         if (this.io) {
@@ -458,8 +503,13 @@ class RoundService {
           lock: transaction.LOCK.UPDATE
         });
 
-        const currentBalance = parseFloat(wallet.nairaBalance);
-        const currentLocked = parseFloat(wallet.lockedBalance);
+        if (!wallet) {
+          console.error(`   ❌ Wallet not found for user ${bet.userId}`);
+          continue;
+        }
+
+        const currentBalance = parseFloat(wallet.nairaBalance || 0);
+        const currentLocked = parseFloat(wallet.lockedBalance || 0);
 
         const newLockedBalance = roundToTwo(Math.max(0, currentLocked - betAmount));
         const newBalance = roundToTwo(currentBalance - betAmount);
@@ -482,27 +532,16 @@ class RoundService {
           balanceAfter: newBalance
         }, { transaction });
 
-        console.log(`   ❌ ${bet.user?.username}: Lost ₦${betAmount}`);
+        console.log(`   ❌ ${bet.user?.username || bet.userId}: Lost ₦${betAmount}`);
 
-        // ✅ REFERRAL: Process commissions for losers
+        // ✅ SAFE REFERRAL - Process commissions for losers
         if (bet.user?.referredBy) {
-          try {
-            // First bet bonus (normal referrers)
-            if (!bet.user.hasPlacedFirstBet) {
-              const bonusResult = await processFirstBetBonus(bet.userId, betAmount, bet.id, transaction);
-              if (bonusResult?.success && !bonusResult.alreadyProcessed) {
-                console.log(`   🎁 First bet bonus: ${bonusResult.referrerUsername} earned ₦${bonusResult.bonusAmount.toFixed(2)}`);
-              }
-            }
-
-            // Influencer commission (every loss)
-            const influencerResult = await processInfluencerCommission(bet.userId, betAmount, bet.id, transaction);
-            if (influencerResult?.success && !influencerResult.alreadyProcessed) {
-              console.log(`   💰 Influencer commission: ${influencerResult.influencerUsername} earned ₦${influencerResult.commissionAmount.toFixed(2)} (${influencerResult.commissionPercentage}%)`);
-            }
-          } catch (commError) {
-            console.error(`   ⚠️ Referral commission error:`, commError.message);
+          // First bet bonus (normal referrers)
+          if (!bet.user.hasPlacedFirstBet) {
+            await safeProcessReferral('first_bet', bet.userId, betAmount, bet.id, transaction);
           }
+          // Influencer commission (every loss)
+          await safeProcessReferral('influencer', bet.userId, betAmount, bet.id, transaction);
         }
 
         if (this.io) {
@@ -521,6 +560,7 @@ class RoundService {
 
     } catch (error) {
       console.error('❌ Error processing bets:', error.message);
+      console.error('❌ Stack:', error.stack);
       throw error;
     }
   }
@@ -545,8 +585,13 @@ class RoundService {
         lock: transaction.LOCK.UPDATE
       });
 
-      const currentBalance = parseFloat(wallet.nairaBalance);
-      const currentLocked = parseFloat(wallet.lockedBalance);
+      if (!wallet) {
+        console.error(`   ❌ Wallet not found for user ${bet.userId}`);
+        continue;
+      }
+
+      const currentBalance = parseFloat(wallet.nairaBalance || 0);
+      const currentLocked = parseFloat(wallet.lockedBalance || 0);
 
       const newLockedBalance = roundToTwo(Math.max(0, currentLocked - betAmount));
       const newBalance = roundToTwo(currentBalance - betAmount);
@@ -569,25 +614,14 @@ class RoundService {
         balanceAfter: newBalance
       }, { transaction });
 
-      console.log(`   ❌ ${bet.user?.username}: Lost ₦${betAmount}`);
+      console.log(`   ❌ ${bet.user?.username || bet.userId}: Lost ₦${betAmount}`);
 
-      // ✅ REFERRAL
+      // ✅ SAFE REFERRAL
       if (bet.user?.referredBy) {
-        try {
-          if (!bet.user.hasPlacedFirstBet) {
-            const bonusResult = await processFirstBetBonus(bet.userId, betAmount, bet.id, transaction);
-            if (bonusResult?.success && !bonusResult.alreadyProcessed) {
-              console.log(`   🎁 First bet bonus: ${bonusResult.referrerUsername} earned ₦${bonusResult.bonusAmount.toFixed(2)}`);
-            }
-          }
-
-          const influencerResult = await processInfluencerCommission(bet.userId, betAmount, bet.id, transaction);
-          if (influencerResult?.success && !influencerResult.alreadyProcessed) {
-            console.log(`   💰 Influencer commission: ${influencerResult.influencerUsername} earned ₦${influencerResult.commissionAmount.toFixed(2)}`);
-          }
-        } catch (commError) {
-          console.error(`   ⚠️ Referral commission error:`, commError.message);
+        if (!bet.user.hasPlacedFirstBet) {
+          await safeProcessReferral('first_bet', bet.userId, betAmount, bet.id, transaction);
         }
+        await safeProcessReferral('influencer', bet.userId, betAmount, bet.id, transaction);
       }
 
       if (this.io) {
@@ -628,8 +662,13 @@ class RoundService {
         lock: transaction.LOCK.UPDATE
       });
 
-      const currentBalance = parseFloat(wallet.nairaBalance);
-      const currentLocked = parseFloat(wallet.lockedBalance);
+      if (!wallet) {
+        console.error(`   ❌ Wallet not found for user ${bet.userId}`);
+        continue;
+      }
+
+      const currentBalance = parseFloat(wallet.nairaBalance || 0);
+      const currentLocked = parseFloat(wallet.lockedBalance || 0);
 
       const newLockedBalance = roundToTwo(Math.max(0, currentLocked - betAmount));
 
@@ -649,18 +688,11 @@ class RoundService {
         balanceAfter: currentBalance
       }, { transaction });
 
-      console.log(`   🔄 ${bet.user?.username}: Refunded ₦${betAmount}`);
+      console.log(`   🔄 ${bet.user?.username || bet.userId}: Refunded ₦${betAmount}`);
 
-      // ✅ REFERRAL: First bet bonus on refunds too
+      // ✅ SAFE REFERRAL
       if (bet.user?.referredBy && !bet.user?.hasPlacedFirstBet) {
-        try {
-          const bonusResult = await processFirstBetBonus(bet.userId, betAmount, bet.id, transaction);
-          if (bonusResult?.success && !bonusResult.alreadyProcessed) {
-            console.log(`   🎁 First bet bonus: ${bonusResult.referrerUsername} earned ₦${bonusResult.bonusAmount.toFixed(2)}`);
-          }
-        } catch (commError) {
-          console.error(`   ⚠️ First bet bonus error:`, commError.message);
-        }
+        await safeProcessReferral('first_bet', bet.userId, betAmount, bet.id, transaction);
       }
 
       if (this.io) {
