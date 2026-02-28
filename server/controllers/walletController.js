@@ -761,6 +761,7 @@ const cancelPendingDeposit = async (req, res) => {
 // REQUEST WITHDRAWAL
 // =====================================================
 
+
 // @desc    Request withdrawal
 // @route   POST /api/wallet/withdraw
 // @access  Private
@@ -770,8 +771,11 @@ const requestWithdrawal = async (req, res) => {
   try {
     const { amount, bankCode, accountNumber, accountName } = req.body;
 
+    // ✅ CONVERT TO NUMBER IMMEDIATELY!
+    const withdrawAmount = parseFloat(amount);
+
     // Validate amount
-    if (!validateAmount(amount) || amount < 1000) {
+    if (!validateAmount(withdrawAmount) || withdrawAmount < 1000) {
       await transaction.rollback();
       return res.status(400).json({
         success: false,
@@ -814,13 +818,13 @@ const requestWithdrawal = async (req, res) => {
 
     const availableBalance = parseFloat(wallet.nairaBalance) - parseFloat(wallet.lockedBalance || 0);
 
-    if (amount > availableBalance) {
+    if (withdrawAmount > availableBalance) {
       await transaction.rollback();
       return res.status(400).json({
         success: false,
         message: 'Insufficient balance',
         data: {
-          requested: amount,
+          requested: withdrawAmount,
           available: availableBalance.toFixed(2)
         }
       });
@@ -829,13 +833,14 @@ const requestWithdrawal = async (req, res) => {
     const user = await User.findByPk(req.user.id);
     const reference = generateReference('WTH');
     const balanceBefore = parseFloat(wallet.nairaBalance);
+    const currentTotalWithdrawn = parseFloat(wallet.totalWithdrawn || 0);
 
     // Create withdrawal
     await Transaction.create({
       userId: user.id,
       type: 'withdrawal',
       method: 'naira',
-      amount,
+      amount: withdrawAmount, // ✅ NUMBER
       currency: 'NGN',
       status: 'pending',
       reference,
@@ -844,10 +849,10 @@ const requestWithdrawal = async (req, res) => {
       balanceBefore
     }, { transaction });
 
-    // Deduct from wallet
+    // ✅ DEDUCT FROM WALLET (ALL NUMBERS!)
     await wallet.update({
-      nairaBalance: balanceBefore - amount,
-      totalWithdrawn: parseFloat(wallet.totalWithdrawn || 0) + amount
+      nairaBalance: balanceBefore - withdrawAmount,
+      totalWithdrawn: currentTotalWithdrawn + withdrawAmount // ✅ BOTH ARE NUMBERS!
     }, { transaction });
 
     await transaction.commit();
@@ -859,7 +864,7 @@ const requestWithdrawal = async (req, res) => {
       message: 'Withdrawal request submitted. Processing within 24 hours.',
       data: {
         reference,
-        amount,
+        amount: withdrawAmount,
         status: 'pending',
         accountNumber,
         accountName,
@@ -878,7 +883,6 @@ const requestWithdrawal = async (req, res) => {
     });
   }
 };
-
 // =====================================================
 // GET TRANSACTION HISTORY
 // =====================================================
