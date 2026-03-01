@@ -775,11 +775,11 @@ const requestWithdrawal = async (req, res) => {
     const withdrawAmount = parseFloat(amount);
 
     // Validate amount
-    if (!validateAmount(withdrawAmount) || withdrawAmount < 1000) {
+    if (!validateAmount(withdrawAmount) || withdrawAmount < 100) {
       await transaction.rollback();
       return res.status(400).json({
         success: false,
-        message: 'Minimum withdrawal is ₦1,000'
+        message: 'Minimum withdrawal is ₦100'
       });
     }
 
