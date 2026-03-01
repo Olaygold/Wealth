@@ -42,8 +42,12 @@ const Bet = sequelize.define('Bet', {
     allowNull: false,
     comment: 'Amount added to pool (totalAmount - feeAmount)'
   },
+  entryPrice: {
+    type: DataTypes.DECIMAL(12, 2),
+    allowNull: true
+  },
   result: {
-    type: DataTypes.ENUM('win', 'loss', 'refund', 'pending'),
+    type: DataTypes.ENUM('pending', 'win', 'loss', 'refund'),
     defaultValue: 'pending'
   },
   payout: {
@@ -60,66 +64,22 @@ const Bet = sequelize.define('Bet', {
     type: DataTypes.BOOLEAN,
     defaultValue: false
   },
-  // server/models/Bet.js
-const { DataTypes } = require('sequelize');
-const { sequelize } = require('../config/database');
-
-const Bet = sequelize.define('Bet', {
-  id: {
-    type: DataTypes.UUID,
-    defaultValue: DataTypes.UUIDV4,
-    primaryKey: true
-  },
-  userId: {
-    type: DataTypes.UUID,
-    allowNull: false
-  },
-  roundId: {
-    type: DataTypes.UUID,
-    allowNull: false
-  },
-  prediction: {
-    type: DataTypes.ENUM('up', 'down'),
-    allowNull: false
-  },
-  stakeAmount: {
-    type: DataTypes.DECIMAL(15, 2),
-    allowNull: false
-  },
-  entryPrice: {
-    type: DataTypes.DECIMAL(12, 2),
-    allowNull: true
-  },
-  result: {
-    type: DataTypes.ENUM('pending', 'win', 'loss', 'refund'),
-    defaultValue: 'pending'
-  },
-  payout: {
-    type: DataTypes.DECIMAL(15, 2),
-    defaultValue: 0
-  },
-  profit: {
-    type: DataTypes.DECIMAL(15, 2),
-    defaultValue: 0
-  },
-  isPaid: {
-    type: DataTypes.BOOLEAN,
-    defaultValue: false
-  },
-  isBot: {  // ✅ ADD THIS FIELD
+  isBot: {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
     comment: 'True if this bet was placed by the bot system'
   }
 }, {
   timestamps: true,
+  underscored: true,
   tableName: 'bets',
   indexes: [
-    { fields: ['userId'] },
-    { fields: ['roundId'] },
+    { fields: ['user_id'] },
+    { fields: ['round_id'] },
     { fields: ['prediction'] },
     { fields: ['result'] },
-    { fields: ['createdAt'] }
+    { fields: ['is_bot'] },
+    { fields: ['created_at'] }
   ]
 });
 
