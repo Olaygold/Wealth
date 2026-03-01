@@ -1,4 +1,5 @@
 
+// config/database.js
 const { Sequelize } = require('sequelize');
 require('dotenv').config();
 
@@ -11,19 +12,18 @@ const sequelize = new Sequelize(process.env.DATABASE_URL, {
       require: true,
       rejectUnauthorized: false
     },
-    statement_timeout: 30000,  // Increase timeout
+    statement_timeout: 30000,
     idle_in_transaction_session_timeout: 30000,
   },
   
   pool: {
-    max: 6,        // Back to 3
+    max: 3,
     min: 0,
-    acquire: 30000, // Increase from 10000
-    idle: 20000,    // Increase from 5000
+    acquire: 30000,
+    idle: 20000,
   },
   
-  // ✅ DON'T ADD underscored: true here!
-  // Your models already use camelCase columns
+  // ✅ NO define.underscored here - let models control it
 });
 
 const connectDB = async () => {
@@ -45,9 +45,15 @@ const connectDB = async () => {
 
   } catch (error) {
     console.error('❌ Database error:', error.message);
-    console.log('🔄 Retrying in 5s...');
+    console.log('🔄 Retrying connection in 5 seconds...');
     setTimeout(connectDB, 5000);
   }
 };
+
+process.on('SIGINT', async () => {
+  await sequelize.close();
+  console.log('👋 Database connection closed');
+  process.exit(0);
+});
 
 module.exports = { sequelize, connectDB };
