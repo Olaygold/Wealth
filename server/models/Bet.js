@@ -59,6 +59,57 @@ const Bet = sequelize.define('Bet', {
   isPaid: {
     type: DataTypes.BOOLEAN,
     defaultValue: false
+  },
+  // server/models/Bet.js
+const { DataTypes } = require('sequelize');
+const { sequelize } = require('../config/database');
+
+const Bet = sequelize.define('Bet', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true
+  },
+  userId: {
+    type: DataTypes.UUID,
+    allowNull: false
+  },
+  roundId: {
+    type: DataTypes.UUID,
+    allowNull: false
+  },
+  prediction: {
+    type: DataTypes.ENUM('up', 'down'),
+    allowNull: false
+  },
+  stakeAmount: {
+    type: DataTypes.DECIMAL(15, 2),
+    allowNull: false
+  },
+  entryPrice: {
+    type: DataTypes.DECIMAL(12, 2),
+    allowNull: true
+  },
+  result: {
+    type: DataTypes.ENUM('pending', 'win', 'loss', 'refund'),
+    defaultValue: 'pending'
+  },
+  payout: {
+    type: DataTypes.DECIMAL(15, 2),
+    defaultValue: 0
+  },
+  profit: {
+    type: DataTypes.DECIMAL(15, 2),
+    defaultValue: 0
+  },
+  isPaid: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
+  },
+  isBot: {  // ✅ ADD THIS FIELD
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+    comment: 'True if this bet was placed by the bot system'
   }
 }, {
   timestamps: true,
