@@ -11,29 +11,19 @@ const sequelize = new Sequelize(process.env.DATABASE_URL, {
       require: true,
       rejectUnauthorized: false
     },
-    statement_timeout: 30000,              // ✅ 30 seconds
-    idle_in_transaction_session_timeout: 30000, // ✅ 30 seconds
-    connect_timeout: 10,                    // ✅ Add this
+    statement_timeout: 30000,  // Increase timeout
+    idle_in_transaction_session_timeout: 30000,
   },
   
   pool: {
-    max: 6,           // ✅ Max 3 connections
-    min: 0,           // ✅ No minimum
-    acquire: 30000,   // ✅ 30s to acquire connection
-    idle: 20000,      // ✅ Keep connection alive 20s
-    evict: 30000,     // ✅ Check for idle connections every 30s
+    max: 6,        // Back to 3
+    min: 0,
+    acquire: 30000, // Increase from 10000
+    idle: 20000,    // Increase from 5000
   },
   
-  retry: {            // ✅ ADD RETRY LOGIC
-    max: 3,
-    timeout: 3000,
-  },
-  
-  // ✅ ADD THIS - Prevents connection buildup
-  define: {
-    timestamps: true,
-    underscored: true,
-  }
+  // ✅ DON'T ADD underscored: true here!
+  // Your models already use camelCase columns
 });
 
 const connectDB = async () => {
@@ -41,7 +31,6 @@ const connectDB = async () => {
     await sequelize.authenticate();
     console.log('✅ Database connected');
 
-    // Check if tables exist
     const [results] = await sequelize.query(
       "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'users')"
     );
@@ -53,21 +42,12 @@ const connectDB = async () => {
     } else {
       console.log('✅ Tables already exist');
     }
-    
+
   } catch (error) {
     console.error('❌ Database error:', error.message);
-    
-    // ✅ ADD RETRY LOGIC
-    console.log('🔄 Retrying connection in 5 seconds...');
+    console.log('🔄 Retrying in 5s...');
     setTimeout(connectDB, 5000);
   }
 };
-
-// ✅ ADD GRACEFUL SHUTDOWN
-process.on('SIGINT', async () => {
-  await sequelize.close();
-  console.log('👋 Database connection closed');
-  process.exit(0);
-});
 
 module.exports = { sequelize, connectDB };
