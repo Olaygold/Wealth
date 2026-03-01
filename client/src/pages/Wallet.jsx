@@ -929,7 +929,7 @@ const nigerianBanks = [
                     onChange={handleWithdrawalChange}
                     className="w-full px-4 py-3 bg-slate-900/50 border border-slate-600 rounded-lg text-white text-lg font-bold focus:outline-none focus:ring-2 focus:ring-primary"
                     placeholder="Enter withdrawal amount"
-                    min="1000"
+                    min="100"
                     required
                   />
                   <p className="text-xs text-gray-500 mt-2">
