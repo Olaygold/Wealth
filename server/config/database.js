@@ -4,43 +4,37 @@ require('dotenv').config();
 
 const sequelize = new Sequelize(process.env.DATABASE_URL, {
   dialect: 'postgres',
-  logging: false, // Disable all SQL logging
+  logging: false,
+
   dialectOptions: {
     ssl: {
       require: true,
-      rejectUnauthorized: false
+      rejectUnauthorized: false,
     },
-    statement_timeout: 10000, // 10 seconds max
-    idle_in_transaction_session_timeout: 10000
+    statement_timeout: 5000,
+    idle_in_transaction_session_timeout: 5000,
   },
+
   pool: {
-    max: 2, // REDUCE from 3 to 2
-    min: 0,
+    max: 6,        // sweet spot for supabase free tier
+    min: 1,
     acquire: 10000,
-    idle: 5000
+    idle: 3000,
+    evict: 2000
+  },
+
+  retry: {
+    max: 2
   }
 });
 
 const connectDB = async () => {
   try {
     await sequelize.authenticate();
-    console.log('✅ Database connected');
-    
-    // DON'T sync every time - only if tables don't exist
-    const [results] = await sequelize.query(
-      "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'users')"
-    );
-    
-    if (!results[0].exists) {
-      console.log('🔄 Creating tables...');
-      await sequelize.sync({ alter: true });
-      console.log('✅ Tables created');
-    } else {
-      console.log('✅ Tables already exist');
-    }
-    
+    console.log('✅ Database Connected');
   } catch (error) {
-    console.error('❌ Database error:', error.message);
+    console.error('❌ DB Connection Failed:', error.message);
+    process.exit(1);
   }
 };
 
