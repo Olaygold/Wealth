@@ -933,7 +933,7 @@ const nigerianBanks = [
                     required
                   />
                   <p className="text-xs text-gray-500 mt-2">
-                    Available: ₦{walletData ? (parseFloat(walletData.nairaBalance || 0) - parseFloat(walletData.lockedBalance || 0)).toLocaleString() : '0.00'} | Minimum: ₦1,000
+                    Available: ₦{walletData ? (parseFloat(walletData.nairaBalance || 0) - parseFloat(walletData.lockedBalance || 0)).toLocaleString() : '0.00'} | Minimum: ₦100
                   </p>
                 </div>
 
