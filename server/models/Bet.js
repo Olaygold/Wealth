@@ -1,3 +1,6 @@
+
+
+// server/models/Bet.js
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
 
@@ -71,15 +74,15 @@ const Bet = sequelize.define('Bet', {
   }
 }, {
   timestamps: true,
-  underscored: true,
+  // underscored: true,  // ❌ REMOVE THIS LINE
   tableName: 'bets',
   indexes: [
-    { fields: ['user_id'] },
-    { fields: ['round_id'] },
+    { fields: ['userId'] },      // ✅ camelCase
+    { fields: ['roundId'] },     // ✅ camelCase
     { fields: ['prediction'] },
     { fields: ['result'] },
-    { fields: ['is_bot'] },
-    { fields: ['created_at'] }
+    { fields: ['isBot'] },       // ✅ camelCase
+    { fields: ['createdAt'] }    // ✅ camelCase
   ]
 });
 
