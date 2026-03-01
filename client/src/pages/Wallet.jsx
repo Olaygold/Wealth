@@ -504,8 +504,8 @@ const nigerianBanks = [
   const handleWithdraw = async (e) => {
     e.preventDefault();
 
-    if (parseFloat(withdrawalData.amount) < 1000) {
-      return toast.error('Minimum withdrawal is ₦1,000');
+    if (parseFloat(withdrawalData.amount) < 100) {
+      return toast.error('Minimum withdrawal is ₦100');
     }
 
     const available = (walletData?.nairaBalance || 0) - (walletData?.lockedBalance || 0);
