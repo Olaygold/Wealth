@@ -5,6 +5,7 @@ const { Round, Bet, Wallet, Transaction, User } = require('../models');
 const { Op } = require('sequelize');
 const priceService = require('./priceService');
 const { sequelize } = require('../config/database');
+const botService = require('./botService'); // ✅ ADD THIS
 
 // ✅ SAFE IMPORT - Won't crash if referralService has issues
 let processFirstBetBonus = null;
@@ -22,7 +23,7 @@ try {
 // Helper function
 const roundToTwo = (num) => Math.round((num + Number.EPSILON) * 100) / 100;
 
-// ✅ SAFE REFERRAL PROCESSING - Won't break betting if it fails
+// ✅ SAFE REFERRAL PROCESSING
 const safeProcessReferral = async (type, userId, betAmount, betId, transaction) => {
   try {
     if (type === 'first_bet' && processFirstBetBonus) {
@@ -44,7 +45,7 @@ const safeProcessReferral = async (type, userId, betAmount, betId, transaction) 
     return null;
   } catch (error) {
     console.error(`   ⚠️ Referral ${type} error (non-fatal):`, error.message);
-    return null; // Don't throw - let betting continue
+    return null;
   }
 };
 
@@ -53,6 +54,7 @@ class RoundService {
     this.io = null;
     this.currentRound = null;
     this.checkInterval = null;
+    this.isChecking = false;
     
     this.BETTING_DURATION = parseInt(process.env.BETTING_DURATION_MINUTES) || 5;
     this.LOCKED_DURATION = parseInt(process.env.LOCKED_DURATION_MINUTES) || 5;
@@ -70,15 +72,16 @@ class RoundService {
       await new Promise(resolve => setTimeout(resolve, 2000));
       await this.initializeRounds();
 
-      this.checkInterval = setInterval(async () => {
-        await this.checkAndUpdateRounds();
-      }, 5000);
-
+      // ✅ Check every 30 seconds
       cron.schedule('*/30 * * * * *', async () => {
-        await this.checkAndUpdateRounds();
+        try {
+          await this.checkAndUpdateRounds();
+        } catch (error) {
+          console.error('❌ Cron check error:', error.message);
+        }
       });
 
-      console.log('✅ Round Manager started successfully');
+      console.log('✅ Round Manager started successfully (checking every 30s)');
     } catch (error) {
       console.error('❌ Round Manager startup error:', error.message);
     }
@@ -191,9 +194,15 @@ class RoundService {
   }
 
   async checkAndUpdateRounds() {
+    if (this.isChecking) {
+      return;
+    }
+
+    this.isChecking = true;
     const now = new Date();
 
     try {
+      // Start upcoming rounds
       const roundsToStart = await Round.findAll({
         where: { status: 'upcoming', startTime: { [Op.lte]: now } }
       });
@@ -202,6 +211,13 @@ class RoundService {
         await this.startRound(round);
       }
 
+      // ✅ BOT CHECK - Place bets if needed
+      const activeRound = await this.getCurrentRound();
+      if (activeRound && activeRound.status === 'active') {
+        await botService.checkAndPlaceBets(activeRound, this.io);
+      }
+
+      // Lock active rounds
       const roundsToLock = await Round.findAll({
         where: { status: 'active', lockTime: { [Op.lte]: now } }
       });
@@ -210,6 +226,7 @@ class RoundService {
         await this.lockRound(round);
       }
 
+      // End locked rounds
       const roundsToEnd = await Round.findAll({
         where: { status: 'locked', endTime: { [Op.lte]: now } }
       });
@@ -219,6 +236,8 @@ class RoundService {
       }
     } catch (error) {
       console.error('❌ Error in round check cycle:', error.message);
+    } finally {
+      this.isChecking = false;
     }
   }
 
@@ -297,6 +316,9 @@ class RoundService {
       await transaction.commit();
       console.log('   ✅ Transaction committed successfully');
 
+      // ✅ CLEAN UP BOT TRACKING
+      botService.cleanupRound(round.id);
+
       if (this.io) {
         this.io.emit('round_end', {
           roundId: round.id,
@@ -325,7 +347,6 @@ class RoundService {
 
   async processBets(round, result, transaction) {
     try {
-      // ✅ SAFE QUERY - Only get fields that exist
       const bets = await Bet.findAll({
         where: { roundId: round.id, result: 'pending' },
         include: [{ 
@@ -343,7 +364,11 @@ class RoundService {
         return;
       }
 
-      console.log(`   📊 Processing ${bets.length} bets...`);
+      // ✅ SEPARATE BOT AND REAL BETS
+      const realBets = bets.filter(bet => !bet.isBot);
+      const botBets = bets.filter(bet => bet.isBot);
+
+      console.log(`   📊 Processing ${bets.length} bets (${realBets.length} real, ${botBets.length} bot)...`);
 
       const upBets = bets.filter(bet => bet.prediction === 'up');
       const downBets = bets.filter(bet => bet.prediction === 'down');
@@ -424,6 +449,12 @@ class RoundService {
           isPaid: true
         }, { transaction });
 
+        // ✅ SKIP WALLET UPDATE FOR BOT BETS
+        if (bet.isBot) {
+          console.log(`   🤖 Bot WIN: ${bet.prediction.toUpperCase()} ₦${betAmount} → ₦${payout} (${multiplier}x)`);
+          continue;
+        }
+
         const wallet = await Wallet.findOne({
           where: { userId: bet.userId },
           transaction,
@@ -468,7 +499,7 @@ class RoundService {
 
         console.log(`   ✅ ${bet.user?.username || bet.userId}: Bet ₦${betAmount} → Won ₦${payout} (${multiplier}x)`);
 
-        // ✅ SAFE REFERRAL - First bet bonus for winners
+        // SAFE REFERRAL
         if (bet.user?.referredBy && !bet.user?.hasPlacedFirstBet) {
           await safeProcessReferral('first_bet', bet.userId, betAmount, bet.id, transaction);
         }
@@ -496,6 +527,12 @@ class RoundService {
           profit: -betAmount,
           isPaid: true
         }, { transaction });
+
+        // ✅ SKIP WALLET UPDATE FOR BOT BETS
+        if (bet.isBot) {
+          console.log(`   🤖 Bot LOSS: ${bet.prediction.toUpperCase()} ₦${betAmount}`);
+          continue;
+        }
 
         const wallet = await Wallet.findOne({
           where: { userId: bet.userId },
@@ -534,13 +571,11 @@ class RoundService {
 
         console.log(`   ❌ ${bet.user?.username || bet.userId}: Lost ₦${betAmount}`);
 
-        // ✅ SAFE REFERRAL - Process commissions for losers
+        // SAFE REFERRAL
         if (bet.user?.referredBy) {
-          // First bet bonus (normal referrers)
           if (!bet.user.hasPlacedFirstBet) {
             await safeProcessReferral('first_bet', bet.userId, betAmount, bet.id, transaction);
           }
-          // Influencer commission (every loss)
           await safeProcessReferral('influencer', bet.userId, betAmount, bet.id, transaction);
         }
 
@@ -579,6 +614,12 @@ class RoundService {
         isPaid: true
       }, { transaction });
 
+      // ✅ SKIP WALLET UPDATE FOR BOT BETS
+      if (bet.isBot) {
+        console.log(`   🤖 Bot LOSS: ${bet.prediction.toUpperCase()} ₦${betAmount}`);
+        continue;
+      }
+
       const wallet = await Wallet.findOne({
         where: { userId: bet.userId },
         transaction,
@@ -616,7 +657,7 @@ class RoundService {
 
       console.log(`   ❌ ${bet.user?.username || bet.userId}: Lost ₦${betAmount}`);
 
-      // ✅ SAFE REFERRAL
+      // SAFE REFERRAL
       if (bet.user?.referredBy) {
         if (!bet.user.hasPlacedFirstBet) {
           await safeProcessReferral('first_bet', bet.userId, betAmount, bet.id, transaction);
@@ -656,6 +697,12 @@ class RoundService {
         isPaid: true
       }, { transaction });
 
+      // ✅ SKIP WALLET UPDATE FOR BOT BETS
+      if (bet.isBot) {
+        console.log(`   🤖 Bot REFUND: ${bet.prediction.toUpperCase()} ₦${betAmount}`);
+        continue;
+      }
+
       const wallet = await Wallet.findOne({
         where: { userId: bet.userId },
         transaction,
@@ -690,7 +737,7 @@ class RoundService {
 
       console.log(`   🔄 ${bet.user?.username || bet.userId}: Refunded ₦${betAmount}`);
 
-      // ✅ SAFE REFERRAL
+      // SAFE REFERRAL
       if (bet.user?.referredBy && !bet.user?.hasPlacedFirstBet) {
         await safeProcessReferral('first_bet', bet.userId, betAmount, bet.id, transaction);
       }
