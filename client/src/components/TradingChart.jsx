@@ -273,7 +273,7 @@ const TradingChart = ({
 
   // State
   const [chartType, setChartType] = useState(CHART_TYPES.CANDLESTICK);
-  const [timeframe, setTimeframe] = useState(5); // 5 seconds default
+  const [timeframe, setTimeframe] = useState(30); // 5 seconds default
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [activeIndicators, setActiveIndicators] = useState({
