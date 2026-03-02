@@ -7,7 +7,8 @@ const Round = require('./Round');
 const Bet = require('./Bet');
 const VirtualAccount = require('./VirtualAccount');
 const PendingDeposit = require('./PendingDeposit');
-const ReferralEarning = require('./ReferralEarning'); // ✅ NEW
+const ReferralEarning = require('./ReferralEarning');
+const BankAccount = require('./BankAccount'); // ✅ NEW
 
 // =====================================================
 // DEFINE ALL ASSOCIATIONS
@@ -41,7 +42,7 @@ PendingDeposit.belongsTo(VirtualAccount, { foreignKey: 'virtualAccountId', as: '
 User.hasMany(User, { foreignKey: 'referredBy', as: 'referrals' });
 User.belongsTo(User, { foreignKey: 'referredBy', as: 'referrer' });
 
-// ✅ NEW: REFERRAL EARNINGS ASSOCIATIONS
+// ✅ REFERRAL EARNINGS ASSOCIATIONS
 // User as Referrer -> Many ReferralEarnings
 User.hasMany(ReferralEarning, { foreignKey: 'referrerId', as: 'referralEarnings' });
 ReferralEarning.belongsTo(User, { foreignKey: 'referrerId', as: 'referrer' });
@@ -54,6 +55,11 @@ ReferralEarning.belongsTo(User, { foreignKey: 'referredUserId', as: 'referredUse
 Bet.hasMany(ReferralEarning, { foreignKey: 'betId', as: 'referralEarnings' });
 ReferralEarning.belongsTo(Bet, { foreignKey: 'betId', as: 'bet' });
 
+// ✅ NEW: BANK ACCOUNTS ASSOCIATIONS
+// User <-> BankAccounts (One-to-Many)
+User.hasMany(BankAccount, { foreignKey: 'userId', as: 'bankAccounts', onDelete: 'CASCADE' });
+BankAccount.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+
 module.exports = {
   User,
   Wallet,
@@ -62,5 +68,6 @@ module.exports = {
   Bet,
   VirtualAccount,
   PendingDeposit,
-  ReferralEarning // ✅ NEW
+  ReferralEarning,
+  BankAccount // ✅ NEW
 };
