@@ -4,6 +4,7 @@ import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import toast from 'react-hot-toast';
+import TradingChart from '../components/TradingChart';
 import { createChart, ColorType } from 'lightweight-charts';
 import {
   TrendingUp,
@@ -1128,13 +1129,16 @@ const Dashboard = () => {
                     </div>
 
                     {/* Professional TradingView Chart */}
-                    <div className="bg-slate-900/50 rounded-xl p-2 mb-4">
-                      <TradingChart 
-                        priceHistory={priceHistory} 
-                        startPrice={roundStartPrice}
-                        currentPrice={currentPrice}
-                      />
-                    </div>
+                    <div className="mb-4">
+  <TradingChart 
+    priceHistory={priceHistory} 
+    startPrice={roundStartPrice}
+    currentPrice={currentPrice}
+    height={300}
+    showControls={true}
+  />
+</div>
+                    
 
                     {/* Live Pool Distribution */}
                     <div className="mb-4">
