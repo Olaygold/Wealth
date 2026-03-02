@@ -1,28 +1,29 @@
 
 // server/services/botService.js
-const { Bet, Round, Wallet, User } = require('../models');
-const { Op } = require('sequelize');
+const { Bet, Round } = require('../models');
 
 class BotService {
   constructor() {
     this.isEnabled = process.env.BOT_ENABLED === 'true';
     this.botAmount = parseFloat(process.env.BOT_AMOUNT) || 500;
-    
-    // ✅ NOW THESE ARE "MINUTES REMAINING" NOT "MINUTES ELAPSED"
     this.firstBetMinuteRemaining = parseFloat(process.env.BOT_FIRST_BET_MINUTE) || 8;
     this.secondBetMinuteRemaining = parseFloat(process.env.BOT_SECOND_BET_MINUTE) || 7;
     
-    this.botUserId = process.env.BOT_USER_ID || 'BOTSYSTEM';
+    // ✅ TWO separate bot users
+    this.botUser1Id = process.env.BOT_USER_1_ID;
+    this.botUser2Id = process.env.BOT_USER_2_ID;
+    
     this.roundBotStatus = new Map();
     
     console.log('🤖 Bot Service initialized');
     console.log(`   Enabled: ${this.isEnabled}`);
-    console.log(`   Amount: ₦${this.botAmount}`);
-    console.log(`   First bet: ${this.firstBetMinuteRemaining} minutes REMAINING`);
-    console.log(`   Second bet: ${this.secondBetMinuteRemaining} minutes REMAINING`);
+    console.log(`   Amount: ₦${this.botAmount} per bot`);
+    console.log(`   Bot 1: ${this.botUser1Id}`);
+    console.log(`   Bot 2: ${this.botUser2Id}`);
+    console.log(`   First bet: ${this.firstBetMinuteRemaining} min remaining`);
+    console.log(`   Second bet: ${this.secondBetMinuteRemaining} min remaining`);
   }
 
-  // ✅ UPDATED - Now uses countdown logic
   async checkAndPlaceBets(round, io) {
     if (!this.isEnabled) {
       return;
@@ -32,10 +33,13 @@ class BotService {
       return;
     }
 
+    if (!this.botUser1Id || !this.botUser2Id) {
+      console.error('❌ Bot user IDs not configured');
+      return;
+    }
+
     const now = new Date();
     const lockTime = new Date(round.lockTime);
-    
-    // ✅ Calculate minutes REMAINING until lock
     const minutesRemaining = (lockTime - now) / (1000 * 60);
 
     const roundId = round.id;
@@ -50,43 +54,41 @@ class BotService {
 
     const status = this.roundBotStatus.get(roundId);
 
-    // ✅ First bet - when X minutes REMAINING
+    // ✅ BOT 1 places first bet (random side)
     if (minutesRemaining <= this.firstBetMinuteRemaining && !status.firstBetPlaced) {
       const firstSide = Math.random() > 0.5 ? 'up' : 'down';
-      await this.placeBotBet(round, firstSide, io);
+      await this.placeBotBet(round, this.botUser1Id, firstSide, io, 'Bot 1');
       status.firstBetPlaced = true;
       status.firstBetSide = firstSide;
       this.roundBotStatus.set(roundId, status);
-      console.log(`🤖 Bot first bet: ${firstSide.toUpperCase()} ₦${this.botAmount} (${minutesRemaining.toFixed(1)} min remaining in Round #${round.roundNumber})`);
     }
 
-    // ✅ Second bet - opposite side, when Y minutes REMAINING
+    // ✅ BOT 2 places second bet (opposite side)
     if (minutesRemaining <= this.secondBetMinuteRemaining && status.firstBetPlaced && !status.secondBetPlaced) {
       const secondSide = status.firstBetSide === 'up' ? 'down' : 'up';
-      await this.placeBotBet(round, secondSide, io);
+      await this.placeBotBet(round, this.botUser2Id, secondSide, io, 'Bot 2');
       status.secondBetPlaced = true;
       this.roundBotStatus.set(roundId, status);
-      console.log(`🤖 Bot second bet: ${secondSide.toUpperCase()} ₦${this.botAmount} (${minutesRemaining.toFixed(1)} min remaining in Round #${round.roundNumber})`);
     }
   }
 
-  async placeBotBet(round, prediction, io) {
+  async placeBotBet(round, botUserId, prediction, io, botName) {
     try {
+      // Check if this bot already bet
       const existingBet = await Bet.findOne({
         where: {
           roundId: round.id,
-          userId: this.botUserId,
-          prediction: prediction
+          userId: botUserId
         }
       });
 
       if (existingBet) {
-        console.log(`🤖 Bot already bet ${prediction} for round #${round.roundNumber}`);
+        console.log(`🤖 ${botName} already bet for round #${round.roundNumber}`);
         return;
       }
 
       const bet = await Bet.create({
-        userId: this.botUserId,
+        userId: botUserId,
         roundId: round.id,
         prediction: prediction,
         totalAmount: this.botAmount,
@@ -118,11 +120,11 @@ class BotService {
         });
       }
 
-      console.log(`🤖 Bot bet placed: ${prediction.toUpperCase()} ₦${this.botAmount}`);
+      console.log(`🤖 ${botName} bet: ${prediction.toUpperCase()} ₦${this.botAmount} (Round #${round.roundNumber})`);
       return bet;
 
     } catch (error) {
-      console.error('❌ Bot bet error:', error.message);
+      console.error(`❌ ${botName} error:`, error.message);
     }
   }
 
@@ -136,20 +138,6 @@ class BotService {
         where: { isBot: true }
       });
 
-      const botBetsByResult = await Bet.findAll({
-        where: { isBot: true },
-        attributes: [
-          'result',
-          [require('sequelize').fn('COUNT', require('sequelize').col('id')), 'count'],
-          [require('sequelize').fn('SUM', require('sequelize').col('stakeAmount')), 'totalAmount']
-        ],
-        group: ['result'],
-        raw: true
-      });
-
-      const wins = botBetsByResult.find(r => r.result === 'win') || { count: 0, totalAmount: 0 };
-      const losses = botBetsByResult.find(r => r.result === 'loss') || { count: 0, totalAmount: 0 };
-
       const totalWinnings = await Bet.sum('payout', {
         where: { isBot: true, result: 'win' }
       }) || 0;
@@ -158,17 +146,10 @@ class BotService {
         where: { isBot: true, result: 'loss' }
       }) || 0;
 
-      const totalStaked = await Bet.sum('stakeAmount', {
-        where: { isBot: true }
-      }) || 0;
-
       return {
         enabled: this.isEnabled,
         betAmount: this.botAmount,
         totalBets: totalBotBets,
-        wins: parseInt(wins.count) || 0,
-        losses: parseInt(losses.count) || 0,
-        totalStaked: totalStaked,
         totalWinnings: totalWinnings,
         totalLost: totalLost,
         netProfit: totalWinnings - totalLost
