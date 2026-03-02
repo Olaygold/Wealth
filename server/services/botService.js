@@ -12,7 +12,7 @@ class BotService {
     this.firstBetMinuteRemaining = parseFloat(process.env.BOT_FIRST_BET_MINUTE) || 8;
     this.secondBetMinuteRemaining = parseFloat(process.env.BOT_SECOND_BET_MINUTE) || 7;
     
-    this.botUserId = process.env.BOT_USER_ID || 'BOT_SYSTEM';
+    this.botUserId = process.env.BOT_USER_ID || 'BOTSYSTEM';
     this.roundBotStatus = new Map();
     
     console.log('🤖 Bot Service initialized');
