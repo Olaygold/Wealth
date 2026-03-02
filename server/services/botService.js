@@ -1,3 +1,4 @@
+
 // server/services/botService.js
 const { Bet, Round, Wallet, User } = require('../models');
 const { Op } = require('sequelize');
@@ -6,19 +7,22 @@ class BotService {
   constructor() {
     this.isEnabled = process.env.BOT_ENABLED === 'true';
     this.botAmount = parseFloat(process.env.BOT_AMOUNT) || 500;
-    this.firstBetMinute = parseFloat(process.env.BOT_FIRST_BET_MINUTE) || 7;
-    this.secondBetMinute = parseFloat(process.env.BOT_SECOND_BET_MINUTE) || 8;
+    
+    // ✅ NOW THESE ARE "MINUTES REMAINING" NOT "MINUTES ELAPSED"
+    this.firstBetMinuteRemaining = parseFloat(process.env.BOT_FIRST_BET_MINUTE) || 8;
+    this.secondBetMinuteRemaining = parseFloat(process.env.BOT_SECOND_BET_MINUTE) || 7;
+    
     this.botUserId = process.env.BOT_USER_ID || 'BOT_SYSTEM';
-    this.roundBotStatus = new Map(); // Track bot bets per round
+    this.roundBotStatus = new Map();
     
     console.log('🤖 Bot Service initialized');
     console.log(`   Enabled: ${this.isEnabled}`);
     console.log(`   Amount: ₦${this.botAmount}`);
-    console.log(`   First bet: ${this.firstBetMinute} minutes`);
-    console.log(`   Second bet: ${this.secondBetMinute} minutes`);
+    console.log(`   First bet: ${this.firstBetMinuteRemaining} minutes REMAINING`);
+    console.log(`   Second bet: ${this.secondBetMinuteRemaining} minutes REMAINING`);
   }
 
-  // Check if bot should place bets for a round
+  // ✅ UPDATED - Now uses countdown logic
   async checkAndPlaceBets(round, io) {
     if (!this.isEnabled) {
       return;
@@ -29,12 +33,13 @@ class BotService {
     }
 
     const now = new Date();
-    const roundStart = new Date(round.startTime);
-    const minutesPassed = (now - roundStart) / (1000 * 60);
+    const lockTime = new Date(round.lockTime);
+    
+    // ✅ Calculate minutes REMAINING until lock
+    const minutesRemaining = (lockTime - now) / (1000 * 60);
 
     const roundId = round.id;
     
-    // Initialize tracking for this round
     if (!this.roundBotStatus.has(roundId)) {
       this.roundBotStatus.set(roundId, {
         firstBetPlaced: false,
@@ -45,34 +50,32 @@ class BotService {
 
     const status = this.roundBotStatus.get(roundId);
 
-    // First bet - at configured minute
-    if (minutesPassed >= this.firstBetMinute && !status.firstBetPlaced) {
+    // ✅ First bet - when X minutes REMAINING
+    if (minutesRemaining <= this.firstBetMinuteRemaining && !status.firstBetPlaced) {
       const firstSide = Math.random() > 0.5 ? 'up' : 'down';
       await this.placeBotBet(round, firstSide, io);
       status.firstBetPlaced = true;
       status.firstBetSide = firstSide;
       this.roundBotStatus.set(roundId, status);
-      console.log(`🤖 Bot first bet: ${firstSide.toUpperCase()} ₦${this.botAmount} (Round #${round.roundNumber})`);
+      console.log(`🤖 Bot first bet: ${firstSide.toUpperCase()} ₦${this.botAmount} (${minutesRemaining.toFixed(1)} min remaining in Round #${round.roundNumber})`);
     }
 
-    // Second bet - opposite side, at configured minute
-    if (minutesPassed >= this.secondBetMinute && status.firstBetPlaced && !status.secondBetPlaced) {
+    // ✅ Second bet - opposite side, when Y minutes REMAINING
+    if (minutesRemaining <= this.secondBetMinuteRemaining && status.firstBetPlaced && !status.secondBetPlaced) {
       const secondSide = status.firstBetSide === 'up' ? 'down' : 'up';
       await this.placeBotBet(round, secondSide, io);
       status.secondBetPlaced = true;
       this.roundBotStatus.set(roundId, status);
-      console.log(`🤖 Bot second bet: ${secondSide.toUpperCase()} ₦${this.botAmount} (Round #${round.roundNumber})`);
+      console.log(`🤖 Bot second bet: ${secondSide.toUpperCase()} ₦${this.botAmount} (${minutesRemaining.toFixed(1)} min remaining in Round #${round.roundNumber})`);
     }
   }
 
-  // Place a bot bet
   async placeBotBet(round, prediction, io) {
     try {
-      // Check if bot already bet this side for this round
       const existingBet = await Bet.findOne({
         where: {
           roundId: round.id,
-          odUserId: this.botUserId,
+          userId: this.botUserId,
           prediction: prediction
         }
       });
@@ -82,19 +85,18 @@ class BotService {
         return;
       }
 
-      // Create bot bet
       const bet = await Bet.create({
         userId: this.botUserId,
         roundId: round.id,
         prediction: prediction,
+        totalAmount: this.botAmount,
+        feeAmount: 0,
         stakeAmount: this.botAmount,
         result: 'pending',
-        isBot: true, // ✅ Mark as bot bet
-        entryPrice: round.startPrice,
+        isBot: true,
         createdAt: new Date()
       });
 
-      // Update round pools
       if (prediction === 'up') {
         await round.increment('totalUpAmount', { by: this.botAmount });
         await round.increment('totalUpBets', { by: 1 });
@@ -103,7 +105,6 @@ class BotService {
         await round.increment('totalDownBets', { by: 1 });
       }
 
-      // Emit to frontend
       if (io) {
         io.emit('new_bet', {
           roundId: round.id,
@@ -125,12 +126,10 @@ class BotService {
     }
   }
 
-  // Clean up old round tracking (call after round ends)
   cleanupRound(roundId) {
     this.roundBotStatus.delete(roundId);
   }
 
-  // Get bot stats for admin
   async getBotStats() {
     try {
       const totalBotBets = await Bet.count({
@@ -151,7 +150,6 @@ class BotService {
       const wins = botBetsByResult.find(r => r.result === 'win') || { count: 0, totalAmount: 0 };
       const losses = botBetsByResult.find(r => r.result === 'loss') || { count: 0, totalAmount: 0 };
 
-      // Calculate profit/loss
       const totalWinnings = await Bet.sum('payout', {
         where: { isBot: true, result: 'win' }
       }) || 0;
@@ -186,14 +184,12 @@ class BotService {
     }
   }
 
-  // Toggle bot on/off
   setEnabled(enabled) {
     this.isEnabled = enabled;
     console.log(`🤖 Bot ${enabled ? 'ENABLED' : 'DISABLED'}`);
     return this.isEnabled;
   }
 
-  // Update bot amount
   setAmount(amount) {
     this.botAmount = parseFloat(amount);
     console.log(`🤖 Bot amount set to ₦${this.botAmount}`);
