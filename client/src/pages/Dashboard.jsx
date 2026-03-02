@@ -1,11 +1,11 @@
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+// src/pages/Dashboard.jsx
+import { useState, useEffect, useCallback } from 'react';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import TradingChart from '../components/TradingChart';
-import { createChart, ColorType } from 'lightweight-charts';
 import {
   TrendingUp,
   TrendingDown,
@@ -50,152 +50,6 @@ const formatTime = (seconds) => {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${mins}:${secs.toString().padStart(2, '0')}`;
-};
-
-// ==================== PROFESSIONAL TRADING CHART ====================
-const TradingChart = ({ priceHistory, startPrice, currentPrice }) => {
-  const chartContainerRef = useRef(null);
-  const chartRef = useRef(null);
-  const seriesRef = useRef(null);
-  const priceLineRef = useRef(null);
-
-  useEffect(() => {
-    if (!chartContainerRef.current) return;
-
-    // Create chart
-    const chart = createChart(chartContainerRef.current, {
-      layout: {
-        background: { type: ColorType.Solid, color: 'transparent' },
-        textColor: '#9ca3af',
-      },
-      grid: {
-        vertLines: { color: '#1e293b', style: 1 },
-        horzLines: { color: '#1e293b', style: 1 },
-      },
-      width: chartContainerRef.current.clientWidth,
-      height: 220,
-      timeScale: {
-        timeVisible: true,
-        secondsVisible: true,
-        borderColor: '#334155',
-        rightOffset: 5,
-        barSpacing: 10,
-      },
-      rightPriceScale: {
-        borderColor: '#334155',
-        scaleMargins: {
-          top: 0.1,
-          bottom: 0.1,
-        },
-      },
-      crosshair: {
-        mode: 1,
-        vertLine: {
-          color: '#6366f1',
-          width: 1,
-          style: 2,
-          labelBackgroundColor: '#6366f1',
-        },
-        horzLine: {
-          color: '#6366f1',
-          width: 1,
-          style: 2,
-          labelBackgroundColor: '#6366f1',
-        },
-      },
-      handleScroll: {
-        vertTouchDrag: false,
-      },
-    });
-
-    // Add area series with gradient
-    const areaSeries = chart.addAreaSeries({
-      lineColor: '#6366f1',
-      topColor: 'rgba(99, 102, 241, 0.4)',
-      bottomColor: 'rgba(99, 102, 241, 0.0)',
-      lineWidth: 2,
-      priceLineVisible: true,
-      lastValueVisible: true,
-      crosshairMarkerVisible: true,
-      crosshairMarkerRadius: 6,
-    });
-
-    chartRef.current = chart;
-    seriesRef.current = areaSeries;
-
-    // Handle resize
-    const handleResize = () => {
-      if (chartContainerRef.current && chartRef.current) {
-        chartRef.current.applyOptions({ 
-          width: chartContainerRef.current.clientWidth 
-        });
-      }
-    };
-
-    window.addEventListener('resize', handleResize);
-
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      if (chartRef.current) {
-        chartRef.current.remove();
-      }
-    };
-  }, []);
-
-  // Update start price line
-  useEffect(() => {
-    if (!seriesRef.current || !startPrice || startPrice <= 0) return;
-
-    // Remove old price line
-    if (priceLineRef.current) {
-      seriesRef.current.removePriceLine(priceLineRef.current);
-    }
-
-    // Add new start price line
-    priceLineRef.current = seriesRef.current.createPriceLine({
-      price: startPrice,
-      color: '#f59e0b',
-      lineWidth: 2,
-      lineStyle: 2,
-      axisLabelVisible: true,
-      title: 'Start',
-    });
-  }, [startPrice]);
-
-  // Update chart data
-  useEffect(() => {
-    if (!seriesRef.current || priceHistory.length === 0) return;
-
-    const now = Math.floor(Date.now() / 1000);
-    const chartData = priceHistory.map((item, index) => ({
-      time: now - (priceHistory.length - index - 1) * 5,
-      value: item.price,
-    }));
-
-    seriesRef.current.setData(chartData);
-
-    // Fit content
-    if (chartRef.current) {
-      chartRef.current.timeScale().fitContent();
-    }
-  }, [priceHistory]);
-
-  return (
-    <div className="relative">
-      <div 
-        ref={chartContainerRef} 
-        className="w-full h-[220px] rounded-xl overflow-hidden"
-      />
-      {priceHistory.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-900/50 rounded-xl">
-          <div className="text-center">
-            <Activity className="w-8 h-8 text-primary animate-pulse mx-auto mb-2" />
-            <p className="text-gray-400 text-sm">Loading chart data...</p>
-          </div>
-        </div>
-      )}
-    </div>
-  );
 };
 
 // ==================== LIVE POOL INDICATOR ====================
@@ -434,14 +288,12 @@ const Dashboard = () => {
     let totalUp = parseFloat(currentRound.totalUpAmount || 0);
     let totalDown = parseFloat(currentRound.totalDownAmount || 0);
 
-    // Add user's bet to calculation
     if (prediction === 'up') {
       totalUp += betAmount;
     } else {
       totalDown += betAmount;
     }
 
-    // Check if there are opponents
     const hasOpponents = prediction === 'up' ? totalDown > 0 : totalUp > 0;
 
     if (!hasOpponents) {
@@ -454,7 +306,6 @@ const Dashboard = () => {
       };
     }
 
-    // Calculate multiplier with user's bet included
     let multiplier;
     if (prediction === 'up') {
       multiplier = roundToTwo(1 + (totalDown * 0.7) / totalUp);
@@ -623,7 +474,6 @@ const Dashboard = () => {
   useEffect(() => {
     if (!socket || !isConnected) return;
 
-    // Price updates
     socket.on('price_update', (data) => {
       if (data?.price) {
         const price = parseFloat(data.price);
@@ -638,7 +488,6 @@ const Dashboard = () => {
       }
     });
 
-    // Bet placed by ANY user - Update pool instantly
     socket.on('bet_placed', (data) => {
       console.log('🎰 New bet placed:', data);
       
@@ -656,7 +505,6 @@ const Dashboard = () => {
       });
     });
 
-    // Round started
     socket.on('round_start', (data) => {
       console.log('🚀 Round started:', data);
       fetchAllRounds();
@@ -669,7 +517,6 @@ const Dashboard = () => {
       setActiveSlide(1);
     });
 
-    // Round ended
     socket.on('round_end', (data) => {
       console.log('🏁 Round ended:', data);
       fetchAllRounds();
@@ -680,14 +527,12 @@ const Dashboard = () => {
       toast.success(`${emoji} Round #${data.roundNumber} Ended: ${data.result?.toUpperCase()}!`, { duration: 4000 });
     });
 
-    // Round locked
     socket.on('round_lock', (data) => {
       console.log('🔒 Round locked:', data);
       fetchAllRounds();
       toast('🔒 Betting closed!', { icon: '⏰', duration: 3000 });
     });
 
-    // Balance update for current user
     socket.on('balance_update', (data) => {
       console.log('💰 Balance update:', data);
       setWalletData(prev => ({
@@ -697,7 +542,6 @@ const Dashboard = () => {
       }));
     });
 
-    // Bet result for current user
     socket.on('bet_result', (data) => {
       console.log('🎯 Bet result:', data);
       fetchMyBets();
@@ -792,7 +636,6 @@ const Dashboard = () => {
         { duration: 4000 }
       );
 
-      // Refresh data
       await Promise.all([
         fetchMyBets(),
         fetchAllRounds(),
@@ -825,10 +668,8 @@ const Dashboard = () => {
   // ========== MAIN RENDER ==========
   return (
     <div className="min-h-screen bg-darker pb-24 lg:pb-8">
-      {/* User Guide Modal */}
       <UserGuideModal isOpen={showGuide} onClose={() => setShowGuide(false)} />
 
-      {/* Connection Status Banner */}
       {!isConnected && (
         <div className="bg-yellow-500/10 border-b border-yellow-500/30 px-4 py-3 flex items-center justify-center gap-2">
           <WifiOff className="text-yellow-500" size={18} />
@@ -838,9 +679,8 @@ const Dashboard = () => {
 
       <div className="p-4 lg:p-8 max-w-7xl mx-auto">
         
-        {/* ==================== HEADER ==================== */}
+        {/* HEADER */}
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 gap-4">
-          {/* Title */}
           <div>
             <h1 className="text-2xl lg:text-3xl font-bold text-white flex items-center gap-2">
               Wealth Trading
@@ -860,9 +700,7 @@ const Dashboard = () => {
             </p>
           </div>
 
-          {/* Balance & Actions */}
           <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
-            {/* Help Button */}
             <button
               onClick={() => setShowGuide(true)}
               className="p-3 bg-slate-800 text-gray-400 hover:text-white rounded-xl border border-slate-700 transition hover:border-primary"
@@ -871,7 +709,6 @@ const Dashboard = () => {
               <HelpCircle size={20} />
             </button>
 
-            {/* Refresh Button */}
             <button
               onClick={handleRefresh}
               disabled={refreshing}
@@ -881,7 +718,6 @@ const Dashboard = () => {
               <RefreshCw size={20} className={refreshing ? 'animate-spin' : ''} />
             </button>
 
-            {/* Balance Display */}
             <div className="flex-1 lg:flex-none flex items-center gap-4 bg-gradient-to-r from-green-500/10 to-emerald-500/10 p-4 rounded-2xl border border-green-500/30">
               <div className="flex-1">
                 <p className="text-xs text-gray-400 uppercase tracking-wider">Available Balance</p>
@@ -901,7 +737,7 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* ==================== LIVE PRICE BANNER ==================== */}
+        {/* LIVE PRICE BANNER */}
         <div className="bg-slate-800/40 backdrop-blur-md rounded-2xl p-4 mb-6 border border-slate-700">
           <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
             <div className="flex items-center gap-4">
@@ -933,9 +769,8 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* ==================== SWIPEABLE ROUNDS ==================== */}
+        {/* SWIPEABLE ROUNDS */}
         <div className="mb-6">
-          {/* Slide Navigation */}
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <button
@@ -959,7 +794,6 @@ const Dashboard = () => {
               </button>
             </div>
 
-            {/* Slide Indicators */}
             <div className="flex gap-2">
               {[0, 1, 2].map(i => (
                 <button
@@ -973,13 +807,12 @@ const Dashboard = () => {
             </div>
           </div>
 
-          {/* Slides Container */}
           <div className="overflow-hidden rounded-3xl">
             <div
               className="flex transition-transform duration-500 ease-out"
               style={{ transform: `translateX(-${activeSlide * 100}%)` }}
             >
-              {/* ===== SLIDE 1: PREVIOUS ROUND ===== */}
+              {/* PREVIOUS ROUND */}
               <div className="min-w-full px-1">
                 {previousRound ? (
                   <div className="bg-slate-800/40 rounded-3xl p-6 border border-slate-700">
@@ -1063,11 +896,10 @@ const Dashboard = () => {
                 )}
               </div>
 
-              {/* ===== SLIDE 2: CURRENT ROUND (ACTIVE) ===== */}
+              {/* CURRENT ROUND */}
               <div className="min-w-full px-1">
                 {currentRound ? (
                   <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-3xl p-6 border-2 border-primary/50 shadow-lg shadow-primary/10">
-                    {/* Header */}
                     <div className="flex justify-between items-center mb-4">
                       <div>
                         <div className="flex items-center gap-2 mb-1">
@@ -1082,7 +914,6 @@ const Dashboard = () => {
                         <h3 className="text-xl font-bold text-white">Current Round</h3>
                       </div>
 
-                      {/* Timer */}
                       <div className={`px-5 py-3 rounded-2xl border ${
                         timeLeft < 30 ? 'bg-red-500/20 border-red-500' :
                         timeLeft < 60 ? 'bg-yellow-500/20 border-yellow-500' : 
@@ -1100,7 +931,6 @@ const Dashboard = () => {
                       </div>
                     </div>
 
-                    {/* Price Info */}
                     <div className="bg-slate-900/50 rounded-2xl p-4 mb-4">
                       <div className="grid grid-cols-2 gap-4 mb-3">
                         <div>
@@ -1128,19 +958,17 @@ const Dashboard = () => {
                       </div>
                     </div>
 
-                    {/* Professional TradingView Chart */}
+                    {/* ADVANCED TRADING CHART */}
                     <div className="mb-4">
-  <TradingChart 
-    priceHistory={priceHistory} 
-    startPrice={roundStartPrice}
-    currentPrice={currentPrice}
-    height={300}
-    showControls={true}
-  />
-</div>
-                    
+                      <TradingChart 
+                        priceHistory={priceHistory} 
+                        startPrice={roundStartPrice}
+                        currentPrice={currentPrice}
+                        height={300}
+                        showControls={true}
+                      />
+                    </div>
 
-                    {/* Live Pool Distribution */}
                     <div className="mb-4">
                       <LivePoolIndicator
                         totalUp={parseFloat(currentRound.totalUpAmount || 0)}
@@ -1150,7 +978,6 @@ const Dashboard = () => {
                       />
                     </div>
 
-                    {/* Betting Buttons */}
                     <div className="grid grid-cols-2 gap-4 mb-4">
                       {/* UP BUTTON */}
                       {(() => {
@@ -1169,12 +996,10 @@ const Dashboard = () => {
                               />
                               <p className="text-lg lg:text-xl font-black text-green-500">PREDICT UP</p>
                               
-                              {/* Current Pool Multiplier */}
                               <p className="text-xs text-gray-400 mt-2">
                                 Current Pool: {currentMult.display}
                               </p>
                               
-                              {/* Your Potential */}
                               <div className="mt-3 pt-3 border-t border-green-500/30 space-y-1">
                                 {betAmount > 0 ? (
                                   upCalc.hasOpponents ? (
@@ -1191,15 +1016,8 @@ const Dashboard = () => {
                                     </>
                                   ) : (
                                     <>
-                                      <p className="text-sm text-yellow-400 font-bold">
-                                        1x 
-                                      </p>
-                                      <p className="text-xs text-yellow-400">
-                                        No DOWN bets yet
-                                      </p>
-                                      <p className="text-xs text-gray-400">
-                                      
-                                      </p>
+                                      <p className="text-sm text-yellow-400 font-bold">1x</p>
+                                      <p className="text-xs text-yellow-400">No DOWN bets yet</p>
                                     </>
                                   )
                                 ) : (
@@ -1233,12 +1051,10 @@ const Dashboard = () => {
                               />
                               <p className="text-lg lg:text-xl font-black text-red-500">PREDICT DOWN</p>
                               
-                              {/* Current Pool Multiplier */}
                               <p className="text-xs text-gray-400 mt-2">
                                 Current Pool: {currentMult.display}
                               </p>
                               
-                              {/* Your Potential */}
                               <div className="mt-3 pt-3 border-t border-red-500/30 space-y-1">
                                 {betAmount > 0 ? (
                                   downCalc.hasOpponents ? (
@@ -1255,15 +1071,8 @@ const Dashboard = () => {
                                     </>
                                   ) : (
                                     <>
-                                      <p className="text-sm text-yellow-400 font-bold">
-                                        1x 
-                                      </p>
-                                      <p className="text-xs text-yellow-400">
-                                        No UP bets yet
-                                      </p>
-                                      <p className="text-xs text-gray-400">
-                                        
-                                      </p>
+                                      <p className="text-sm text-yellow-400 font-bold">1x</p>
+                                      <p className="text-xs text-yellow-400">No UP bets yet</p>
                                     </>
                                   )
                                 ) : (
@@ -1281,7 +1090,6 @@ const Dashboard = () => {
                       })()}
                     </div>
 
-                    {/* Status Messages */}
                     {!canBet && currentRound.status === 'locked' && (
                       <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 text-center">
                         <p className="text-yellow-500 font-medium flex items-center justify-center gap-2">
@@ -1319,7 +1127,7 @@ const Dashboard = () => {
                 )}
               </div>
 
-              {/* ===== SLIDE 3: UPCOMING ROUND ===== */}
+              {/* UPCOMING ROUND */}
               <div className="min-w-full px-1">
                 {upcomingRound ? (
                   <div className="bg-slate-800/40 rounded-3xl p-6 border border-slate-700">
@@ -1369,7 +1177,7 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* ==================== BET AMOUNT SELECTOR ==================== */}
+        {/* BET AMOUNT SELECTOR */}
         <div className="bg-slate-800/40 p-6 rounded-3xl border border-slate-700 mb-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
@@ -1421,7 +1229,7 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* ==================== MY ACTIVE BETS ==================== */}
+        {/* MY ACTIVE BETS */}
         <div className="bg-slate-800/40 p-6 rounded-3xl border border-slate-700">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-bold text-white flex items-center gap-2">
