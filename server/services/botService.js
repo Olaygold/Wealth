@@ -8,8 +8,8 @@ class BotService {
     this.botAmount = parseFloat(process.env.BOT_AMOUNT) || 500;
     this.firstBetMinuteRemaining = parseFloat(process.env.BOT_FIRST_BET_MINUTE) || 8;
     this.secondBetMinuteRemaining = parseFloat(process.env.BOT_SECOND_BET_MINUTE) || 7;
+    this.delayBetweenBots = parseFloat(process.env.BOT_DELAY_SECONDS) || 30; // ✅ Add delay
     
-    // ✅ TWO separate bot users
     this.botUser1Id = process.env.BOT_USER_1_ID;
     this.botUser2Id = process.env.BOT_USER_2_ID;
     
@@ -22,6 +22,7 @@ class BotService {
     console.log(`   Bot 2: ${this.botUser2Id}`);
     console.log(`   First bet: ${this.firstBetMinuteRemaining} min remaining`);
     console.log(`   Second bet: ${this.secondBetMinuteRemaining} min remaining`);
+    console.log(`   Delay between bots: ${this.delayBetweenBots} seconds`);
   }
 
   async checkAndPlaceBets(round, io) {
@@ -48,33 +49,39 @@ class BotService {
       this.roundBotStatus.set(roundId, {
         firstBetPlaced: false,
         secondBetPlaced: false,
-        firstBetSide: null
+        firstBetSide: null,
+        firstBetTime: null // ✅ Track when first bet was placed
       });
     }
 
     const status = this.roundBotStatus.get(roundId);
 
-    // ✅ BOT 1 places first bet (random side)
+    // ✅ BOT 1 - First bet
     if (minutesRemaining <= this.firstBetMinuteRemaining && !status.firstBetPlaced) {
       const firstSide = Math.random() > 0.5 ? 'up' : 'down';
       await this.placeBotBet(round, this.botUser1Id, firstSide, io, 'Bot 1');
       status.firstBetPlaced = true;
       status.firstBetSide = firstSide;
+      status.firstBetTime = new Date(); // ✅ Record time
       this.roundBotStatus.set(roundId, status);
     }
 
-    // ✅ BOT 2 places second bet (opposite side)
+    // ✅ BOT 2 - Second bet (with delay check)
     if (minutesRemaining <= this.secondBetMinuteRemaining && status.firstBetPlaced && !status.secondBetPlaced) {
-      const secondSide = status.firstBetSide === 'up' ? 'down' : 'up';
-      await this.placeBotBet(round, this.botUser2Id, secondSide, io, 'Bot 2');
-      status.secondBetPlaced = true;
-      this.roundBotStatus.set(roundId, status);
+      const timeSinceFirstBet = (new Date() - status.firstBetTime) / 1000; // seconds
+      
+      // ✅ Only place second bet if enough time has passed
+      if (timeSinceFirstBet >= this.delayBetweenBots) {
+        const secondSide = status.firstBetSide === 'up' ? 'down' : 'up';
+        await this.placeBotBet(round, this.botUser2Id, secondSide, io, 'Bot 2');
+        status.secondBetPlaced = true;
+        this.roundBotStatus.set(roundId, status);
+      }
     }
   }
 
   async placeBotBet(round, botUserId, prediction, io, botName) {
     try {
-      // Check if this bot already bet
       const existingBet = await Bet.findOne({
         where: {
           roundId: round.id,
