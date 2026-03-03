@@ -379,8 +379,8 @@ const Referrals = () => {
                     <div className="flex items-start gap-4 p-4 bg-darker rounded-lg">
                       <div className="w-10 h-10 bg-primary/20 rounded-full flex items-center justify-center text-primary font-bold">3</div>
                       <div>
-                        <h4 className="text-white font-medium">Earn 5% on First Bet</h4>
-                        <p className="text-gray-400 text-sm">You earn 5% of their first bet amount</p>
+                        <h4 className="text-white font-medium">Earn 25% on First Bet</h4>
+                        <p className="text-gray-400 text-sm">You earn 25% of their first bet amount</p>
                       </div>
                     </div>
                   </>
