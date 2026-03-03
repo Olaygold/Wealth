@@ -81,12 +81,12 @@ const processReferralCommission = async (userId, betId, betAmount, betResult, db
       
       // Only pay commission on the FIRST BET (regardless of win/loss)
       if (!user.hasPlacedFirstBet) {
-        percentage = 5;
+        percentage = 25;
         commission = parseFloat(betAmount) * (percentage / 100);
         commissionType = 'first_bet';
         shouldMarkFirstBet = true;
 
-        console.log(`   ✅ FIRST BET! Commission: ₦${commission.toFixed(2)} (5% of ₦${betAmount})`);
+        console.log(`   ✅ FIRST BET! Commission: ₦${commission.toFixed(2)} (25% of ₦${betAmount})`);
         console.log(`   📊 Bet result was: ${betResult} (doesn't matter for normal referrer)`);
       } else {
         console.log(`   ℹ️ User already placed first bet - no commission for normal referrer`);
