@@ -268,7 +268,7 @@ const processFirstBetBonus = async (bettorId, betAmount, betId, dbTransaction) =
     }
 
     // Normal referrer - give 5% first bet bonus
-    const bonusPercentage = 5;
+    const bonusPercentage = 25;
     const bonusAmount = Math.round((parseFloat(betAmount) * bonusPercentage) / 100 * 100) / 100;
 
     console.log(`   ✅ Normal referrer: ${referrer.username}`);
