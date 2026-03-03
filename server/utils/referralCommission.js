@@ -385,7 +385,7 @@ const getReferrerCommissionRate = async (userId) => {
 
     return {
       type: 'normal',
-      percentage: 5,
+      percentage: 25,
       referrerUsername: referrer.username
     };
 
