@@ -1,4 +1,3 @@
-
 // pages/Wallet.jsx
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -20,7 +19,12 @@ import {
   CreditCard,
   Timer,
   X,
-  CheckCircle2
+  CheckCircle2,
+  Trash2,
+  Star,
+  Edit,
+  Save,
+  Loader
 } from 'lucide-react';
 
 const Wallet = () => {
@@ -39,274 +43,23 @@ const Wallet = () => {
   const [checkingStatus, setCheckingStatus] = useState(false);
 
   // Withdrawal State
-  const [withdrawalData, setWithdrawalData] = useState({
-    amount: '',
-    bankCode: '058',
+  const [withdrawalStep, setWithdrawalStep] = useState('select'); // 'select', 'new', 'confirm'
+  const [savedAccounts, setSavedAccounts] = useState([]);
+  const [selectedAccount, setSelectedAccount] = useState(null);
+  const [banks, setBanks] = useState([]);
+  const [verifyingAccount, setVerifyingAccount] = useState(false);
+  
+  const [newAccountData, setNewAccountData] = useState({
     accountNumber: '',
+    bankCode: '',
     accountName: ''
   });
 
-  // Nigerian Banks List
-  
-  
+  const [withdrawalData, setWithdrawalData] = useState({
+    amount: '',
+    accountId: null
+  });
 
-const nigerianBanks = [
-  // Commercial Banks
-  { code: '044', name: 'Access Bank' },
-  { code: '063', name: 'Access Bank (Diamond)' },
-  { code: '035A', name: 'ALAT by WEMA' },
-  { code: '401', name: 'ASO Savings and Loans' },
-  { code: '023', name: 'Citibank Nigeria' },
-  { code: '050', name: 'Ecobank Nigeria' },
-  { code: '084', name: 'Enterprise Bank' },
-  { code: '070', name: 'Fidelity Bank' },
-  { code: '011', name: 'First Bank of Nigeria' },
-  { code: '214', name: 'First City Monument Bank (FCMB)' },
-  { code: '058', name: 'Guaranty Trust Bank (GTBank)' },
-  { code: '030', name: 'Heritage Bank' },
-  { code: '301', name: 'Jaiz Bank' },
-  { code: '082', name: 'Keystone Bank' },
-  { code: '076', name: 'Polaris Bank' },
-  { code: '101', name: 'Providus Bank' },
-  { code: '221', name: 'Stanbic IBTC Bank' },
-  { code: '068', name: 'Standard Chartered Bank' },
-  { code: '232', name: 'Sterling Bank' },
-  { code: '100', name: 'Suntrust Bank' },
-  { code: '302', name: 'TAJ Bank' },
-  { code: '032', name: 'Union Bank of Nigeria' },
-  { code: '033', name: 'United Bank for Africa (UBA)' },
-  { code: '215', name: 'Unity Bank' },
-  { code: '035', name: 'Wema Bank' },
-  { code: '057', name: 'Zenith Bank' },
-  { code: '303', name: 'Lotus Bank' },
-  { code: '304', name: 'Premium Trust Bank' },
-  { code: '305', name: 'Parallex Bank' },
-  { code: '103', name: 'Globus Bank' },
-  { code: '306', name: 'Signature Bank' },
-  { code: '104', name: 'Titan Trust Bank' },
-  { code: '105', name: 'Optimus Bank' },
-
-  // Digital/Mobile Banks
-  { code: '090267', name: 'Kuda Microfinance Bank' },
-  { code: '999992', name: 'Opay Digital Services' },
-  { code: '999991', name: 'PalmPay' },
-  { code: '100004', name: 'Paga' },
-  { code: '100033', name: 'Moniepoint MFB' },
-  { code: '090405', name: 'Moniepoint Microfinance Bank' },
-  { code: '50211', name: 'Carbon' },
-  { code: '090326', name: 'Sparkle Microfinance Bank' },
-  { code: '100025', name: 'FairMoney Microfinance Bank' },
-  { code: '090175', name: 'Rubies Microfinance Bank' },
-  { code: '090110', name: 'VFD Microfinance Bank' },
-  { code: '100022', name: 'GoMoney' },
-  { code: '090195', name: 'Mint Finex MFB' },
-
-  // Microfinance Banks (MFBs)
-  { code: '090001', name: 'ASOSavings & Loans' },
-  { code: '090270', name: 'AB Microfinance Bank' },
-  { code: '090260', name: 'Above Only Microfinance Bank' },
-  { code: '090197', name: 'ABU Microfinance Bank' },
-  { code: '090134', name: 'Accion Microfinance Bank' },
-  { code: '090160', name: 'Addosser Microfinance Bank' },
-  { code: '090268', name: 'Adeyemi College Staff Microfinance Bank' },
-  { code: '090292', name: 'Afekhafe Microfinance Bank' },
-  { code: '090285', name: 'Affluence Microfinance Bank' },
-  { code: '100028', name: 'AG Mortgage Bank' },
-  { code: '090259', name: 'Alekun Microfinance Bank' },
-  { code: '090297', name: 'Alert Microfinance Bank' },
-  { code: '090169', name: 'Alpha Kapital Microfinance Bank' },
-  { code: '090116', name: 'AMML Microfinance Bank' },
-  { code: '090282', name: 'Arise Microfinance Bank' },
-  { code: '090001', name: 'ASO Savings & Loans' },
-  { code: '090287', name: 'Assetmatrix Microfinance Bank' },
-  { code: '090172', name: 'Astrapolaris Microfinance Bank' },
-  { code: '090264', name: 'Auchi Microfinance Bank' },
-  { code: '090188', name: 'Baines Credit Microfinance Bank' },
-  { code: '090326', name: 'Balogun Gambari Microfinance Bank' },
-  { code: '090127', name: 'BC Kash Microfinance Bank' },
-  { code: '090117', name: 'Boctrust Microfinance Bank' },
-  { code: '090176', name: 'Bosak Microfinance Bank' },
-  { code: '090308', name: 'Brightway Microfinance Bank' },
-  { code: '090406', name: 'Business Support MFB' },
-  { code: '090415', name: 'Calabash Microfinance Bank' },
-  { code: '100026', name: 'Carbon (OneFi)' },
-  { code: '090360', name: 'Cashconnect Microfinance Bank' },
-  { code: '090141', name: 'CEMCS Microfinance Bank' },
-  { code: '090144', name: 'CIT Microfinance Bank' },
-  { code: '090374', name: 'Coastline Microfinance Bank' },
-  { code: '090130', name: 'Consumer Microfinance Bank' },
-  { code: '090166', name: 'Credit Afrique Microfinance Bank' },
-  { code: '090167', name: 'Daylight Microfinance Bank' },
-  { code: '090156', name: 'e-Barcs Microfinance Bank' },
-  { code: '090097', name: 'Ekondo Microfinance Bank' },
-  { code: '090273', name: 'Emerald Microfinance Bank' },
-  { code: '090114', name: 'Empire Trust Microfinance Bank' },
-  { code: '090179', name: 'FAST Microfinance Bank' },
-  { code: '090179', name: 'Esan Microfinance Bank' },
-  { code: '090304', name: 'Evangel Microfinance Bank' },
-  { code: '090332', name: 'Evergreen Microfinance Bank' },
-  { code: '090266', name: 'Ezee Microfinance Bank' },
-  { code: '090179', name: 'Fast Microfinance Bank' },
-  { code: '090153', name: 'FBN Mortgages Limited' },
-  { code: '090290', name: 'FCT Microfinance Bank' },
-  { code: '090126', name: 'Fidfund Microfinance Bank' },
-  { code: '090111', name: 'FinaTrust Microfinance Bank' },
-  { code: '090400', name: 'Finca Microfinance Bank' },
-  { code: '090366', name: 'Firmus Microfinance Bank' },
-  { code: '090107', name: 'First Royal Microfinance Bank' },
-  { code: '090164', name: 'First Multiple Microfinance Bank' },
-  { code: '090285', name: 'First Option Microfinance Bank' },
-  { code: '090298', name: 'Fedeth Microfinance Bank' },
-  { code: '070002', name: 'Fortis Microfinance Bank' },
-  { code: '090145', name: 'Fullrange Microfinance Bank' },
-  { code: '090278', name: 'FundsGate Microfinance Bank' },
-  { code: '090146', name: 'Gashua Microfinance Bank' },
-  { code: '090186', name: 'Gateway Mortgage Bank' },
-  { code: '090122', name: 'Gowans Microfinance Bank' },
-  { code: '090178', name: 'Greenbank Microfinance Bank' },
-  { code: '090195', name: 'GroFin Microfinance Bank' },
-  { code: '090147', name: 'Hackman Microfinance Bank' },
-  { code: '090121', name: 'Haggai Mortgage Bank' },
-  { code: '090363', name: 'Headway Microfinance Bank' },
-  { code: '090118', name: 'IBILE Microfinance Bank' },
-  { code: '090324', name: 'Ikenne Microfinance Bank' },
-  { code: '090279', name: 'Ikire Microfinance Bank' },
-  { code: '090370', name: 'Ilisan Microfinance Bank' },
-  { code: '090258', name: 'Imo State Microfinance Bank' },
-  { code: '090157', name: 'Infinity Microfinance Bank' },
-  { code: '100029', name: 'Innovectives Kesh' },
-  { code: '090149', name: 'IRL Microfinance Bank' },
-  { code: '090377', name: 'Isaleoyo Microfinance Bank' },
-  { code: '090263', name: 'Kadpoly Microfinance Bank' },
-  { code: '090191', name: 'KCMB Microfinance Bank' },
-  { code: '090299', name: 'Kontagora Microfinance Bank' },
-  { code: '090380', name: 'Kredi Money Microfinance Bank' },
-  { code: '090267', name: 'Kuda Microfinance Bank' },
-  { code: '090177', name: 'Lapo Microfinance Bank' },
-  { code: '090271', name: 'Lavender Microfinance Bank' },
-  { code: '090372', name: 'Legend Microfinance Bank' },
-  { code: '090372', name: 'Lifegate Microfinance Bank' },
-  { code: '090327', name: 'Links Microfinance Bank' },
-  { code: '090435', name: 'Links MFB' },
-  { code: '090289', name: 'Lovonus Microfinance Bank' },
-  { code: '100035', name: 'M36' },
-  { code: '090323', name: 'Mainland Microfinance Bank' },
-  { code: '090174', name: 'Malachy Microfinance Bank' },
-  { code: '090383', name: 'Manny Microfinance Bank' },
-  { code: '090410', name: 'Maritime Microfinance Bank' },
-  { code: '090171', name: 'Mainstreet Microfinance Bank' },
-  { code: '090321', name: 'Mayfair Microfinance Bank' },
-  { code: '090280', name: 'Megapraise Microfinance Bank' },
-  { code: '090113', name: 'Microvis Microfinance Bank' },
-  { code: '090281', name: 'Mint Microfinance Bank' },
-  { code: '090192', name: 'Midland Microfinance Bank' },
-  { code: '090136', name: 'Microcred Microfinance Bank' },
-  { code: '090129', name: 'Money Trust Microfinance Bank' },
-  { code: '090190', name: 'Mutual Benefits Microfinance Bank' },
-  { code: '090151', name: 'Mutual Trust Microfinance Bank' },
-  { code: '090152', name: 'Nagarta Microfinance Bank' },
-  { code: '999991', name: 'PalmPay' },
-  { code: '090283', name: 'NNEW Microfinance Bank' },
-  { code: '060003', name: 'Nova Merchant Bank' },
-  { code: '090128', name: 'Ndiorah Microfinance Bank' },
-  { code: '090108', name: 'New Prudential Bank' },
-  { code: '090205', name: 'New Dawn Microfinance Bank' },
-  { code: '090378', name: 'New Golden Pastures Microfinance Bank' },
-  { code: '070001', name: 'NPF Microfinance Bank' },
-  { code: '090364', name: 'Numo Microfinance Bank' },
-  { code: '090275', name: 'Okuku Microfinance Bank' },
-  { code: '090272', name: 'Olowolagba Microfinance Bank' },
-  { code: '090295', name: 'Omiye Microfinance Bank' },
-  { code: '090119', name: 'OPML Microfinance Bank' },
-  { code: '100002', name: 'Paga' },
-  { code: '311', name: 'Parkway - ReadyCash' },
-  { code: '090317', name: 'PatrickGold Microfinance Bank' },
-  { code: '090004', name: 'Parralex Microfinance Bank' },
-  { code: '090196', name: 'Pennywise Microfinance Bank' },
-  { code: '090165', name: 'Petra Microfinance Bank' },
-  { code: '090135', name: 'Personal Trust Microfinance Bank' },
-  { code: '090296', name: 'Pillar Microfinance Bank' },
-  { code: '090137', name: 'Pecan Trust Microfinance Bank' },
-  { code: '090393', name: 'Platinum Integrated MFB' },
-  { code: '090005', name: 'Prestige Microfinance Bank' },
-  { code: '090303', name: 'Purplemoney Microfinance Bank' },
-  { code: '090261', name: 'Quickfund Microfinance Bank' },
-  { code: '090198', name: 'RenMoney Microfinance Bank' },
-  { code: '502', name: 'Rand Merchant Bank' },
-  { code: '090322', name: 'Rephidim Microfinance Bank' },
-  { code: '090132', name: 'Richway Microfinance Bank' },
-  { code: '090405', name: 'Rolez Microfinance Bank' },
-  { code: '090138', name: 'Royal Exchange Microfinance Bank' },
-  { code: '090175', name: 'Rubies Microfinance Bank' },
-  { code: '090286', name: 'Safe Haven Microfinance Bank' },
-  { code: '090006', name: 'SafeTrust Microfinance Bank' },
-  { code: '090325', name: 'Seedvest Microfinance Bank' },
-  { code: '090369', name: 'Sherperd Trust Microfinance Bank' },
-  { code: '090162', name: 'Stanford Microfinance Bank' },
-  { code: '090262', name: 'Stellas Microfinance Bank' },
-  { code: '090305', name: 'Sulspap Microfinance Bank' },
-  { code: '090007', name: 'SunTrust Microfinance Bank' },
-  { code: '090305', name: 'Support Microfinance Bank' },
-  { code: '100023', name: 'TagPay' },
-  { code: '090115', name: 'TCF Microfinance Bank' },
-  { code: '100010', name: 'TeasyMobile' },
-  { code: '090373', name: 'Think Finance Microfinance Bank' },
-  { code: '090115', name: 'Trident Microfinance Bank' },
-  { code: '090327', name: 'Trust Microfinance Bank' },
-  { code: '090276', name: 'Trustfund Microfinance Bank' },
-  { code: '090005', name: 'Trustbond Mortgage Bank' },
-  { code: '090251', name: 'UNN Microfinance Bank' },
-  { code: '090331', name: 'UNAAB Microfinance Bank' },
-  { code: '090193', name: 'Unical Microfinance Bank' },
-  { code: '090338', name: 'UniUyo Microfinance Bank' },
-  { code: '110006', name: 'VFD Microfinance Bank' },
-  { code: '090123', name: 'Verite Microfinance Bank' },
-  { code: '090150', name: 'Virtue Microfinance Bank' },
-  { code: '090139', name: 'Visa Microfinance Bank' },
-  { code: '090333', name: 'Abulesoro Microfinance Bank' },
-  { code: '090124', name: 'XSLNCE Microfinance Bank' },
-  { code: '090142', name: 'Yes Microfinance Bank' },
-  { code: '100034', name: 'Zenith Easy Wallet' },
-  { code: '090140', name: 'Sagamu Microfinance Bank' },
-  { code: '090328', name: 'Eyowo' },
-  { code: '090315', name: 'U & C Microfinance Bank' },
-  { code: '100032', name: 'Contec Global' },
-  { code: '100016', name: 'Kegow' },
-
-  // Payment Service Banks (PSB)
-  { code: '120001', name: '9 Payment Service Bank (9PSB)' },
-  { code: '120002', name: 'HopePSB' },
-  { code: '120003', name: 'Momo PSB' },
-  { code: '120004', name: 'SmartCash PSB' },
-  { code: '120005', name: 'Money Master PSB' },
-
-  // Merchant/Other Banks
-  { code: '060001', name: 'Coronation Merchant Bank' },
-  { code: '060002', name: 'FSDH Merchant Bank' },
-  { code: '060003', name: 'Nova Merchant Bank' },
-  { code: '060004', name: 'Greenwich Merchant Bank' },
-  { code: '060005', name: 'Rand Merchant Bank' },
-
-  // Mobile Money Operators
-  { code: '100001', name: 'FET' },
-  { code: '100003', name: 'SafeTrust' },
-  { code: '100005', name: 'Cellulant' },
-  { code: '100006', name: 'eTranzact' },
-  { code: '100007', name: 'Stanbic IBTC @Ease Wallet' },
-  { code: '100008', name: 'Ecobank Xpress Account' },
-  { code: '100009', name: 'GTMobile' },
-  { code: '100011', name: 'Mkudi' },
-  { code: '100012', name: 'VTNetworks' },
-  { code: '100013', name: 'AccessMobile' },
-  { code: '100014', name: 'FBNMobile' },
-  { code: '100015', name: 'Zenith Mobile' },
-  { code: '100021', name: 'Eartholeum' },
-  { code: '100024', name: 'Imperial Homes Mortgage Bank' },
-  { code: '100027', name: 'Intellifin' },
-  { code: '100030', name: 'EcoMobile' },
-  { code: '100031', name: 'FCMB Easy Account' }
-];
-    
   useEffect(() => {
     loadInitialData();
   }, []);
@@ -350,6 +103,8 @@ const nigerianBanks = [
       await Promise.all([
         fetchWalletData(),
         fetchTransactions(),
+        fetchBanks(),
+        fetchSavedAccounts(),
         checkPendingDeposit()
       ]);
     } catch (err) {
@@ -361,11 +116,7 @@ const nigerianBanks = [
 
   const fetchWalletData = async () => {
     try {
-      // api.get already returns response.data due to interceptor
       const response = await api.get('/wallet/balance');
-      console.log('Wallet Response:', response);
-      
-      // Response is already { success: true, data: {...} }
       if (response.success && response.data) {
         setWalletData(response.data);
       }
@@ -378,8 +129,6 @@ const nigerianBanks = [
   const fetchTransactions = async () => {
     try {
       const response = await api.get('/wallet/transactions?limit=50');
-      console.log('Transactions Response:', response);
-      
       if (response.success && response.data && response.data.transactions) {
         setTransactions(response.data.transactions);
       }
@@ -388,17 +137,46 @@ const nigerianBanks = [
     }
   };
 
+  const fetchBanks = async () => {
+    try {
+      const response = await api.get('/wallet/banks');
+      if (response.success && response.data && response.data.banks) {
+        setBanks(response.data.banks);
+        if (response.data.banks.length > 0 && !newAccountData.bankCode) {
+          setNewAccountData(prev => ({ ...prev, bankCode: response.data.banks[0].code }));
+        }
+      }
+    } catch (err) {
+      console.error('Fetch banks error:', err);
+      toast.error('Failed to load banks list');
+    }
+  };
+
+  const fetchSavedAccounts = async () => {
+    try {
+      const response = await api.get('/wallet/accounts');
+      if (response.success && response.data && response.data.accounts) {
+        setSavedAccounts(response.data.accounts);
+        
+        // Auto-select default account
+        const defaultAcc = response.data.accounts.find(acc => acc.isDefault);
+        if (defaultAcc) {
+          setSelectedAccount(defaultAcc);
+        }
+      }
+    } catch (err) {
+      console.error('Fetch saved accounts error:', err);
+    }
+  };
+
   const checkPendingDeposit = async () => {
     try {
       const response = await api.get('/wallet/deposit/pending');
-      console.log('Pending Deposit Response:', response);
-      
       if (response.success && response.data) {
         setPendingDeposit(response.data);
         setDepositStep('payment');
       }
     } catch (err) {
-      // Silent fail - it's normal to not have a pending deposit
       console.log('No pending deposit');
     }
   };
@@ -426,8 +204,6 @@ const nigerianBanks = [
     setLoading(true);
     try {
       const response = await api.post('/wallet/deposit/naira', { amount: depositAmount });
-      console.log('Deposit Response:', response);
-      
       if (response.success && response.data) {
         setPendingDeposit(response.data);
         setDepositStep('payment');
@@ -447,8 +223,6 @@ const nigerianBanks = [
     setCheckingStatus(true);
     try {
       const response = await api.get(`/wallet/deposit/status/${reference}`);
-      console.log('Status Response:', response);
-      
       if (response.success && response.data) {
         const data = response.data;
 
@@ -501,10 +275,81 @@ const nigerianBanks = [
     }
   };
 
+  // ==================== BANK ACCOUNT FUNCTIONS ====================
+
+  const verifyBankAccount = async () => {
+    if (!newAccountData.accountNumber || newAccountData.accountNumber.length !== 10) {
+      return toast.error('Please enter a valid 10-digit account number');
+    }
+
+    if (!newAccountData.bankCode) {
+      return toast.error('Please select a bank');
+    }
+
+    setVerifyingAccount(true);
+    try {
+      const response = await api.post('/wallet/verify-account', {
+        accountNumber: newAccountData.accountNumber,
+        bankCode: newAccountData.bankCode
+      });
+
+      if (response.success && response.data) {
+        setNewAccountData(prev => ({
+          ...prev,
+          accountName: response.data.accountName
+        }));
+        
+        toast.success(
+          response.data.isExisting 
+            ? 'Account already saved!' 
+            : `Account verified: ${response.data.accountName}`
+        );
+        
+        // Refresh saved accounts
+        await fetchSavedAccounts();
+        
+        // If it's a new account, move to withdrawal step
+        if (!response.data.isExisting) {
+          setWithdrawalStep('select');
+        }
+      }
+    } catch (err) {
+      console.error('Verify account error:', err);
+      toast.error(err.message || 'Account verification failed');
+    } finally {
+      setVerifyingAccount(false);
+    }
+  };
+
+  const setDefaultAccount = async (accountId) => {
+    try {
+      await api.put(`/wallet/accounts/${accountId}/default`);
+      toast.success('Default account updated');
+      await fetchSavedAccounts();
+    } catch (err) {
+      toast.error(err.message || 'Failed to set default account');
+    }
+  };
+
+  const deleteAccount = async (accountId) => {
+    if (!window.confirm('Are you sure you want to delete this account?')) return;
+
+    try {
+      await api.delete(`/wallet/accounts/${accountId}`);
+      toast.success('Account deleted');
+      await fetchSavedAccounts();
+      if (selectedAccount?.id === accountId) {
+        setSelectedAccount(null);
+      }
+    } catch (err) {
+      toast.error(err.message || 'Failed to delete account');
+    }
+  };
+
   const handleWithdraw = async (e) => {
     e.preventDefault();
 
-    if (parseFloat(withdrawalData.amount) < 100) {
+    if (!withdrawalData.amount || parseFloat(withdrawalData.amount) < 100) {
       return toast.error('Minimum withdrawal is ₦100');
     }
 
@@ -513,21 +358,25 @@ const nigerianBanks = [
       return toast.error('Insufficient balance');
     }
 
-    if (!withdrawalData.accountNumber || withdrawalData.accountNumber.length !== 10) {
-      return toast.error('Please enter a valid 10-digit account number');
-    }
-
-    if (!withdrawalData.accountName) {
-      return toast.error('Please enter account name');
+    if (!selectedAccount) {
+      return toast.error('Please select a bank account');
     }
 
     setLoading(true);
     try {
-      await api.post('/wallet/withdraw', withdrawalData);
-      toast.success('Withdrawal request submitted! Processing within 24 hours.');
-      setWithdrawalData({ amount: '', bankCode: '058', accountNumber: '', accountName: '' });
-      fetchTransactions();
-      fetchWalletData();
+      const response = await api.post('/wallet/withdraw', {
+        amount: withdrawalData.amount,
+        accountId: selectedAccount.id
+      });
+
+      if (response.success) {
+        toast.success('Withdrawal request submitted! Processing shortly.');
+        setWithdrawalData({ amount: '', accountId: null });
+        setWithdrawalStep('select');
+        setSelectedAccount(null);
+        fetchTransactions();
+        fetchWalletData();
+      }
     } catch (err) {
       toast.error(err.message || 'Withdrawal failed');
     } finally {
@@ -535,22 +384,18 @@ const nigerianBanks = [
     }
   };
 
-  const handleWithdrawalChange = (e) => {
-    setWithdrawalData({ ...withdrawalData, [e.target.name]: e.target.value });
-  };
-
   const getStatusIcon = (status) => {
     switch (status) {
       case 'completed':
         return <CheckCircle className="text-green-500" size={18} />;
       case 'pending':
+      case 'processing':
         return <Clock className="text-yellow-500" size={18} />;
       case 'failed':
       case 'cancelled':
       case 'expired':
+      case 'rejected':
         return <XCircle className="text-red-500" size={18} />;
-      case 'unmatched':
-        return <AlertTriangle className="text-orange-500" size={18} />;
       default:
         return null;
     }
@@ -567,9 +412,11 @@ const nigerianBanks = [
   const getStatusColor = (status) => {
     switch (status) {
       case 'completed': return 'text-green-500';
-      case 'pending': return 'text-yellow-500';
+      case 'pending':
+      case 'processing': return 'text-yellow-500';
       case 'failed':
       case 'cancelled':
+      case 'rejected':
       case 'expired': return 'text-red-500';
       default: return 'text-gray-500';
     }
@@ -919,86 +766,178 @@ const nigerianBanks = [
             <div>
               <h2 className="text-2xl font-bold text-white mb-6">Withdraw to Bank Account</h2>
               
-              <form onSubmit={handleWithdraw} className="space-y-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Amount (₦)</label>
-                  <input 
-                    type="number"
-                    name="amount"
-                    value={withdrawalData.amount}
-                    onChange={handleWithdrawalChange}
-                    className="w-full px-4 py-3 bg-slate-900/50 border border-slate-600 rounded-lg text-white text-lg font-bold focus:outline-none focus:ring-2 focus:ring-primary"
-                    placeholder="Enter withdrawal amount"
-                    min="100"
-                    required
-                  />
-                  <p className="text-xs text-gray-500 mt-2">
-                    Available: ₦{walletData ? (parseFloat(walletData.nairaBalance || 0) - parseFloat(walletData.lockedBalance || 0)).toLocaleString() : '0.00'} | Minimum: ₦100
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Bank</label>
-                  <select 
-                    name="bankCode"
-                    value={withdrawalData.bankCode}
-                    onChange={handleWithdrawalChange}
-                    className="w-full px-4 py-3 bg-slate-900/50 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary"
-                    required
-                  >
-                    {nigerianBanks.map(bank => (
-                      <option key={bank.code} value={bank.code}>{bank.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Account Number</label>
-                  <input 
-                    type="text"
-                    name="accountNumber"
-                    value={withdrawalData.accountNumber}
-                    onChange={handleWithdrawalChange}
-                    maxLength="10"
-                    pattern="[0-9]{10}"
-                    className="w-full px-4 py-3 bg-slate-900/50 border border-slate-600 rounded-lg text-white font-mono focus:outline-none focus:ring-2 focus:ring-primary"
-                    placeholder="0123456789"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Account Name</label>
-                  <input 
-                    type="text"
-                    name="accountName"
-                    value={withdrawalData.accountName}
-                    onChange={handleWithdrawalChange}
-                    className="w-full px-4 py-3 bg-slate-900/50 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary"
-                    placeholder="John Doe"
-                    required
-                  />
-                </div>
-
-                <button 
-                  type="submit"
-                  disabled={loading}
-                  className="w-full bg-gradient-to-r from-red-500 to-pink-600 text-white font-bold py-4 rounded-xl hover:opacity-90 transition disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {loading ? (
-                    <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  ) : (
+              {/* STEP 1: SELECT OR ADD ACCOUNT */}
+              {withdrawalStep === 'select' && (
+                <>
+                  {savedAccounts.length > 0 && (
                     <>
-                      <ArrowUpRight size={20} />
-                      Request Withdrawal
+                      <h3 className="text-lg font-semibold text-white mb-4">Saved Accounts</h3>
+                      <div className="space-y-3 mb-6">
+                        {savedAccounts.map(account => (
+                          <div 
+                            key={account.id}
+                            onClick={() => setSelectedAccount(account)}
+                            className={`bg-slate-900/50 p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                              selectedAccount?.id === account.id 
+                                ? 'border-primary bg-primary/10' 
+                                : 'border-slate-700 hover:border-slate-600'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-4">
+                                <div className="p-3 bg-slate-800 rounded-xl">
+                                  <CreditCard className="text-primary" size={20} />
+                                </div>
+                                <div>
+                                  <p className="text-white font-bold">{account.accountName}</p>
+                                  <p className="text-gray-400 text-sm font-mono">{account.accountNumber}</p>
+                                  <p className="text-gray-500 text-xs">{account.bankName}</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {account.isDefault && (
+                                  <span className="px-2 py-1 bg-green-500/20 text-green-400 text-xs rounded-lg flex items-center gap-1">
+                                    <Star size={12} fill="currentColor" /> Default
+                                  </span>
+                                )}
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setDefaultAccount(account.id);
+                                  }}
+                                  className="p-2 hover:bg-slate-700 rounded-lg transition"
+                                  title="Set as default"
+                                >
+                                  <Star size={16} className={account.isDefault ? 'text-yellow-400 fill-yellow-400' : 'text-gray-400'} />
+                                </button>
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    deleteAccount(account.id);
+                                  }}
+                                  className="p-2 hover:bg-red-500/20 rounded-lg transition"
+                                  title="Delete account"
+                                >
+                                  <Trash2 size={16} className="text-red-400" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </>
                   )}
-                </button>
-              </form>
+
+                  <button 
+                    onClick={() => setWithdrawalStep('new')}
+                    className="w-full bg-slate-700 text-white font-bold py-4 rounded-xl hover:bg-slate-600 transition flex items-center justify-center gap-2 mb-6"
+                  >
+                    <Plus size={20} />
+                    Add New Bank Account
+                  </button>
+
+                  {selectedAccount && (
+                    <>
+                      <h3 className="text-lg font-semibold text-white mb-4">Withdrawal Amount</h3>
+                      <input 
+                        type="number"
+                        value={withdrawalData.amount}
+                        onChange={(e) => setWithdrawalData({ ...withdrawalData, amount: e.target.value })}
+                        className="w-full px-4 py-3 bg-slate-900/50 border border-slate-600 rounded-lg text-white text-lg font-bold focus:outline-none focus:ring-2 focus:ring-primary mb-2"
+                        placeholder="Enter withdrawal amount"
+                        min="100"
+                      />
+                      <p className="text-xs text-gray-500 mb-6">
+                        Available: ₦{walletData ? (parseFloat(walletData.nairaBalance || 0) - parseFloat(walletData.lockedBalance || 0)).toLocaleString() : '0.00'} | Minimum: ₦100
+                      </p>
+
+                      <button 
+                        onClick={handleWithdraw}
+                        disabled={loading || !withdrawalData.amount}
+                        className="w-full bg-gradient-to-r from-red-500 to-pink-600 text-white font-bold py-4 rounded-xl hover:opacity-90 transition disabled:opacity-50 flex items-center justify-center gap-2"
+                      >
+                        {loading ? (
+                          <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <>
+                            <ArrowUpRight size={20} />
+                            Request Withdrawal
+                          </>
+                        )}
+                      </button>
+                    </>
+                  )}
+                </>
+              )}
+
+              {/* STEP 2: ADD NEW ACCOUNT */}
+              {withdrawalStep === 'new' && (
+                <>
+                  <button 
+                    onClick={() => setWithdrawalStep('select')}
+                    className="mb-6 text-gray-400 hover:text-white transition flex items-center gap-2"
+                  >
+                    ← Back to saved accounts
+                  </button>
+
+                  <div className="space-y-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Bank</label>
+                      <select 
+                        value={newAccountData.bankCode}
+                        onChange={(e) => setNewAccountData({ ...newAccountData, bankCode: e.target.value })}
+                        className="w-full px-4 py-3 bg-slate-900/50 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary"
+                      >
+                        <option value="">Select Bank</option>
+                        {banks.map(bank => (
+                          <option key={bank.code} value={bank.code}>{bank.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Account Number</label>
+                      <input 
+                        type="text"
+                        value={newAccountData.accountNumber}
+                        onChange={(e) => setNewAccountData({ ...newAccountData, accountNumber: e.target.value })}
+                        maxLength="10"
+                        className="w-full px-4 py-3 bg-slate-900/50 border border-slate-600 rounded-lg text-white font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+                        placeholder="0123456789"
+                      />
+                    </div>
+
+                    {newAccountData.accountName && (
+                      <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4">
+                        <p className="text-sm text-green-300 mb-1">Account Name</p>
+                        <p className="text-white font-bold">{newAccountData.accountName}</p>
+                      </div>
+                    )}
+
+                    <button 
+                      onClick={verifyBankAccount}
+                      disabled={verifyingAccount || !newAccountData.accountNumber || newAccountData.accountNumber.length !== 10 || !newAccountData.bankCode}
+                      className="w-full bg-primary text-white font-bold py-4 rounded-xl hover:bg-primary/80 transition disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {verifyingAccount ? (
+                        <>
+                          <Loader className="animate-spin" size={20} />
+                          Verifying Account...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle size={20} />
+                          Verify & Save Account
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </>
+              )}
 
               <div className="mt-8 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl">
                 <p className="text-sm text-yellow-300">
-                  ⚠️ Withdrawals are processed within 24 hours. Make sure your account details are correct.
+                  ⚠️ Withdrawals are processed instantly via PluzzPay. Make sure your account details are correct.
                 </p>
               </div>
             </div>
