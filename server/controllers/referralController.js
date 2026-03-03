@@ -223,7 +223,7 @@ const getStats = async (req, res) => {
       data: {
         referralCode: user.referralCode,
         type: user.referralType || 'normal',
-        percentage: isInfluencer ? (parseFloat(user.influencerPercentage) || 0) : 5,
+        percentage: isInfluencer ? (parseFloat(user.influencerPercentage) || 0) : 25,
         currentBalance: parseFloat(user.referralBalance) || 0,
         totalEarnings: parseFloat(user.totalReferralEarnings) || 0,
         totalReferrals: user.referralCount || 0,
