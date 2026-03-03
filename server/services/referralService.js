@@ -422,7 +422,7 @@ const getDashboardData = async (userId) => {
     });
 
     const isInfluencer = user.referralType === 'influencer';
-    const percentage = isInfluencer ? (parseFloat(user.influencerPercentage) || 0) : 5;
+    const percentage = isInfluencer ? (parseFloat(user.influencerPercentage) || 0) : 25;
 
     const baseUrl = process.env.FRONTEND_URL || 'https://yoursite.com';
 
@@ -436,7 +436,7 @@ const getDashboardData = async (userId) => {
       referralCount: user.referralCount || 0,
       explanation: isInfluencer 
         ? `You earn ${percentage}% commission on every loss from your referrals`
-        : 'You earn 5% bonus when your referrals place their first bet',
+        : 'You earn 25% bonus when your referrals place their first bet',
       referredUsers: referredUsers.map(u => ({
         id: u.id,
         username: u.username,
