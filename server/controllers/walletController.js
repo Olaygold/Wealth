@@ -1,4 +1,3 @@
-
 // controllers/walletController.js
 const { Wallet, Transaction, User, VirtualAccount, PendingDeposit, BankAccount } = require('../models');
 const { validateAmount } = require('../utils/validators');
@@ -9,6 +8,12 @@ const axios = require('axios');
 
 // =====================================================
 // PLUZZPAY SERVICE
+// =====================================================
+
+// controllers/walletController.js
+
+// =====================================================
+// PLUZZPAY SERVICE (UPDATED)
 // =====================================================
 
 const PLUZZPAY_API_URL = process.env.PLUZZPAY_API_URL || 'https://pluzzpay.com/api/v1';
@@ -28,17 +33,25 @@ const pluzzpayService = {
   // Get list of banks
   async getBanks() {
     try {
+      console.log('🏦 Fetching banks from PluzzPay...');
+      
       const response = await pluzzpayClient.get('/bank-transfer.php', {
         params: { action: 'getBanks' }
       });
 
-      if (!response.data.status) {
-        throw new Error(response.data.message || 'Failed to get banks');
+      console.log('PluzzPay getBanks response:', response.data);
+
+      if (!response.data || !response.data.status) {
+        throw new Error(response.data?.message || 'Failed to get banks');
       }
 
       return response.data.data.banks;
     } catch (error) {
       console.error('❌ PluzzPay getBanks error:', error.message);
+      if (error.response) {
+        console.error('Response data:', error.response.data);
+        console.error('Response status:', error.response.status);
+      }
       throw new Error('Failed to fetch banks list');
     }
   },
@@ -46,56 +59,98 @@ const pluzzpayService = {
   // Verify account number
   async verifyAccount(accountNumber, bankCode) {
     try {
+      console.log('🔍 Verifying account with PluzzPay:', accountNumber, bankCode);
+      
       const response = await pluzzpayClient.post('/bank-transfer.php', {
         action: 'lookup',
-        accountNumber,
-        bankCode
+        accountNumber: accountNumber,
+        bankCode: bankCode
       });
 
-      if (!response.data.status) {
-        throw new Error(response.data.message || 'Account verification failed');
+      console.log('PluzzPay verifyAccount response:', response.data);
+
+      if (!response.data || !response.data.status) {
+        const errorMsg = response.data?.message || 'Account verification failed';
+        throw new Error(errorMsg);
       }
 
       return {
-        accountName: response.data.data.account_name,
+        accountName: response.data.data.account_name || response.data.data.accountName,
         accountNumber: response.data.data.account_number || accountNumber,
         bankCode: response.data.data.bank_code || bankCode
       };
     } catch (error) {
       console.error('❌ PluzzPay verifyAccount error:', error.message);
-      throw new Error(error.response?.data?.message || 'Account verification failed');
+      
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', error.response.data);
+        
+        // Extract error message from response
+        const errorMessage = error.response.data?.message || 
+                           error.response.data?.error || 
+                           error.response.data?.data?.message ||
+                           'Account verification failed';
+        
+        throw new Error(errorMessage);
+      }
+      
+      throw new Error(error.message || 'Account verification failed');
     }
   },
 
   // Process bank transfer
   async transfer(accountNumber, bankCode, amount, narration = 'Withdrawal') {
     try {
-      const response = await pluzzpayClient.post('/bank-transfer.php', {
-        action: 'transfer',
+      console.log('💸 Processing transfer via PluzzPay:', {
         accountNumber,
         bankCode,
+        amount,
+        narration
+      });
+
+      const response = await pluzzpayClient.post('/bank-transfer.php', {
+        action: 'transfer',
+        accountNumber: accountNumber,
+        bankCode: bankCode,
         amount: parseFloat(amount),
         narration: narration.substring(0, 50)
       });
 
-      if (!response.data.status) {
-        throw new Error(response.data.message || 'Transfer failed');
+      console.log('PluzzPay transfer response:', response.data);
+
+      if (!response.data || !response.data.status) {
+        const errorMsg = response.data?.message || 'Transfer failed';
+        throw new Error(errorMsg);
       }
 
       return {
         success: true,
-        reference: response.data.data.reference,
-        sessionId: response.data.data.session_id,
-        amount: response.data.data.amount,
+        reference: response.data.data.reference || response.data.data.transaction_reference,
+        sessionId: response.data.data.session_id || response.data.data.sessionId,
+        amount: response.data.data.amount || amount,
         fee: response.data.data.fee || 0,
-        status: response.data.data.status
+        status: response.data.data.status || 'pending'
       };
     } catch (error) {
       console.error('❌ PluzzPay transfer error:', error.message);
-      throw new Error(error.response?.data?.message || 'Transfer failed');
+      
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', error.response.data);
+        
+        const errorMessage = error.response.data?.message || 
+                           error.response.data?.error ||
+                           'Transfer failed';
+        
+        throw new Error(errorMessage);
+      }
+      
+      throw new Error(error.message || 'Transfer failed');
     }
   }
 };
+
 
 // =====================================================
 // HELPER FUNCTIONS
