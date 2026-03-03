@@ -24,6 +24,7 @@ const {
   getAmountMismatches,
   approveAmountMismatch
 } = require('../controllers/walletController');
+
 const { protect, admin } = require('../middleware/auth');
 const { apiLimiter } = require('../middleware/rateLimiter');
 
@@ -65,16 +66,22 @@ router.get('/transactions', getTransactions);
 // =====================================================
 // ADMIN ROUTES (Require admin privileges)
 // =====================================================
-router.use(admin);
 
-// ==================== ADMIN - WITHDRAWALS ====================
-router.get('/admin/pending-withdrawals', getPendingWithdrawals);
-router.post('/admin/approve-withdrawal/:reference', approveWithdrawal);
-router.post('/admin/reject-withdrawal/:reference', rejectWithdrawal);
-router.post('/admin/bulk-approve', bulkApproveWithdrawals);
+// Check if admin middleware exists before using it
+if (typeof admin === 'function') {
+  router.use(admin);
 
-// ==================== ADMIN - DEPOSIT MISMATCHES ====================
-router.get('/admin/mismatches', getAmountMismatches);
-router.post('/admin/approve-mismatch/:reference', approveAmountMismatch);
+  // ==================== ADMIN - WITHDRAWALS ====================
+  router.get('/admin/pending-withdrawals', getPendingWithdrawals);
+  router.post('/admin/approve-withdrawal/:reference', approveWithdrawal);
+  router.post('/admin/reject-withdrawal/:reference', rejectWithdrawal);
+  router.post('/admin/bulk-approve', bulkApproveWithdrawals);
+
+  // ==================== ADMIN - DEPOSIT MISMATCHES ====================
+  router.get('/admin/mismatches', getAmountMismatches);
+  router.post('/admin/approve-mismatch/:reference', approveAmountMismatch);
+} else {
+  console.warn('⚠️ Admin middleware not found - admin routes disabled');
+}
 
 module.exports = router;
