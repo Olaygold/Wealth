@@ -58,6 +58,7 @@ class BotService {
   }
 
   // ✅ Generate balanced bet plan with UP/DOWN within threshold
+    // ✅ Generate balanced bet plan with UP/DOWN within threshold
   generateBetPlan(totalBets) {
     const bets = [];
     let upTotal = 0;
@@ -71,16 +72,23 @@ class BotService {
         // First bet is always random
         prediction = Math.random() > 0.5 ? 'up' : 'down';
       } else {
-        const totalPool = upTotal + downTotal;
-        const upPercent = totalPool > 0 ? upTotal / totalPool : 0.5;
-        const downPercent = totalPool > 0 ? downTotal / totalPool : 0.5;
-        const difference = Math.abs(upPercent - downPercent);
+        // ✅ FIX 1: Use max(upTotal, downTotal) instead of total pool
+        const largerSide = Math.max(upTotal, downTotal);
+        const difference = largerSide > 0
+          ? Math.abs(upTotal - downTotal) / largerSide
+          : 0;
 
         if (difference > this.upDownBalance) {
-          // Force balance if difference is too big
+          // ✅ Force balance immediately when threshold exceeded
           prediction = upTotal < downTotal ? 'up' : 'down';
+          console.log(
+            `⚖️  Forcing balance at bet #${i + 1}: ` +
+            `gap=${Math.abs(upTotal - downTotal).toFixed(0)} ` +
+            `diff=${(difference * 100).toFixed(1)}% > ` +
+            `threshold=${this.upDownBalance * 100}% → ${prediction.toUpperCase()}`
+          );
         } else {
-          // Slight bias toward the lower side
+          // ✅ Slight bias toward the lower side
           if (upTotal < downTotal) {
             prediction = Math.random() > 0.35 ? 'up' : 'down'; // 65% UP
           } else if (downTotal < upTotal) {
@@ -101,10 +109,11 @@ class BotService {
       const botUserId = this.getBotUserIdForIndex(i);
       const botName = i % 2 === 0 ? 'AutoTrader_1' : 'AutoTrader_2';
 
-      // ✅ Spread bets over first 5 minutes of the round
-      const maxSpreadSeconds = 300; // 5 minutes
+      // ✅ FIX 2: Spread bets over 4.5 minutes (270 seconds) NOT 5 minutes
+      // This ensures NO bets happen after betting closes
+      const maxSpreadSeconds = 270; // 4.5 minutes = safe buffer
       const baseDelay = (maxSpreadSeconds / totalBets) * i;
-      const randomVariation = (Math.random() - 0.5) * 30; // ±15 seconds
+      const randomVariation = (Math.random() - 0.5) * 20; // ±10 seconds variation
       const delay = Math.max(0, Math.floor(baseDelay + randomVariation));
 
       bets.push({
@@ -116,6 +125,30 @@ class BotService {
         placed: false
       });
     }
+
+    // ====== LOG THE PLAN ======
+    const upBets = bets.filter(b => b.prediction === 'up');
+    const downBets = bets.filter(b => b.prediction === 'down');
+
+    // ✅ FIX 3: Log uses new formula too (max side not total pool)
+    const largerSide = Math.max(upTotal, downTotal);
+    const balanceDiff = largerSide > 0
+      ? (Math.abs(upTotal - downTotal) / largerSide) * 100
+      : 0;
+
+    console.log(`📊 Bot Plan Generated:`);
+    console.log(`   Total Bets : ${totalBets}`);
+    console.log(`   UP         : ${upBets.length} bets = ₦${upTotal.toLocaleString()}`);
+    console.log(`   DOWN       : ${downBets.length} bets = ₦${downTotal.toLocaleString()}`);
+    console.log(`   Gap        : ₦${Math.abs(upTotal - downTotal).toLocaleString()}`);
+    console.log(`   Imbalance  : ${balanceDiff.toFixed(1)}% (vs larger side)`);
+    console.log(`   Threshold  : ${this.upDownBalance * 100}%`);
+    console.log(`   Spread     : 0 - 270 seconds (4.5 min safe window)`);
+    console.log(`   Last bet   : ~${bets[bets.length - 1].delay}s into round`);
+
+    return bets;
+  }
+  
 
     // ====== LOG THE PLAN ======
     const upBets = bets.filter(b => b.prediction === 'up');
