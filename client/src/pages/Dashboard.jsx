@@ -1,6 +1,6 @@
 
-
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
@@ -33,7 +33,12 @@ import {
   Wifi,
   WifiOff,
   TrendingUp as TrendUp,
-  Users
+  Users,
+  Gift,
+  Share2,
+  Sparkles,
+  Star,
+  ExternalLink
 } from 'lucide-react';
 
 // ==================== HELPER FUNCTIONS ====================
@@ -52,6 +57,218 @@ const formatTime = (seconds) => {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
 
+// ==================== REFERRAL PROMO POPUP ====================
+const ReferralPromoPopup = ({ isOpen, onClose, onGoToReferral }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-300">
+      <div className="bg-gradient-to-br from-slate-900 via-purple-900/20 to-slate-900 rounded-3xl max-w-md w-full border-2 border-purple-500/30 overflow-hidden shadow-2xl shadow-purple-500/20 animate-in zoom-in-95 duration-300">
+        
+        {/* Header with Animation */}
+        <div className="relative bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 p-8 text-center overflow-hidden">
+          {/* Animated Background Pattern */}
+          <div className="absolute inset-0 opacity-30">
+            <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48cGF0dGVybiBpZD0iYSIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBwYXR0ZXJuVHJhbnNmb3JtPSJyb3RhdGUoNDUpIj48cGF0aCBkPSJNLTEwIDMwaDYwdjJoLTYweiIgZmlsbD0iI2ZmZiIgZmlsbC1vcGFjaXR5PSIuMSIvPjwvcGF0dGVybj48L2RlZnM+PHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsbD0idXJsKCNhKSIvPjwvc3ZnPg==')]"></div>
+          </div>
+          
+          {/* Close Button */}
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 text-white/80 hover:text-white transition z-10 bg-white/10 rounded-full p-2 hover:bg-white/20"
+          >
+            <X size={24} />
+          </button>
+
+          <div className="relative z-10">
+            {/* Animated Gift Icon */}
+            <div className="w-24 h-24 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce shadow-xl">
+              <Gift className="w-12 h-12 text-white" />
+            </div>
+            
+            <h2 className="text-3xl font-black text-white mb-2">
+              🎁 Earn 25% Commission!
+            </h2>
+            <p className="text-white/90 text-lg">
+              Don't miss out on FREE money!
+            </p>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="p-6">
+          {/* Main Message */}
+          <div className="text-center mb-6">
+            <p className="text-gray-300 text-lg leading-relaxed">
+              Refer your friends to <span className="text-primary font-bold">Wealth Trading</span> and earn 
+              <span className="text-green-400 font-black text-xl"> 25% commission</span> from their 
+              <span className="text-yellow-400 font-bold"> first bet!</span>
+            </p>
+          </div>
+
+          {/* Benefits */}
+          <div className="bg-slate-800/50 rounded-2xl p-5 mb-6 border border-slate-700">
+            <div className="space-y-4">
+              <div className="flex items-center gap-4">
+                <div className="flex-shrink-0 w-10 h-10 bg-green-500/20 rounded-full flex items-center justify-center">
+                  <Sparkles className="text-green-400" size={20} />
+                </div>
+                <p className="text-gray-300">
+                  <span className="text-white font-bold">Easy Money:</span> Share your link, get paid!
+                </p>
+              </div>
+              
+              <div className="flex items-center gap-4">
+                <div className="flex-shrink-0 w-10 h-10 bg-purple-500/20 rounded-full flex items-center justify-center">
+                  <Users className="text-purple-400" size={20} />
+                </div>
+                <p className="text-gray-300">
+                  <span className="text-white font-bold">Unlimited Referrals:</span> No cap on earnings!
+                </p>
+              </div>
+              
+              <div className="flex items-center gap-4">
+                <div className="flex-shrink-0 w-10 h-10 bg-orange-500/20 rounded-full flex items-center justify-center">
+                  <Zap className="text-orange-400" size={20} />
+                </div>
+                <p className="text-gray-300">
+                  <span className="text-white font-bold">Instant Credit:</span> Earnings added automatically!
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Highlight Box */}
+          <div className="bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border-2 border-yellow-500/40 rounded-2xl p-4 mb-6 text-center">
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <Star className="text-yellow-400" size={20} />
+              <span className="text-yellow-400 font-bold text-lg">LIMITED TIME OFFER!</span>
+              <Star className="text-yellow-400" size={20} />
+            </div>
+            <p className="text-yellow-300 text-sm">
+              The more friends you refer, the more you earn! Start sharing now!
+            </p>
+          </div>
+
+          {/* CTA Button */}
+          <button
+            onClick={onGoToReferral}
+            className="w-full py-4 bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 hover:from-purple-700 hover:via-pink-700 hover:to-orange-600 text-white rounded-2xl font-black text-lg transition-all transform hover:scale-[1.02] shadow-xl shadow-purple-500/30 flex items-center justify-center gap-3"
+          >
+            <Gift size={24} />
+            Start Referring & Earn Now!
+            <ExternalLink size={20} />
+          </button>
+
+          {/* Skip Link */}
+          <button
+            onClick={onClose}
+            className="w-full mt-3 py-3 text-gray-400 hover:text-white transition text-sm"
+          >
+            Maybe later
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ==================== REFERRAL SLIDE-UP BANNER ====================
+const ReferralBanner = ({ onGoToReferral, onDismiss }) => {
+  const [isVisible, setIsVisible] = useState(true);
+
+  if (!isVisible) return null;
+
+  return (
+    <div className="fixed bottom-20 left-0 right-0 z-40 px-4 animate-in slide-in-from-bottom-10 duration-500">
+      <div className="max-w-2xl mx-auto">
+        <div className="bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 p-1 rounded-2xl shadow-2xl shadow-purple-500/40">
+          <div className="bg-slate-900/95 backdrop-blur-sm rounded-xl p-4">
+            <div className="flex items-center justify-between gap-4">
+              {/* Icon & Text */}
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <div className="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center animate-pulse">
+                  <Gift className="text-white" size={24} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-white font-bold text-sm sm:text-base truncate">
+                    🎁 Earn 25% Commission Per Referral!
+                  </h3>
+                  <p className="text-gray-300 text-xs sm:text-sm truncate">
+                    Invite friends & earn from their first bet
+                  </p>
+                </div>
+              </div>
+              
+              {/* Actions */}
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button
+                  onClick={onGoToReferral}
+                  className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl font-bold text-sm transition whitespace-nowrap shadow-lg"
+                >
+                  Refer Now
+                </button>
+                <button
+                  onClick={() => {
+                    setIsVisible(false);
+                    onDismiss();
+                  }}
+                  className="p-2 text-gray-400 hover:text-white transition rounded-lg hover:bg-slate-800"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ==================== FLOATING REFERRAL BUTTON ====================
+const FloatingReferralButton = ({ onClick }) => {
+  const [isPulsing, setIsPulsing] = useState(true);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setIsPulsing(true);
+      setTimeout(() => setIsPulsing(false), 3000);
+    }, 8000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <button
+      onClick={onClick}
+      className={`fixed bottom-28 right-4 lg:bottom-8 lg:right-8 z-30 group ${isPulsing ? 'animate-bounce' : ''}`}
+      title="Refer Friends & Earn 25%"
+    >
+      <div className="relative">
+        {/* Glow Effect */}
+        <div className="absolute inset-0 bg-gradient-to-r from-purple-600 to-pink-600 rounded-full blur-xl opacity-60 group-hover:opacity-100 transition-opacity"></div>
+        
+        {/* Main Button */}
+        <div className="relative w-16 h-16 bg-gradient-to-r from-purple-600 to-pink-600 rounded-full flex items-center justify-center shadow-2xl shadow-purple-500/50 group-hover:scale-110 transition-transform border-2 border-white/20">
+          <Gift className="text-white" size={28} />
+        </div>
+
+        {/* Notification Badge */}
+        <div className="absolute -top-1 -right-1 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center border-2 border-slate-900 animate-pulse">
+          <span className="text-white text-xs font-black">$</span>
+        </div>
+
+        {/* Tooltip */}
+        <div className="absolute right-full mr-3 top-1/2 -translate-y-1/2 bg-slate-800 text-white px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-xl">
+          Earn 25% Commission!
+          <div className="absolute left-full top-1/2 -translate-y-1/2 border-8 border-transparent border-l-slate-800"></div>
+        </div>
+      </div>
+    </button>
+  );
+};
+
 // ==================== PROFESSIONAL TRADING CHART ====================
 const TradingChart = ({ priceHistory, startPrice, currentPrice }) => {
   const chartContainerRef = useRef(null);
@@ -62,7 +279,6 @@ const TradingChart = ({ priceHistory, startPrice, currentPrice }) => {
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
-    // Create chart
     const chart = createChart(chartContainerRef.current, {
       layout: {
         background: { type: ColorType.Solid, color: 'transparent' },
@@ -108,7 +324,6 @@ const TradingChart = ({ priceHistory, startPrice, currentPrice }) => {
       },
     });
 
-    // Add area series with gradient
     const areaSeries = chart.addAreaSeries({
       lineColor: '#6366f1',
       topColor: 'rgba(99, 102, 241, 0.4)',
@@ -123,7 +338,6 @@ const TradingChart = ({ priceHistory, startPrice, currentPrice }) => {
     chartRef.current = chart;
     seriesRef.current = areaSeries;
 
-    // Handle resize
     const handleResize = () => {
       if (chartContainerRef.current && chartRef.current) {
         chartRef.current.applyOptions({ 
@@ -142,16 +356,13 @@ const TradingChart = ({ priceHistory, startPrice, currentPrice }) => {
     };
   }, []);
 
-  // Update start price line
   useEffect(() => {
     if (!seriesRef.current || !startPrice || startPrice <= 0) return;
 
-    // Remove old price line
     if (priceLineRef.current) {
       seriesRef.current.removePriceLine(priceLineRef.current);
     }
 
-    // Add new start price line
     priceLineRef.current = seriesRef.current.createPriceLine({
       price: startPrice,
       color: '#f59e0b',
@@ -162,7 +373,6 @@ const TradingChart = ({ priceHistory, startPrice, currentPrice }) => {
     });
   }, [startPrice]);
 
-  // Update chart data
   useEffect(() => {
     if (!seriesRef.current || priceHistory.length === 0) return;
 
@@ -174,7 +384,6 @@ const TradingChart = ({ priceHistory, startPrice, currentPrice }) => {
 
     seriesRef.current.setData(chartData);
 
-    // Fit content
     if (chartRef.current) {
       chartRef.current.timeScale().fitContent();
     }
@@ -217,7 +426,6 @@ const LivePoolIndicator = ({ totalUp, totalDown, upBets, downBets }) => {
         </span>
       </div>
       
-      {/* Progress Bar */}
       <div className="h-4 bg-slate-700 rounded-full overflow-hidden flex mb-3">
         <div 
           className="bg-gradient-to-r from-green-600 to-green-400 transition-all duration-500 ease-out flex items-center justify-center"
@@ -237,7 +445,6 @@ const LivePoolIndicator = ({ totalUp, totalDown, upBets, downBets }) => {
         </div>
       </div>
 
-      {/* Stats */}
       <div className="grid grid-cols-2 gap-4">
         <div className="flex items-center justify-between bg-green-500/10 p-3 rounded-lg">
           <div className="flex items-center gap-2">
@@ -261,7 +468,6 @@ const LivePoolIndicator = ({ totalUp, totalDown, upBets, downBets }) => {
         </div>
       </div>
 
-      {/* Total Pool */}
       <div className="mt-3 pt-3 border-t border-slate-700 text-center">
         <span className="text-gray-400 text-sm">Total Pool: </span>
         <span className="text-white font-black text-lg">₦{formatCurrency(total)}</span>
@@ -306,6 +512,12 @@ const UserGuideModal = ({ isOpen, onClose }) => {
       tip: "Higher multiplier = More profit if you win!"
     },
     {
+      icon: <Gift className="w-12 h-12 text-purple-500" />,
+      title: "Refer & Earn 25% 🎁",
+      content: "Invite friends and earn 25% commission from their FIRST bet!\n\n• Share your referral link\n• They sign up & place first bet\n• You earn 25% instantly!",
+      tip: "Unlimited referrals = Unlimited earnings!"
+    },
+    {
       icon: <Shield className="w-12 h-12 text-purple-500" />,
       title: "Fair System Rules 📋",
       content: "• No upfront fees - full amount goes to pool\n• 30% fee only from LOSERS' pool\n• Winners share 70% of losers' pool\n• Tie = Full refund to everyone",
@@ -318,7 +530,6 @@ const UserGuideModal = ({ isOpen, onClose }) => {
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-slate-900 rounded-3xl max-w-md w-full border border-slate-700 overflow-hidden animate-in zoom-in-95 duration-300">
-        {/* Header */}
         <div className="bg-gradient-to-r from-primary to-purple-600 p-6 text-center relative">
           <button
             onClick={onClose}
@@ -332,7 +543,6 @@ const UserGuideModal = ({ isOpen, onClose }) => {
           <h2 className="text-2xl font-bold text-white">{steps[currentStep].title}</h2>
         </div>
 
-        {/* Content */}
         <div className="p-6">
           <p className="text-gray-300 whitespace-pre-line text-center mb-4 leading-relaxed">
             {steps[currentStep].content}
@@ -344,7 +554,6 @@ const UserGuideModal = ({ isOpen, onClose }) => {
           </div>
         </div>
 
-        {/* Progress Dots */}
         <div className="flex justify-center gap-2 pb-4">
           {steps.map((_, idx) => (
             <button
@@ -357,7 +566,6 @@ const UserGuideModal = ({ isOpen, onClose }) => {
           ))}
         </div>
 
-        {/* Navigation */}
         <div className="p-6 pt-0 flex gap-3">
           {currentStep > 0 && (
             <button
@@ -392,6 +600,7 @@ const UserGuideModal = ({ isOpen, onClose }) => {
 
 // ==================== MAIN DASHBOARD COMPONENT ====================
 const Dashboard = () => {
+  const navigate = useNavigate();
   const { socket, isConnected } = useSocket();
   const { user } = useAuth();
 
@@ -412,12 +621,83 @@ const Dashboard = () => {
   const [walletData, setWalletData] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
 
+  // ========== REFERRAL PROMO STATES ==========
+  const [showReferralPopup, setShowReferralPopup] = useState(false);
+  const [showReferralBanner, setShowReferralBanner] = useState(false);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+
   // ========== CALCULATED VALUES ==========
   const walletBalance = parseFloat(walletData?.nairaBalance || 0);
   const lockedBalance = parseFloat(walletData?.lockedBalance || 0);
   const availableBalance = roundToTwo(walletBalance - lockedBalance);
   const priceChange = roundStartPrice > 0 ? ((currentPrice - roundStartPrice) / roundStartPrice) * 100 : 0;
   const canBet = currentRound?.status === 'active' && timeLeft >= 10;
+
+  // ========== NAVIGATE TO REFERRAL PAGE ==========
+  const goToReferralPage = () => {
+    setShowReferralPopup(false);
+    setShowReferralBanner(false);
+    navigate('/referral');
+  };
+
+  // ========== SMART REFERRAL POPUP TIMING ==========
+  useEffect(() => {
+    if (!user) return;
+
+    const lastPopupTime = localStorage.getItem('lastReferralPromoTime');
+    const now = Date.now();
+    const sixHours = 6 * 60 * 60 * 1000;
+
+    if (!lastPopupTime || (now - parseInt(lastPopupTime)) > sixHours) {
+      const timer = setTimeout(() => {
+        setShowReferralPopup(true);
+        localStorage.setItem('lastReferralPromoTime', now.toString());
+      }, 15000);
+
+      return () => clearTimeout(timer);
+    } else {
+      const oneHour = 60 * 60 * 1000;
+      if ((now - parseInt(lastPopupTime)) > oneHour && !bannerDismissed) {
+        setTimeout(() => {
+          setShowReferralBanner(true);
+        }, 30000);
+      }
+    }
+  }, [user, bannerDismissed]);
+
+  // ========== SHOW POPUP AFTER BIG WIN ==========
+  useEffect(() => {
+    if (!socket || !isConnected) return;
+
+    const handleBetResult = (data) => {
+      fetchMyBets();
+      fetchWalletData();
+      
+      if (data.result === 'win') {
+        toast.success(`🎉 You WON ₦${data.payout?.toLocaleString()}! (${data.multiplier}x)`, { duration: 5000 });
+        
+        if (data.payout > 2000) {
+          setTimeout(() => {
+            setShowReferralPopup(true);
+            toast('🎁 Share your success! Refer friends & earn 25%!', {
+              duration: 5000,
+              icon: '💰'
+            });
+          }, 4000);
+        }
+      } else if (data.result === 'loss') {
+        toast.error(`😢 You lost ₦${Math.abs(data.profit || data.amount)?.toLocaleString()}`, { duration: 4000 });
+      } else if (data.result === 'refund') {
+        toast.success(`🔄 Refunded ₦${data.payout?.toLocaleString()}`, { duration: 4000 });
+      }
+    };
+
+    socket.on('bet_result', handleBetResult);
+
+    return () => {
+      socket.off('bet_result', handleBetResult);
+    };
+  }, [socket, isConnected]);
 
   // ========== MULTIPLIER CALCULATION (INCLUDING USER'S BET) ==========
   const calculatePotentialPayout = useCallback((prediction) => {
@@ -434,14 +714,12 @@ const Dashboard = () => {
     let totalUp = parseFloat(currentRound.totalUpAmount || 0);
     let totalDown = parseFloat(currentRound.totalDownAmount || 0);
 
-    // Add user's bet to calculation
     if (prediction === 'up') {
       totalUp += betAmount;
     } else {
       totalDown += betAmount;
     }
 
-    // Check if there are opponents
     const hasOpponents = prediction === 'up' ? totalDown > 0 : totalUp > 0;
 
     if (!hasOpponents) {
@@ -454,7 +732,6 @@ const Dashboard = () => {
       };
     }
 
-    // Calculate multiplier with user's bet included
     let multiplier;
     if (prediction === 'up') {
       multiplier = roundToTwo(1 + (totalDown * 0.7) / totalUp);
@@ -697,21 +974,6 @@ const Dashboard = () => {
       }));
     });
 
-    // Bet result for current user
-    socket.on('bet_result', (data) => {
-      console.log('🎯 Bet result:', data);
-      fetchMyBets();
-      fetchWalletData();
-      
-      if (data.result === 'win') {
-        toast.success(`🎉 You WON ₦${data.payout?.toLocaleString()}! (${data.multiplier}x)`, { duration: 5000 });
-      } else if (data.result === 'loss') {
-        toast.error(`😢 You lost ₦${Math.abs(data.profit || data.amount)?.toLocaleString()}`, { duration: 4000 });
-      } else if (data.result === 'refund') {
-        toast.success(`🔄 Refunded ₦${data.payout?.toLocaleString()}`, { duration: 4000 });
-      }
-    });
-
     return () => {
       socket.off('price_update');
       socket.off('bet_placed');
@@ -719,7 +981,6 @@ const Dashboard = () => {
       socket.off('round_end');
       socket.off('round_lock');
       socket.off('balance_update');
-      socket.off('bet_result');
     };
   }, [socket, isConnected]);
 
@@ -825,10 +1086,27 @@ const Dashboard = () => {
   // ========== MAIN RENDER ==========
   return (
     <div className="min-h-screen bg-darker pb-24 lg:pb-8">
-      {/* User Guide Modal */}
+      {/* ========== MODALS ========== */}
       <UserGuideModal isOpen={showGuide} onClose={() => setShowGuide(false)} />
+      
+      <ReferralPromoPopup 
+        isOpen={showReferralPopup} 
+        onClose={() => setShowReferralPopup(false)}
+        onGoToReferral={goToReferralPage}
+      />
 
-      {/* Connection Status Banner */}
+      {/* ========== FLOATING REFERRAL BUTTON ========== */}
+      <FloatingReferralButton onClick={() => setShowReferralPopup(true)} />
+
+      {/* ========== REFERRAL BANNER ========== */}
+      {showReferralBanner && !bannerDismissed && (
+        <ReferralBanner 
+          onGoToReferral={goToReferralPage}
+          onDismiss={() => setBannerDismissed(true)}
+        />
+      )}
+
+      {/* ========== CONNECTION STATUS BANNER ========== */}
       {!isConnected && (
         <div className="bg-yellow-500/10 border-b border-yellow-500/30 px-4 py-3 flex items-center justify-center gap-2">
           <WifiOff className="text-yellow-500" size={18} />
@@ -869,6 +1147,15 @@ const Dashboard = () => {
               title="How to Play"
             >
               <HelpCircle size={20} />
+            </button>
+
+            {/* Referral Button in Header */}
+            <button
+              onClick={() => setShowReferralPopup(true)}
+              className="p-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl border border-purple-500/50 transition hover:from-purple-700 hover:to-pink-700 hover:shadow-lg hover:shadow-purple-500/30"
+              title="Refer & Earn 25%"
+            >
+              <Gift size={20} />
             </button>
 
             {/* Refresh Button */}
@@ -1419,7 +1706,7 @@ const Dashboard = () => {
         </div>
 
         {/* ==================== MY ACTIVE BETS ==================== */}
-        <div className="bg-slate-800/40 p-6 rounded-3xl border border-slate-700">
+        <div className="bg-slate-800/40 p-6 rounded-3xl border border-slate-700 mb-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-bold text-white flex items-center gap-2">
               <Activity size={20} className="text-primary" />
@@ -1439,10 +1726,10 @@ const Dashboard = () => {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {myActiveBets.map(bet => {
-                const betAmount = parseFloat(bet.stakeAmount || bet.amount);
+                const betAmountValue = parseFloat(bet.stakeAmount || bet.amount);
                 const multiplier = bet.currentMultiplierRaw || 1.7;
-                const potentialPayout = roundToTwo(betAmount * multiplier);
-                const potentialProfit = roundToTwo(potentialPayout - betAmount);
+                const potentialPayout = roundToTwo(betAmountValue * multiplier);
+                const potentialProfit = roundToTwo(potentialPayout - betAmountValue);
 
                 return (
                   <div
@@ -1496,6 +1783,31 @@ const Dashboard = () => {
               })}
             </div>
           )}
+        </div>
+
+        {/* ==================== REFERRAL PROMO CARD (BOTTOM) ==================== */}
+        <div className="bg-gradient-to-r from-purple-600/20 via-pink-600/20 to-orange-500/20 p-6 rounded-3xl border border-purple-500/30">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl flex items-center justify-center flex-shrink-0 animate-pulse">
+                <Gift className="text-white" size={28} />
+              </div>
+              <div>
+                <h3 className="text-white font-bold text-lg">Refer Friends & Earn 25%! 🎁</h3>
+                <p className="text-gray-300 text-sm">
+                  Earn 25% commission from your referral's first bet!
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={goToReferralPage}
+              className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-purple-500/30"
+            >
+              <Share2 size={18} />
+              Start Referring
+              <ChevronRight size={18} />
+            </button>
+          </div>
         </div>
 
       </div>
