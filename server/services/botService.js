@@ -15,7 +15,6 @@ class BotService {
     this.maxBetAmount = parseInt(process.env.BOT_MAX_AMOUNT) || 800;
     
     // ====== BALANCE CONFIG ======
-    // Max % difference between UP and DOWN totals
     this.upDownBalance = parseFloat(process.env.BOT_BALANCE_THRESHOLD) || 0.15;
     
     // ====== YOUR 2 BOT USER IDs ======
@@ -36,29 +35,25 @@ class BotService {
 
   // ==================== HELPER FUNCTIONS ====================
 
-  // ✅ Generate random bet amount (rounded to 50)
   getRandomAmount() {
     const amount = Math.floor(
       Math.random() * (this.maxBetAmount - this.minBetAmount + 1)
     ) + this.minBetAmount;
-    // Round to nearest 50 - looks natural (300, 350, 400, 450, 500...)
     return Math.max(100, Math.round(amount / 50) * 50);
   }
 
-  // ✅ Get random number of bets for this round
   getRandomBetCount() {
     return Math.floor(
       Math.random() * (this.maxBetsPerRound - this.minBetsPerRound + 1)
     ) + this.minBetsPerRound;
   }
 
-  // ✅ Alternate bots: even index = bot1, odd index = bot2
   getBotUserIdForIndex(index) {
     return index % 2 === 0 ? this.botUser1Id : this.botUser2Id;
   }
 
-  // ✅ Generate balanced bet plan with UP/DOWN within threshold
-    // ✅ Generate balanced bet plan with UP/DOWN within threshold
+  // ==================== GENERATE BET PLAN ====================
+
   generateBetPlan(totalBets) {
     const bets = [];
     let upTotal = 0;
@@ -69,17 +64,14 @@ class BotService {
       let prediction;
 
       if (i === 0) {
-        // First bet is always random
         prediction = Math.random() > 0.5 ? 'up' : 'down';
       } else {
-        // ✅ FIX 1: Use max(upTotal, downTotal) instead of total pool
         const largerSide = Math.max(upTotal, downTotal);
         const difference = largerSide > 0
           ? Math.abs(upTotal - downTotal) / largerSide
           : 0;
 
         if (difference > this.upDownBalance) {
-          // ✅ Force balance immediately when threshold exceeded
           prediction = upTotal < downTotal ? 'up' : 'down';
           console.log(
             `⚖️  Forcing balance at bet #${i + 1}: ` +
@@ -88,13 +80,12 @@ class BotService {
             `threshold=${this.upDownBalance * 100}% → ${prediction.toUpperCase()}`
           );
         } else {
-          // ✅ Slight bias toward the lower side
           if (upTotal < downTotal) {
-            prediction = Math.random() > 0.35 ? 'up' : 'down'; // 65% UP
+            prediction = Math.random() > 0.35 ? 'up' : 'down';
           } else if (downTotal < upTotal) {
-            prediction = Math.random() > 0.65 ? 'up' : 'down'; // 35% UP
+            prediction = Math.random() > 0.65 ? 'up' : 'down';
           } else {
-            prediction = Math.random() > 0.5 ? 'up' : 'down'; // 50/50
+            prediction = Math.random() > 0.5 ? 'up' : 'down';
           }
         }
       }
@@ -105,15 +96,12 @@ class BotService {
         downTotal += amount;
       }
 
-      // Alternate between bot1 and bot2
       const botUserId = this.getBotUserIdForIndex(i);
       const botName = i % 2 === 0 ? 'AutoTrader_1' : 'AutoTrader_2';
 
-      // ✅ FIX 2: Spread bets over 4.5 minutes (270 seconds) NOT 5 minutes
-      // This ensures NO bets happen after betting closes
-      const maxSpreadSeconds = 270; // 4.5 minutes = safe buffer
+      const maxSpreadSeconds = 270;
       const baseDelay = (maxSpreadSeconds / totalBets) * i;
-      const randomVariation = (Math.random() - 0.5) * 20; // ±10 seconds variation
+      const randomVariation = (Math.random() - 0.5) * 20;
       const delay = Math.max(0, Math.floor(baseDelay + randomVariation));
 
       bets.push({
@@ -126,17 +114,15 @@ class BotService {
       });
     }
 
-    // ====== LOG THE PLAN ======
     const upBets = bets.filter(b => b.prediction === 'up');
     const downBets = bets.filter(b => b.prediction === 'down');
 
-    // ✅ FIX 3: Log uses new formula too (max side not total pool)
     const largerSide = Math.max(upTotal, downTotal);
     const balanceDiff = largerSide > 0
       ? (Math.abs(upTotal - downTotal) / largerSide) * 100
       : 0;
 
-    console.log(`📊 Bot Plan Generated:`);
+    console.log('📊 Bot Plan Generated:');
     console.log(`   Total Bets : ${totalBets}`);
     console.log(`   UP         : ${upBets.length} bets = ₦${upTotal.toLocaleString()}`);
     console.log(`   DOWN       : ${downBets.length} bets = ₦${downTotal.toLocaleString()}`);
@@ -144,22 +130,6 @@ class BotService {
     console.log(`   Imbalance  : ${balanceDiff.toFixed(1)}% (vs larger side)`);
     console.log(`   Threshold  : ${this.upDownBalance * 100}%`);
     console.log(`   Spread     : 0 - 270 seconds (4.5 min safe window)`);
-    console.log(`   Last bet   : ~${bets[bets.length - 1].delay}s into round`);
-
-    return bets;
-  }
-  
-
-    // ====== LOG THE PLAN ======
-    const upBets = bets.filter(b => b.prediction === 'up');
-    const downBets = bets.filter(b => b.prediction === 'down');
-    const balanceDiff = Math.abs(upTotal - downTotal) / (upTotal + downTotal) * 100;
-    
-    console.log(`📊 Bot Plan Generated:`);
-    console.log(`   Total Bets: ${totalBets}`);
-    console.log(`   UP: ${upBets.length} bets = ₦${upTotal.toLocaleString()}`);
-    console.log(`   DOWN: ${downBets.length} bets = ₦${downTotal.toLocaleString()}`);
-    console.log(`   Balance Diff: ${balanceDiff.toFixed(1)}%`);
 
     return bets;
   }
@@ -170,7 +140,6 @@ class BotService {
     if (!this.isEnabled) return;
     if (!round || round.status !== 'active') return;
 
-    // ✅ Validate bot IDs are configured
     if (!this.botUser1Id || !this.botUser2Id) {
       console.error('❌ Bot user IDs not configured in .env');
       return;
@@ -179,7 +148,6 @@ class BotService {
     const roundId = round.id;
     const now = new Date();
 
-    // ✅ Initialize plan for this round
     if (!this.roundBotStatus.has(roundId)) {
       const betCount = this.getRandomBetCount();
       const betPlan = this.generateBetPlan(betCount);
@@ -197,14 +165,11 @@ class BotService {
     const status = this.roundBotStatus.get(roundId);
     const elapsedSeconds = (now - status.startTime) / 1000;
 
-    // ✅ Check each bet in plan
     for (let i = 0; i < status.betPlan.length; i++) {
       const bet = status.betPlan[i];
 
-      // Skip already placed bets
       if (bet.placed) continue;
 
-      // Check if it's time to place this bet
       if (elapsedSeconds >= bet.delay) {
         const success = await this.placeBotBet(
           round,
@@ -218,7 +183,6 @@ class BotService {
         );
 
         if (success) {
-          // Mark as placed
           status.betPlan[i].placed = true;
           status.placedCount++;
           this.roundBotStatus.set(roundId, status);
@@ -231,8 +195,6 @@ class BotService {
 
   async placeBotBet(round, botUserId, prediction, amount, io, botName, betNumber, totalBets) {
     try {
-      // ✅ Check if this bot already placed enough bets
-      // Each bot can place multiple bets in the same round
       const botBetsInRound = await Bet.count({
         where: {
           roundId: round.id,
@@ -240,7 +202,6 @@ class BotService {
         }
       });
 
-      // ✅ Each bot can place up to half the total bets
       const maxBetsPerBot = Math.ceil(totalBets / 2);
       
       if (botBetsInRound >= maxBetsPerBot) {
@@ -248,7 +209,6 @@ class BotService {
         return false;
       }
 
-      // ✅ Create the bet
       const bet = await Bet.create({
         userId: botUserId,
         roundId: round.id,
@@ -261,7 +221,6 @@ class BotService {
         createdAt: new Date()
       });
 
-      // ✅ Update round totals
       if (prediction === 'up') {
         await round.increment('totalUpAmount', { by: amount });
         await round.increment('totalUpBets', { by: 1 });
@@ -270,10 +229,8 @@ class BotService {
         await round.increment('totalDownBets', { by: 1 });
       }
 
-      // ✅ Reload round to get fresh data
       await round.reload();
 
-      // ✅ Calculate multipliers
       const totalUp = parseFloat(round.totalUpAmount || 0);
       const totalDown = parseFloat(round.totalDownAmount || 0);
 
@@ -281,15 +238,10 @@ class BotService {
       let downMultiplier = 1.7;
 
       if (totalUp > 0 && totalDown > 0) {
-        upMultiplier = parseFloat(
-          (1 + (totalDown * 0.7) / totalUp).toFixed(2)
-        );
-        downMultiplier = parseFloat(
-          (1 + (totalUp * 0.7) / totalDown).toFixed(2)
-        );
+        upMultiplier = parseFloat((1 + (totalDown * 0.7) / totalUp).toFixed(2));
+        downMultiplier = parseFloat((1 + (totalUp * 0.7) / totalDown).toFixed(2));
       }
 
-      // ✅ Emit to all connected clients
       if (io) {
         io.emit('bet_placed', {
           roundId: round.id,
@@ -305,17 +257,14 @@ class BotService {
         });
       }
 
-      // ✅ Log the bet
       console.log(
         `🤖 ${botName} bet #${betNumber}/${totalBets}: ` +
         `${prediction.toUpperCase()} ₦${amount.toLocaleString()} ` +
         `(Round #${round.roundNumber})`
       );
       console.log(
-        `   Pool: UP ₦${totalUp.toLocaleString()} ` +
-        `(${round.totalUpBets} bets) | ` +
-        `DOWN ₦${totalDown.toLocaleString()} ` +
-        `(${round.totalDownBets} bets)`
+        `   Pool: UP ₦${totalUp.toLocaleString()} (${round.totalUpBets} bets) | ` +
+        `DOWN ₦${totalDown.toLocaleString()} (${round.totalDownBets} bets)`
       );
 
       return true;
