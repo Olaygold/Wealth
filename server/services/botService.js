@@ -1,4 +1,5 @@
 
+
 // server/services/botService.js
 const { Bet, Round } = require('../models');
 
@@ -15,6 +16,7 @@ class BotService {
     this.maxBetAmount = parseInt(process.env.BOT_MAX_AMOUNT) || 800;
     
     // ====== BALANCE CONFIG ======
+    // Max % difference between UP and DOWN (0.15 = 15%)
     this.upDownBalance = parseFloat(process.env.BOT_BALANCE_THRESHOLD) || 0.15;
     
     // ====== YOUR 2 BOT USER IDs ======
@@ -35,73 +37,150 @@ class BotService {
 
   // ==================== HELPER FUNCTIONS ====================
 
+  // Generate random bet amount (rounded to 50)
   getRandomAmount() {
     const amount = Math.floor(
       Math.random() * (this.maxBetAmount - this.minBetAmount + 1)
     ) + this.minBetAmount;
+    // Round to nearest 50 - looks natural (300, 350, 400, 450, 500...)
     return Math.max(100, Math.round(amount / 50) * 50);
   }
 
+  // Get random number of bets for this round
   getRandomBetCount() {
     return Math.floor(
       Math.random() * (this.maxBetsPerRound - this.minBetsPerRound + 1)
     ) + this.minBetsPerRound;
   }
 
+  // Alternate bots: even index = bot1, odd index = bot2
   getBotUserIdForIndex(index) {
     return index % 2 === 0 ? this.botUser1Id : this.botUser2Id;
   }
 
-  // ==================== GENERATE BET PLAN ====================
+  // ==================== GENERATE BET PLAN - STRICT BALANCING ====================
 
   generateBetPlan(totalBets) {
     const bets = [];
     let upTotal = 0;
     let downTotal = 0;
+    let consecutiveForcedBets = 0;
 
     for (let i = 0; i < totalBets; i++) {
       const amount = this.getRandomAmount();
       let prediction;
 
       if (i === 0) {
+        // First bet is always random
         prediction = Math.random() > 0.5 ? 'up' : 'down';
+        consecutiveForcedBets = 0;
       } else {
+        // Calculate CURRENT imbalance using MAX side (not total pool)
         const largerSide = Math.max(upTotal, downTotal);
-        const difference = largerSide > 0
+        const currentDifference = largerSide > 0
           ? Math.abs(upTotal - downTotal) / largerSide
           : 0;
 
-        if (difference > this.upDownBalance) {
+        // Simulate what happens if we bet on each side
+        const upTotalIfBetUp = upTotal + amount;
+        const downTotalIfBetDown = downTotal + amount;
+
+        const largerIfUp = Math.max(upTotalIfBetUp, downTotal);
+        const largerIfDown = Math.max(upTotal, downTotalIfBetDown);
+
+        const differenceIfUp = largerIfUp > 0 
+          ? Math.abs(upTotalIfBetUp - downTotal) / largerIfUp 
+          : 0;
+        const differenceIfDown = largerIfDown > 0 
+          ? Math.abs(upTotal - downTotalIfBetDown) / largerIfDown 
+          : 0;
+
+        // STRICT BALANCING LOGIC
+        if (currentDifference > this.upDownBalance) {
+          // Already over threshold - FORCE balance toward weaker side
           prediction = upTotal < downTotal ? 'up' : 'down';
+          consecutiveForcedBets++;
+          
           console.log(
-            `⚖️  Forcing balance at bet #${i + 1}: ` +
-            `gap=${Math.abs(upTotal - downTotal).toFixed(0)} ` +
-            `diff=${(difference * 100).toFixed(1)}% > ` +
-            `threshold=${this.upDownBalance * 100}% → ${prediction.toUpperCase()}`
+            `⚖️  FORCED BALANCE #${consecutiveForcedBets} at bet #${i + 1}: ` +
+            `UP ₦${upTotal} vs DOWN ₦${downTotal} | ` +
+            `Gap ₦${Math.abs(upTotal - downTotal)} | ` +
+            `Imbalance ${(currentDifference * 100).toFixed(1)}% > ${this.upDownBalance * 100}% → ${prediction.toUpperCase()}`
+          );
+        } else if (differenceIfUp > this.upDownBalance && differenceIfDown > this.upDownBalance) {
+          // BOTH options would exceed threshold - choose the lesser evil
+          prediction = differenceIfUp < differenceIfDown ? 'up' : 'down';
+          consecutiveForcedBets++;
+          
+          console.log(
+            `⚠️  Both sides risky at bet #${i + 1}: ` +
+            `UP would be ${(differenceIfUp * 100).toFixed(1)}%, ` +
+            `DOWN would be ${(differenceIfDown * 100).toFixed(1)}% → ${prediction.toUpperCase()}`
+          );
+        } else if (differenceIfUp > this.upDownBalance) {
+          // Betting UP would break threshold - MUST bet DOWN
+          prediction = 'down';
+          consecutiveForcedBets++;
+          
+          console.log(
+            `🔒 Prevented imbalance at bet #${i + 1}: ` +
+            `UP would reach ${(differenceIfUp * 100).toFixed(1)}% → Forcing DOWN`
+          );
+        } else if (differenceIfDown > this.upDownBalance) {
+          // Betting DOWN would break threshold - MUST bet UP
+          prediction = 'up';
+          consecutiveForcedBets++;
+          
+          console.log(
+            `🔒 Prevented imbalance at bet #${i + 1}: ` +
+            `DOWN would reach ${(differenceIfDown * 100).toFixed(1)}% → Forcing UP`
           );
         } else {
+          // Both sides OK - use smart bias toward weaker side
+          consecutiveForcedBets = 0;
+          
           if (upTotal < downTotal) {
-            prediction = Math.random() > 0.35 ? 'up' : 'down';
+            // UP is weaker - 65% chance to bet UP
+            prediction = Math.random() < 0.65 ? 'up' : 'down';
           } else if (downTotal < upTotal) {
-            prediction = Math.random() > 0.65 ? 'up' : 'down';
+            // DOWN is weaker - 65% chance to bet DOWN
+            prediction = Math.random() < 0.65 ? 'down' : 'up';
           } else {
+            // Perfectly balanced - 50/50
             prediction = Math.random() > 0.5 ? 'up' : 'down';
           }
         }
       }
 
+      // Apply the bet
       if (prediction === 'up') {
         upTotal += amount;
       } else {
         downTotal += amount;
       }
 
+      // Safety warning if still over threshold after this bet
+      const finalLargerSide = Math.max(upTotal, downTotal);
+      const finalDifference = finalLargerSide > 0 
+        ? Math.abs(upTotal - downTotal) / finalLargerSide 
+        : 0;
+      
+      if (finalDifference > this.upDownBalance + 0.05) {
+        console.warn(
+          `⚠️  WARNING after bet #${i + 1}: ` +
+          `Imbalance ${(finalDifference * 100).toFixed(1)}% > threshold ${this.upDownBalance * 100}% | ` +
+          `UP ₦${upTotal} DOWN ₦${downTotal}`
+        );
+      }
+
+      // Assign to bot
       const botUserId = this.getBotUserIdForIndex(i);
       const botName = i % 2 === 0 ? 'AutoTrader_1' : 'AutoTrader_2';
 
+      // Spread bets over 4.5 minutes (270 seconds) - safe window before betting closes
       const maxSpreadSeconds = 270;
       const baseDelay = (maxSpreadSeconds / totalBets) * i;
-      const randomVariation = (Math.random() - 0.5) * 20;
+      const randomVariation = (Math.random() - 0.5) * 20; // ±10 seconds
       const delay = Math.max(0, Math.floor(baseDelay + randomVariation));
 
       bets.push({
@@ -114,22 +193,36 @@ class BotService {
       });
     }
 
+    // ====== FINAL VALIDATION & LOGGING ======
     const upBets = bets.filter(b => b.prediction === 'up');
     const downBets = bets.filter(b => b.prediction === 'down');
 
-    const largerSide = Math.max(upTotal, downTotal);
-    const balanceDiff = largerSide > 0
-      ? (Math.abs(upTotal - downTotal) / largerSide) * 100
+    const finalLargerSide = Math.max(upTotal, downTotal);
+    const finalImbalance = finalLargerSide > 0
+      ? (Math.abs(upTotal - downTotal) / finalLargerSide) * 100
       : 0;
 
-    console.log('📊 Bot Plan Generated:');
-    console.log(`   Total Bets : ${totalBets}`);
-    console.log(`   UP         : ${upBets.length} bets = ₦${upTotal.toLocaleString()}`);
-    console.log(`   DOWN       : ${downBets.length} bets = ₦${downTotal.toLocaleString()}`);
-    console.log(`   Gap        : ₦${Math.abs(upTotal - downTotal).toLocaleString()}`);
-    console.log(`   Imbalance  : ${balanceDiff.toFixed(1)}% (vs larger side)`);
-    console.log(`   Threshold  : ${this.upDownBalance * 100}%`);
-    console.log(`   Spread     : 0 - 270 seconds (4.5 min safe window)`);
+    const isBalanced = finalImbalance <= this.upDownBalance * 100;
+
+    console.log('');
+    console.log('📊 ========== BOT PLAN GENERATED ==========');
+    console.log(`   Total Bets    : ${totalBets}`);
+    console.log(`   UP Bets       : ${upBets.length} bets = ₦${upTotal.toLocaleString()}`);
+    console.log(`   DOWN Bets     : ${downBets.length} bets = ₦${downTotal.toLocaleString()}`);
+    console.log(`   Gap           : ₦${Math.abs(upTotal - downTotal).toLocaleString()}`);
+    console.log(`   Imbalance     : ${finalImbalance.toFixed(1)}% (vs larger side)`);
+    console.log(`   Threshold     : ${this.upDownBalance * 100}%`);
+    console.log(`   Status        : ${isBalanced ? '✅ BALANCED' : '❌ OVER THRESHOLD'}`);
+    console.log(`   Spread Window : 0 - 270 seconds (4.5 min)`);
+    console.log('============================================');
+    console.log('');
+
+    // Critical warning if final imbalance is way too high
+    if (!isBalanced) {
+      console.error(
+        `❌ CRITICAL: Final imbalance ${finalImbalance.toFixed(1)}% exceeds threshold ${this.upDownBalance * 100}%!`
+      );
+    }
 
     return bets;
   }
@@ -140,6 +233,7 @@ class BotService {
     if (!this.isEnabled) return;
     if (!round || round.status !== 'active') return;
 
+    // Validate bot IDs are configured
     if (!this.botUser1Id || !this.botUser2Id) {
       console.error('❌ Bot user IDs not configured in .env');
       return;
@@ -148,6 +242,7 @@ class BotService {
     const roundId = round.id;
     const now = new Date();
 
+    // Initialize plan for this round (only once)
     if (!this.roundBotStatus.has(roundId)) {
       const betCount = this.getRandomBetCount();
       const betPlan = this.generateBetPlan(betCount);
@@ -159,17 +254,20 @@ class BotService {
         placedCount: 0
       });
 
-      console.log(`🤖 Round #${round.roundNumber} - Bot plan: ${betCount} bets`);
+      console.log(`🤖 Round #${round.roundNumber} - Bot plan created: ${betCount} bets`);
     }
 
     const status = this.roundBotStatus.get(roundId);
     const elapsedSeconds = (now - status.startTime) / 1000;
 
+    // Check each bet in plan and place if it's time
     for (let i = 0; i < status.betPlan.length; i++) {
       const bet = status.betPlan[i];
 
+      // Skip already placed bets
       if (bet.placed) continue;
 
+      // Check if it's time to place this bet
       if (elapsedSeconds >= bet.delay) {
         const success = await this.placeBotBet(
           round,
@@ -195,6 +293,7 @@ class BotService {
 
   async placeBotBet(round, botUserId, prediction, amount, io, botName, betNumber, totalBets) {
     try {
+      // Check how many bets this bot already placed in this round
       const botBetsInRound = await Bet.count({
         where: {
           roundId: round.id,
@@ -202,6 +301,7 @@ class BotService {
         }
       });
 
+      // Each bot can place up to half the total bets
       const maxBetsPerBot = Math.ceil(totalBets / 2);
       
       if (botBetsInRound >= maxBetsPerBot) {
@@ -209,6 +309,7 @@ class BotService {
         return false;
       }
 
+      // Create the bet
       const bet = await Bet.create({
         userId: botUserId,
         roundId: round.id,
@@ -221,6 +322,7 @@ class BotService {
         createdAt: new Date()
       });
 
+      // Update round totals
       if (prediction === 'up') {
         await round.increment('totalUpAmount', { by: amount });
         await round.increment('totalUpBets', { by: 1 });
@@ -229,8 +331,10 @@ class BotService {
         await round.increment('totalDownBets', { by: 1 });
       }
 
+      // Reload round to get fresh data
       await round.reload();
 
+      // Calculate multipliers
       const totalUp = parseFloat(round.totalUpAmount || 0);
       const totalDown = parseFloat(round.totalDownAmount || 0);
 
@@ -242,6 +346,7 @@ class BotService {
         downMultiplier = parseFloat((1 + (totalUp * 0.7) / totalDown).toFixed(2));
       }
 
+      // Emit to all connected clients
       if (io) {
         io.emit('bet_placed', {
           roundId: round.id,
@@ -257,14 +362,22 @@ class BotService {
         });
       }
 
+      // Calculate current imbalance
+      const largerSide = Math.max(totalUp, totalDown);
+      const currentImbalance = largerSide > 0 
+        ? (Math.abs(totalUp - totalDown) / largerSide * 100).toFixed(1)
+        : 0;
+
+      // Log the bet
       console.log(
         `🤖 ${botName} bet #${betNumber}/${totalBets}: ` +
         `${prediction.toUpperCase()} ₦${amount.toLocaleString()} ` +
         `(Round #${round.roundNumber})`
       );
       console.log(
-        `   Pool: UP ₦${totalUp.toLocaleString()} (${round.totalUpBets} bets) | ` +
-        `DOWN ₦${totalDown.toLocaleString()} (${round.totalDownBets} bets)`
+        `   Pool: UP ₦${totalUp.toLocaleString()} (${round.totalUpBets}) | ` +
+        `DOWN ₦${totalDown.toLocaleString()} (${round.totalDownBets}) | ` +
+        `Imbalance: ${currentImbalance}%`
       );
 
       return true;
