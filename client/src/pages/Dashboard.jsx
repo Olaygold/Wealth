@@ -637,7 +637,7 @@ const Dashboard = () => {
   const goToReferralPage = () => {
     setShowReferralPopup(false);
     setShowReferralBanner(false);
-    navigate('/referral');
+    navigate('/referrals');
   };
 
   // ========== SMART REFERRAL POPUP TIMING ==========
