@@ -21,10 +21,18 @@ import {
   UserCheck,
   UserX,
   Copy,
-  Check
+  Check,
+  Plus,
+  Minus,
+  DollarSign,
+  Edit,
+  XCircle,
+  AlertTriangle,
+  Download,
+  Upload
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import adminService from '../../services/adminService'; // ✅ Changed from adminApi
+import adminService from '../../services/adminService';
 import toast from 'react-hot-toast';
 
 const Users = () => {
@@ -36,10 +44,18 @@ const Users = () => {
   const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 });
   const [copiedId, setCopiedId] = useState(null);
   
+  // ✅ NEW: Modal states
+  const [showCreditModal, setShowCreditModal] = useState(false);
+  const [showDebitModal, setShowDebitModal] = useState(false);
+  const [showKYCModal, setShowKYCModal] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
+  
   const [filters, setFilters] = useState({
     search: '',
     status: '',
     kycStatus: '',
+    sortBy: 'createdAt',
+    order: 'DESC',
     page: 1,
     limit: 20
   });
@@ -49,15 +65,17 @@ const Users = () => {
 
   useEffect(() => {
     loadUsers();
-  }, [filters.status, filters.kycStatus, filters.page]);
+  }, [filters.status, filters.kycStatus, filters.page, filters.sortBy, filters.order]);
 
   // Debounced search
   useEffect(() => {
     if (searchTimeout) clearTimeout(searchTimeout);
     
     const timeout = setTimeout(() => {
-      if (filters.search !== '') {
+      if (filters.page === 1) {
         loadUsers();
+      } else {
+        setFilters(prev => ({ ...prev, page: 1 }));
       }
     }, 500);
     
@@ -71,7 +89,9 @@ const Users = () => {
     try {
       const params = {
         page: filters.page,
-        limit: filters.limit
+        limit: filters.limit,
+        sortBy: filters.sortBy,
+        order: filters.order
       };
       
       if (filters.search) params.search = filters.search;
@@ -80,7 +100,6 @@ const Users = () => {
 
       const res = await adminService.getAllUsers(params);
       
-      // ✅ Fixed data extraction
       if (res.success) {
         setUsers(res.data.users || []);
         setPagination(res.data.pagination || { page: 1, pages: 1, total: 0 });
@@ -104,7 +123,7 @@ const Users = () => {
   };
 
   const handleSearch = (e) => {
-    setFilters({ ...filters, search: e.target.value, page: 1 });
+    setFilters({ ...filters, search: e.target.value });
   };
 
   const clearFilters = () => {
@@ -112,11 +131,14 @@ const Users = () => {
       search: '',
       status: '',
       kycStatus: '',
+      sortBy: 'createdAt',
+      order: 'DESC',
       page: 1,
       limit: 20
     });
   };
 
+  // ✅ Toggle Active/Inactive
   const handleStatusChange = async (userId, username, isActive) => {
     const actionText = isActive ? 'activate' : 'deactivate';
     
@@ -147,6 +169,56 @@ const Users = () => {
     }
   };
 
+  // ✅ NEW: Open Credit Modal
+  const openCreditModal = (user) => {
+    setSelectedUser(user);
+    setShowCreditModal(true);
+  };
+
+  // ✅ NEW: Open Debit Modal
+  const openDebitModal = (user) => {
+    setSelectedUser(user);
+    setShowDebitModal(true);
+  };
+
+  // ✅ NEW: Open KYC Modal
+  const openKYCModal = (user) => {
+    setSelectedUser(user);
+    setShowKYCModal(true);
+  };
+
+  // ✅ NEW: Handle KYC Status Update
+  const handleKYCUpdate = async (userId, username, kycStatus) => {
+    if (!['approved', 'rejected'].includes(kycStatus)) return;
+
+    const reason = prompt(`Enter reason for ${kycStatus === 'approved' ? 'approving' : 'rejecting'} KYC for "${username}":`);
+    if (!reason?.trim()) {
+      toast.error('Reason is required');
+      return;
+    }
+
+    setProcessing(userId);
+    try {
+      const res = await adminService.updateUserStatus(userId, { 
+        kycStatus, 
+        reason: reason.trim() 
+      });
+      
+      if (res.success) {
+        toast.success(`✅ KYC ${kycStatus} for "${username}"!`);
+        loadUsers();
+        setShowKYCModal(false);
+      } else {
+        toast.error(res.message || 'Failed to update KYC status');
+      }
+    } catch (error) {
+      console.error('KYC update error:', error);
+      toast.error(error.message || 'Failed to update KYC status');
+    } finally {
+      setProcessing(null);
+    }
+  };
+
   const copyUserId = async (userId) => {
     try {
       await navigator.clipboard.writeText(userId);
@@ -166,10 +238,13 @@ const Users = () => {
   };
 
   const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
     return new Date(dateString).toLocaleDateString('en-NG', {
       year: 'numeric',
       month: 'short',
-      day: 'numeric'
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
     });
   };
 
@@ -184,6 +259,31 @@ const Users = () => {
     }
   };
 
+  // ✅ NEW: Export users to CSV
+  const exportToCSV = () => {
+    const headers = ['Username', 'Email', 'Phone', 'Balance', 'Total Deposited', 'Total Withdrawn', 'KYC Status', 'Status', 'Joined'];
+    const rows = users.map(u => [
+      u.username,
+      u.email,
+      u.phoneNumber || 'N/A',
+      u.wallet?.balance || 0,
+      u.wallet?.totalDeposited || 0,
+      u.wallet?.totalWithdrawn || 0,
+      u.kycStatus || 'pending',
+      u.isActive ? 'Active' : 'Inactive',
+      formatDate(u.createdAt)
+    ]);
+
+    const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `users-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    toast.success('Users exported successfully!');
+  };
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -194,24 +294,33 @@ const Users = () => {
             User Management
           </h1>
           <p className="text-gray-600 mt-1">
-            Manage all platform users ({pagination.total} total)
+            Manage all platform users ({pagination.total.toLocaleString()} total)
           </p>
         </div>
-        <button
-          onClick={handleRefresh}
-          disabled={refreshing}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition disabled:opacity-50"
-        >
-          <RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} />
-          Refresh
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={exportToCSV}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition"
+          >
+            <Download size={18} />
+            Export CSV
+          </button>
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition disabled:opacity-50"
+          >
+            <RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-white rounded-xl p-4 shadow border-l-4 border-blue-500">
           <p className="text-sm text-gray-600">Total Users</p>
-          <p className="text-2xl font-bold text-gray-900">{pagination.total}</p>
+          <p className="text-2xl font-bold text-gray-900">{pagination.total.toLocaleString()}</p>
         </div>
         <div className="bg-white rounded-xl p-4 shadow border-l-4 border-green-500">
           <p className="text-sm text-gray-600">Active</p>
@@ -235,7 +344,7 @@ const Users = () => {
 
       {/* Filters */}
       <div className="bg-white rounded-xl shadow p-4">
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
           {/* Search */}
           <div className="relative md:col-span-2">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
@@ -271,15 +380,27 @@ const Users = () => {
             <option value="rejected">❌ Rejected</option>
           </select>
 
-          {/* Clear Filters */}
-          {(filters.search || filters.status || filters.kycStatus) && (
-            <button
-              onClick={clearFilters}
-              className="px-4 py-2.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-xl transition"
-            >
-              Clear Filters
-            </button>
-          )}
+          {/* Sort By */}
+          <select
+            className="px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white"
+            value={filters.sortBy}
+            onChange={(e) => setFilters({ ...filters, sortBy: e.target.value, page: 1 })}
+          >
+            <option value="createdAt">Join Date</option>
+            <option value="username">Username</option>
+            <option value="balance">Balance</option>
+            <option value="totalDeposited">Total Deposited</option>
+          </select>
+
+          {/* Sort Order */}
+          <select
+            className="px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white"
+            value={filters.order}
+            onChange={(e) => setFilters({ ...filters, order: e.target.value, page: 1 })}
+          >
+            <option value="DESC">Newest First</option>
+            <option value="ASC">Oldest First</option>
+          </select>
         </div>
 
         {/* Active Filters Display */}
@@ -301,6 +422,12 @@ const Users = () => {
                 KYC: {filters.kycStatus}
               </span>
             )}
+            <button
+              onClick={clearFilters}
+              className="px-2 py-1 bg-red-100 text-red-700 text-xs rounded-full hover:bg-red-200"
+            >
+              ✕ Clear All
+            </button>
           </div>
         )}
       </div>
@@ -379,6 +506,11 @@ const Users = () => {
                                 Admin
                               </span>
                             )}
+                            {user.isInfluencer && (
+                              <span className="px-1.5 py-0.5 bg-yellow-100 text-yellow-700 text-xs rounded font-medium">
+                                ⭐ Influencer
+                              </span>
+                            )}
                           </div>
                           <div className="text-xs text-gray-500 flex items-center gap-1">
                             <button
@@ -420,7 +552,7 @@ const Users = () => {
                         <div className="text-sm font-bold text-gray-900">
                           ₦{formatCurrency(user.wallet?.balance)}
                         </div>
-                        {user.wallet?.locked > 0 && (
+                        {parseFloat(user.wallet?.locked || 0) > 0 && (
                           <div className="text-xs text-orange-600 flex items-center gap-1">
                             🔒 Locked: ₦{formatCurrency(user.wallet.locked)}
                           </div>
@@ -431,19 +563,19 @@ const Users = () => {
                     {/* Totals */}
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-xs space-y-1">
-                        <div className="flex justify-between">
+                        <div className="flex justify-between gap-2">
                           <span className="text-gray-500">Deposited:</span>
                           <span className="text-green-600 font-medium">
                             ₦{formatCurrency(user.wallet?.totalDeposited)}
                           </span>
                         </div>
-                        <div className="flex justify-between">
+                        <div className="flex justify-between gap-2">
                           <span className="text-gray-500">Withdrawn:</span>
                           <span className="text-red-600 font-medium">
                             ₦{formatCurrency(user.wallet?.totalWithdrawn)}
                           </span>
                         </div>
-                        <div className="flex justify-between border-t border-gray-100 pt-1">
+                        <div className="flex justify-between gap-2 border-t border-gray-100 pt-1">
                           <span className="text-gray-500">Won:</span>
                           <span className="text-blue-600 font-medium">
                             ₦{formatCurrency(user.wallet?.totalWon)}
@@ -454,10 +586,13 @@ const Users = () => {
 
                     {/* KYC Status */}
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`px-2.5 py-1 inline-flex items-center text-xs font-semibold rounded-full ${getKYCBadge(user.kycStatus)}`}>
+                      <button
+                        onClick={() => openKYCModal(user)}
+                        className={`px-2.5 py-1 inline-flex items-center text-xs font-semibold rounded-full ${getKYCBadge(user.kycStatus)} hover:opacity-80 transition`}
+                      >
                         {user.kycStatus === 'approved' && <Shield size={12} className="mr-1" />}
                         {user.kycStatus || 'pending'}
-                      </span>
+                      </button>
                     </td>
 
                     {/* Status */}
@@ -489,7 +624,7 @@ const Users = () => {
                       </div>
                       {user.lastLogin && (
                         <div className="text-xs text-gray-400 mt-1">
-                          Last login: {formatDate(user.lastLogin)}
+                          Last: {formatDate(user.lastLogin)}
                         </div>
                       )}
                     </td>
@@ -504,6 +639,24 @@ const Users = () => {
                           title="View Details"
                         >
                           <Eye size={18} />
+                        </button>
+
+                        {/* Credit Wallet */}
+                        <button
+                          onClick={() => openCreditModal(user)}
+                          className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition"
+                          title="Credit Wallet"
+                        >
+                          <Plus size={18} />
+                        </button>
+
+                        {/* Debit Wallet */}
+                        <button
+                          onClick={() => openDebitModal(user)}
+                          className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg transition"
+                          title="Debit Wallet"
+                        >
+                          <Minus size={18} />
                         </button>
 
                         {/* Toggle Status */}
@@ -541,7 +694,7 @@ const Users = () => {
               <div className="text-sm text-gray-600">
                 Showing page <span className="font-bold">{pagination.page}</span> of{' '}
                 <span className="font-bold">{pagination.pages}</span>
-                {' '}({pagination.total} total users)
+                {' '}({pagination.total.toLocaleString()} total users)
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -611,11 +764,394 @@ const Users = () => {
         )}
       </div>
 
+      {/* ✅ NEW: Credit Modal */}
+      {showCreditModal && (
+        <CreditModal 
+          user={selectedUser} 
+          onClose={() => {
+            setShowCreditModal(false);
+            setSelectedUser(null);
+          }}
+          onSuccess={loadUsers}
+        />
+      )}
+
+      {/* ✅ NEW: Debit Modal */}
+      {showDebitModal && (
+        <DebitModal 
+          user={selectedUser} 
+          onClose={() => {
+            setShowDebitModal(false);
+            setSelectedUser(null);
+          }}
+          onSuccess={loadUsers}
+        />
+      )}
+
+      {/* ✅ NEW: KYC Modal */}
+      {showKYCModal && (
+        <KYCModal 
+          user={selectedUser} 
+          onClose={() => {
+            setShowKYCModal(false);
+            setSelectedUser(null);
+          }}
+          onUpdate={handleKYCUpdate}
+          processing={processing}
+        />
+      )}
+
       {/* Help Text */}
-      <div className="bg-gray-50 rounded-xl p-4 text-center">
-        <p className="text-sm text-gray-500">
-          💡 <strong>Tip:</strong> Click on a user row's eye icon to view full details including bet history and transactions.
-        </p>
+      <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
+        <div className="flex items-start gap-3">
+          <AlertTriangle className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
+          <div className="text-sm text-blue-900">
+            <p className="font-semibold mb-1">Quick Actions Guide:</p>
+            <ul className="space-y-1 text-blue-800">
+              <li>• <strong>Eye icon:</strong> View full user details and history</li>
+              <li>• <strong>Plus icon:</strong> Credit user wallet (add funds)</li>
+              <li>• <strong>Minus icon:</strong> Debit user wallet (remove funds)</li>
+              <li>• <strong>User icon:</strong> Activate/Deactivate account</li>
+              <li>• <strong>KYC badge:</strong> Click to approve/reject verification</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ✅ NEW: Credit Modal Component
+const CreditModal = ({ user, onClose, onSuccess }) => {
+  const [amount, setAmount] = useState('');
+  const [reason, setReason] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    if (!amount || parseFloat(amount) <= 0) {
+      toast.error('Please enter a valid amount');
+      return;
+    }
+    if (!reason.trim()) {
+      toast.error('Please provide a reason');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await adminService.creditUserWallet(user.id, {
+        amount: parseFloat(amount),
+        reason: reason.trim()
+      });
+
+      if (res.success) {
+        toast.success(`✅ ₦${parseFloat(amount).toLocaleString()} credited to ${user.username}!`);
+        onSuccess();
+        onClose();
+      } else {
+        toast.error(res.message || 'Failed to credit wallet');
+      }
+    } catch (error) {
+      console.error('Credit error:', error);
+      toast.error(error.message || 'Failed to credit wallet');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl max-w-md w-full p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+            <Plus className="h-5 w-5 text-green-600" />
+            Credit Wallet
+          </h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <XCircle size={24} />
+          </button>
+        </div>
+
+        <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+          <p className="text-sm text-blue-900">
+            <strong>User:</strong> {user.username}
+          </p>
+          <p className="text-sm text-blue-900">
+            <strong>Current Balance:</strong> ₦{parseFloat(user.wallet?.balance || 0).toLocaleString()}
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Amount (₦)
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
+              placeholder="Enter amount to credit"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Reason
+            </label>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
+              placeholder="Enter reason for crediting (e.g., Bonus, Compensation, etc.)"
+              rows="3"
+              required
+            />
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {loading ? (
+                <>
+                  <Loader2 size={18} className="animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <Plus size={18} />
+                  Credit Wallet
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+// ✅ NEW: Debit Modal Component
+const DebitModal = ({ user, onClose, onSuccess }) => {
+  const [amount, setAmount] = useState('');
+  const [reason, setReason] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const maxAmount = parseFloat(user.wallet?.balance || 0);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    if (!amount || parseFloat(amount) <= 0) {
+      toast.error('Please enter a valid amount');
+      return;
+    }
+    if (parseFloat(amount) > maxAmount) {
+      toast.error(`Amount exceeds available balance (₦${maxAmount.toLocaleString()})`);
+      return;
+    }
+    if (!reason.trim()) {
+      toast.error('Please provide a reason');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await adminService.debitUserWallet(user.id, {
+        amount: parseFloat(amount),
+        reason: reason.trim()
+      });
+
+      if (res.success) {
+        toast.success(`✅ ₦${parseFloat(amount).toLocaleString()} debited from ${user.username}!`);
+        onSuccess();
+        onClose();
+      } else {
+        toast.error(res.message || 'Failed to debit wallet');
+      }
+    } catch (error) {
+      console.error('Debit error:', error);
+      toast.error(error.message || 'Failed to debit wallet');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl max-w-md w-full p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+            <Minus className="h-5 w-5 text-orange-600" />
+            Debit Wallet
+          </h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <XCircle size={24} />
+          </button>
+        </div>
+
+        <div className="mb-4 p-3 bg-orange-50 rounded-lg border border-orange-200">
+          <p className="text-sm text-orange-900">
+            <strong>User:</strong> {user.username}
+          </p>
+          <p className="text-sm text-orange-900">
+            <strong>Available Balance:</strong> ₦{maxAmount.toLocaleString()}
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Amount (₦)
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              max={maxAmount}
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+              placeholder="Enter amount to debit"
+              required
+            />
+            <p className="text-xs text-gray-500 mt-1">Max: ₦{maxAmount.toLocaleString()}</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Reason
+            </label>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+              placeholder="Enter reason for debiting (e.g., Penalty, Adjustment, etc.)"
+              rows="3"
+              required
+            />
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {loading ? (
+                <>
+                  <Loader2 size={18} className="animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <Minus size={18} />
+                  Debit Wallet
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+// ✅ NEW: KYC Modal Component
+const KYCModal = ({ user, onClose, onUpdate, processing }) => {
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl max-w-md w-full p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+            <Shield className="h-5 w-5 text-purple-600" />
+            KYC Status
+          </h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <XCircle size={24} />
+          </button>
+        </div>
+
+        <div className="mb-4 p-3 bg-purple-50 rounded-lg">
+          <p className="text-sm text-purple-900">
+            <strong>User:</strong> {user.username}
+          </p>
+          <p className="text-sm text-purple-900">
+            <strong>Current Status:</strong>{' '}
+            <span className={`font-semibold ${
+              user.kycStatus === 'approved' ? 'text-green-600' :
+              user.kycStatus === 'rejected' ? 'text-red-600' :
+              'text-yellow-600'
+            }`}>
+              {user.kycStatus || 'pending'}
+            </span>
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          {user.kycStatus !== 'approved' && (
+            <button
+              onClick={() => onUpdate(user.id, user.username, 'approved')}
+              disabled={processing === user.id}
+              className="w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {processing === user.id ? (
+                <Loader2 size={18} className="animate-spin" />
+              ) : (
+                <>
+                  <CheckCircle size={18} />
+                  Approve KYC
+                </>
+              )}
+            </button>
+          )}
+
+          {user.kycStatus !== 'rejected' && (
+            <button
+              onClick={() => onUpdate(user.id, user.username, 'rejected')}
+              disabled={processing === user.id}
+              className="w-full px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {processing === user.id ? (
+                <Loader2 size={18} className="animate-spin" />
+              ) : (
+                <>
+                  <XCircle size={18} />
+                  Reject KYC
+                </>
+              )}
+            </button>
+          )}
+
+          <button
+            onClick={onClose}
+            className="w-full px-4 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+          >
+            Close
+          </button>
+        </div>
       </div>
     </div>
   );
