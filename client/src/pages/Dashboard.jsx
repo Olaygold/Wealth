@@ -1135,8 +1135,14 @@ const Dashboard = () => {
         onGoToReferral={goToReferralPage}
       />
 
+      
       {/* ========== FLOATING REFERRAL BUTTON ========== */}
-      <FloatingReferralButton onClick={() => setShowReferralPopup(true)} />
+<FloatingReferralButton onClick={() => setShowReferralPopup(true)} />
+
+{/* ========== FLOATING SUPPORT BUTTON ========== */}
+<FloatingSupportButton />
+
+{/* ========== REFERRAL BANNER ========== */}
 
       {/* ========== REFERRAL BANNER ========== */}
       {showReferralBanner && !bannerDismissed && (
