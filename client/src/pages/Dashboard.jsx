@@ -58,15 +58,17 @@ const formatTime = (seconds) => {
 };
 
 // ==================== REFERRAL PROMO POPUP ====================
+
+// ==================== REFERRAL PROMO POPUP - FIXED VERSION ====================
 const ReferralPromoPopup = ({ isOpen, onClose, onGoToReferral }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-300">
-      <div className="bg-gradient-to-br from-slate-900 via-purple-900/20 to-slate-900 rounded-3xl max-w-md w-full border-2 border-purple-500/30 overflow-hidden shadow-2xl shadow-purple-500/20 animate-in zoom-in-95 duration-300">
+    <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-300 overflow-y-auto">
+      <div className="bg-gradient-to-br from-slate-900 via-purple-900/20 to-slate-900 rounded-3xl w-full max-w-md border-2 border-purple-500/30 shadow-2xl shadow-purple-500/20 animate-in zoom-in-95 duration-300 my-8">
         
-        {/* Header with Animation */}
-        <div className="relative bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 p-8 text-center overflow-hidden">
+        {/* Header - REDUCED PADDING */}
+        <div className="relative bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 p-6 text-center overflow-hidden">
           {/* Animated Background Pattern */}
           <div className="absolute inset-0 opacity-30">
             <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48cGF0dGVybiBpZD0iYSIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBwYXR0ZXJuVHJhbnNmb3JtPSJyb3RhdGUoNDUpIj48cGF0aCBkPSJNLTEwIDMwaDYwdjJoLTYweiIgZmlsbD0iI2ZmZiIgZmlsbC1vcGFjaXR5PSIuMSIvPjwvcGF0dGVybj48L2RlZnM+PHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsbD0idXJsKCNhKSIvPjwvc3ZnPg==')]"></div>
@@ -75,95 +77,93 @@ const ReferralPromoPopup = ({ isOpen, onClose, onGoToReferral }) => {
           {/* Close Button */}
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 text-white/80 hover:text-white transition z-10 bg-white/10 rounded-full p-2 hover:bg-white/20"
+            className="absolute top-3 right-3 text-white/80 hover:text-white transition z-10 bg-white/10 rounded-full p-2 hover:bg-white/20"
           >
-            <X size={24} />
+            <X size={20} />
           </button>
 
           <div className="relative z-10">
-            {/* Animated Gift Icon */}
-            <div className="w-24 h-24 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce shadow-xl">
-              <Gift className="w-12 h-12 text-white" />
+            {/* Gift Icon - SMALLER */}
+            <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3 animate-bounce shadow-xl">
+              <Gift className="w-8 h-8 text-white" />
             </div>
             
-            <h2 className="text-3xl font-black text-white mb-2">
+            <h2 className="text-2xl font-black text-white mb-1">
               🎁 Earn 25% Commission!
             </h2>
-            <p className="text-white/90 text-lg">
+            <p className="text-white/90 text-sm">
               Don't miss out on FREE money!
             </p>
           </div>
         </div>
 
-        {/* Content */}
-        <div className="p-6">
-          {/* Main Message */}
-          <div className="text-center mb-6">
-            <p className="text-gray-300 text-lg leading-relaxed">
-              Refer your friends to <span className="text-primary font-bold">Wealth Trading</span> and earn 
-              <span className="text-green-400 font-black text-xl"> 25% commission</span> from their 
-              <span className="text-yellow-400 font-bold"> first bet!</span>
+        {/* Content - SCROLLABLE */}
+        <div className="p-5 max-h-[60vh] overflow-y-auto">
+          {/* Main Message - CONDENSED */}
+          <div className="text-center mb-4">
+            <p className="text-gray-300 text-sm leading-relaxed">
+              Refer friends and earn <span className="text-green-400 font-black text-lg">25% commission</span> from their <span className="text-yellow-400 font-bold">first bet!</span>
             </p>
           </div>
 
-          {/* Benefits */}
-          <div className="bg-slate-800/50 rounded-2xl p-5 mb-6 border border-slate-700">
-            <div className="space-y-4">
-              <div className="flex items-center gap-4">
-                <div className="flex-shrink-0 w-10 h-10 bg-green-500/20 rounded-full flex items-center justify-center">
-                  <Sparkles className="text-green-400" size={20} />
+          {/* Benefits - COMPACT */}
+          <div className="bg-slate-800/50 rounded-xl p-4 mb-4 border border-slate-700">
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="flex-shrink-0 w-8 h-8 bg-green-500/20 rounded-full flex items-center justify-center">
+                  <Sparkles className="text-green-400" size={16} />
                 </div>
-                <p className="text-gray-300">
-                  <span className="text-white font-bold">Easy Money:</span> Share your link, get paid!
+                <p className="text-gray-300 text-sm">
+                  <span className="text-white font-bold">Easy Money:</span> Share & get paid!
                 </p>
               </div>
               
-              <div className="flex items-center gap-4">
-                <div className="flex-shrink-0 w-10 h-10 bg-purple-500/20 rounded-full flex items-center justify-center">
-                  <Users className="text-purple-400" size={20} />
+              <div className="flex items-center gap-3">
+                <div className="flex-shrink-0 w-8 h-8 bg-purple-500/20 rounded-full flex items-center justify-center">
+                  <Users className="text-purple-400" size={16} />
                 </div>
-                <p className="text-gray-300">
-                  <span className="text-white font-bold">Unlimited Referrals:</span> No cap on earnings!
+                <p className="text-gray-300 text-sm">
+                  <span className="text-white font-bold">Unlimited:</span> No cap on earnings!
                 </p>
               </div>
               
-              <div className="flex items-center gap-4">
-                <div className="flex-shrink-0 w-10 h-10 bg-orange-500/20 rounded-full flex items-center justify-center">
-                  <Zap className="text-orange-400" size={20} />
+              <div className="flex items-center gap-3">
+                <div className="flex-shrink-0 w-8 h-8 bg-orange-500/20 rounded-full flex items-center justify-center">
+                  <Zap className="text-orange-400" size={16} />
                 </div>
-                <p className="text-gray-300">
-                  <span className="text-white font-bold">Instant Credit:</span> Earnings added automatically!
+                <p className="text-gray-300 text-sm">
+                  <span className="text-white font-bold">Instant:</span> Auto-credited!
                 </p>
               </div>
             </div>
           </div>
 
-          {/* Highlight Box */}
-          <div className="bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border-2 border-yellow-500/40 rounded-2xl p-4 mb-6 text-center">
-            <div className="flex items-center justify-center gap-2 mb-2">
-              <Star className="text-yellow-400" size={20} />
-              <span className="text-yellow-400 font-bold text-lg">LIMITED TIME OFFER!</span>
-              <Star className="text-yellow-400" size={20} />
+          {/* Highlight Box - SMALLER */}
+          <div className="bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border-2 border-yellow-500/40 rounded-xl p-3 mb-4 text-center">
+            <div className="flex items-center justify-center gap-2 mb-1">
+              <Star className="text-yellow-400" size={16} />
+              <span className="text-yellow-400 font-bold text-sm">LIMITED TIME!</span>
+              <Star className="text-yellow-400" size={16} />
             </div>
-            <p className="text-yellow-300 text-sm">
-              The more friends you refer, the more you earn! Start sharing now!
+            <p className="text-yellow-300 text-xs">
+              More referrals = More earnings!
             </p>
           </div>
 
           {/* CTA Button */}
           <button
             onClick={onGoToReferral}
-            className="w-full py-4 bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 hover:from-purple-700 hover:via-pink-700 hover:to-orange-600 text-white rounded-2xl font-black text-lg transition-all transform hover:scale-[1.02] shadow-xl shadow-purple-500/30 flex items-center justify-center gap-3"
+            className="w-full py-3 bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 hover:from-purple-700 hover:via-pink-700 hover:to-orange-600 text-white rounded-xl font-black text-base transition-all transform hover:scale-[1.02] shadow-xl shadow-purple-500/30 flex items-center justify-center gap-2"
           >
-            <Gift size={24} />
-            Start Referring & Earn Now!
-            <ExternalLink size={20} />
+            <Gift size={20} />
+            Start Referring Now!
+            <ExternalLink size={16} />
           </button>
 
           {/* Skip Link */}
           <button
             onClick={onClose}
-            className="w-full mt-3 py-3 text-gray-400 hover:text-white transition text-sm"
+            className="w-full mt-3 py-2 text-gray-400 hover:text-white transition text-sm"
           >
             Maybe later
           </button>
@@ -172,6 +172,7 @@ const ReferralPromoPopup = ({ isOpen, onClose, onGoToReferral }) => {
     </div>
   );
 };
+              
 
 // ==================== REFERRAL SLIDE-UP BANNER ====================
 const ReferralBanner = ({ onGoToReferral, onDismiss }) => {
