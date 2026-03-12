@@ -1,5 +1,4 @@
 
-
 // server/services/botService.js
 const { Bet, Round } = require('../models');
 
@@ -16,8 +15,8 @@ class BotService {
     this.maxBetAmount = parseInt(process.env.BOT_MAX_AMOUNT) || 800;
     
     // ====== BALANCE CONFIG ======
-    // Max % difference between UP and DOWN (0.15 = 15%)
-    this.upDownBalance = parseFloat(process.env.BOT_BALANCE_THRESHOLD) || 0.15;
+    // Maximum allowed difference in NAIRA between UP and DOWN
+    this.maxDifferenceNaira = parseInt(process.env.BOT_MAX_DIFFERENCE) || 250;
     
     // ====== YOUR 2 BOT USER IDs ======
     this.botUser1Id = process.env.BOT_USER_1_ID;
@@ -32,7 +31,7 @@ class BotService {
     console.log(`   Bot 2 ID: ${this.botUser2Id}`);
     console.log(`   Bets per round: ${this.minBetsPerRound}-${this.maxBetsPerRound}`);
     console.log(`   Bet amounts: ₦${this.minBetAmount}-₦${this.maxBetAmount}`);
-    console.log(`   Max UP/DOWN difference: ${this.upDownBalance * 100}%`);
+    console.log(`   Max UP/DOWN difference: ₦${this.maxDifferenceNaira}`);
   }
 
   // ==================== HELPER FUNCTIONS ====================
@@ -58,7 +57,7 @@ class BotService {
     return index % 2 === 0 ? this.botUser1Id : this.botUser2Id;
   }
 
-  // ==================== GENERATE BET PLAN - STRICT BALANCING ====================
+  // ==================== GENERATE BET PLAN - STRICT BALANCING (NAIRA-BASED) ====================
 
   generateBetPlan(totalBets) {
     const bets = [];
@@ -75,28 +74,18 @@ class BotService {
         prediction = Math.random() > 0.5 ? 'up' : 'down';
         consecutiveForcedBets = 0;
       } else {
-        // Calculate CURRENT imbalance using MAX side (not total pool)
-        const largerSide = Math.max(upTotal, downTotal);
-        const currentDifference = largerSide > 0
-          ? Math.abs(upTotal - downTotal) / largerSide
-          : 0;
+        // Calculate CURRENT difference in NAIRA
+        const currentDifference = Math.abs(upTotal - downTotal);
 
         // Simulate what happens if we bet on each side
         const upTotalIfBetUp = upTotal + amount;
         const downTotalIfBetDown = downTotal + amount;
 
-        const largerIfUp = Math.max(upTotalIfBetUp, downTotal);
-        const largerIfDown = Math.max(upTotal, downTotalIfBetDown);
+        const differenceIfUp = Math.abs(upTotalIfBetUp - downTotal);
+        const differenceIfDown = Math.abs(upTotal - downTotalIfBetDown);
 
-        const differenceIfUp = largerIfUp > 0 
-          ? Math.abs(upTotalIfBetUp - downTotal) / largerIfUp 
-          : 0;
-        const differenceIfDown = largerIfDown > 0 
-          ? Math.abs(upTotal - downTotalIfBetDown) / largerIfDown 
-          : 0;
-
-        // STRICT BALANCING LOGIC
-        if (currentDifference > this.upDownBalance) {
+        // STRICT BALANCING LOGIC - BASED ON NAIRA DIFFERENCE
+        if (currentDifference > this.maxDifferenceNaira) {
           // Already over threshold - FORCE balance toward weaker side
           prediction = upTotal < downTotal ? 'up' : 'down';
           consecutiveForcedBets++;
@@ -104,36 +93,35 @@ class BotService {
           console.log(
             `⚖️  FORCED BALANCE #${consecutiveForcedBets} at bet #${i + 1}: ` +
             `UP ₦${upTotal} vs DOWN ₦${downTotal} | ` +
-            `Gap ₦${Math.abs(upTotal - downTotal)} | ` +
-            `Imbalance ${(currentDifference * 100).toFixed(1)}% > ${this.upDownBalance * 100}% → ${prediction.toUpperCase()}`
+            `Gap ₦${currentDifference} > ₦${this.maxDifferenceNaira} → ${prediction.toUpperCase()}`
           );
-        } else if (differenceIfUp > this.upDownBalance && differenceIfDown > this.upDownBalance) {
+        } else if (differenceIfUp > this.maxDifferenceNaira && differenceIfDown > this.maxDifferenceNaira) {
           // BOTH options would exceed threshold - choose the lesser evil
           prediction = differenceIfUp < differenceIfDown ? 'up' : 'down';
           consecutiveForcedBets++;
           
           console.log(
             `⚠️  Both sides risky at bet #${i + 1}: ` +
-            `UP would be ${(differenceIfUp * 100).toFixed(1)}%, ` +
-            `DOWN would be ${(differenceIfDown * 100).toFixed(1)}% → ${prediction.toUpperCase()}`
+            `UP would be ₦${differenceIfUp} gap, ` +
+            `DOWN would be ₦${differenceIfDown} gap → ${prediction.toUpperCase()}`
           );
-        } else if (differenceIfUp > this.upDownBalance) {
+        } else if (differenceIfUp > this.maxDifferenceNaira) {
           // Betting UP would break threshold - MUST bet DOWN
           prediction = 'down';
           consecutiveForcedBets++;
           
           console.log(
             `🔒 Prevented imbalance at bet #${i + 1}: ` +
-            `UP would reach ${(differenceIfUp * 100).toFixed(1)}% → Forcing DOWN`
+            `UP would create ₦${differenceIfUp} gap → Forcing DOWN`
           );
-        } else if (differenceIfDown > this.upDownBalance) {
+        } else if (differenceIfDown > this.maxDifferenceNaira) {
           // Betting DOWN would break threshold - MUST bet UP
           prediction = 'up';
           consecutiveForcedBets++;
           
           console.log(
             `🔒 Prevented imbalance at bet #${i + 1}: ` +
-            `DOWN would reach ${(differenceIfDown * 100).toFixed(1)}% → Forcing UP`
+            `DOWN would create ₦${differenceIfDown} gap → Forcing UP`
           );
         } else {
           // Both sides OK - use smart bias toward weaker side
@@ -160,15 +148,12 @@ class BotService {
       }
 
       // Safety warning if still over threshold after this bet
-      const finalLargerSide = Math.max(upTotal, downTotal);
-      const finalDifference = finalLargerSide > 0 
-        ? Math.abs(upTotal - downTotal) / finalLargerSide 
-        : 0;
+      const finalDifference = Math.abs(upTotal - downTotal);
       
-      if (finalDifference > this.upDownBalance + 0.05) {
+      if (finalDifference > this.maxDifferenceNaira + 50) {
         console.warn(
           `⚠️  WARNING after bet #${i + 1}: ` +
-          `Imbalance ${(finalDifference * 100).toFixed(1)}% > threshold ${this.upDownBalance * 100}% | ` +
+          `Difference ₦${finalDifference} > threshold ₦${this.maxDifferenceNaira} | ` +
           `UP ₦${upTotal} DOWN ₦${downTotal}`
         );
       }
@@ -197,30 +182,25 @@ class BotService {
     const upBets = bets.filter(b => b.prediction === 'up');
     const downBets = bets.filter(b => b.prediction === 'down');
 
-    const finalLargerSide = Math.max(upTotal, downTotal);
-    const finalImbalance = finalLargerSide > 0
-      ? (Math.abs(upTotal - downTotal) / finalLargerSide) * 100
-      : 0;
-
-    const isBalanced = finalImbalance <= this.upDownBalance * 100;
+    const finalDifference = Math.abs(upTotal - downTotal);
+    const isBalanced = finalDifference <= this.maxDifferenceNaira;
 
     console.log('');
     console.log('📊 ========== BOT PLAN GENERATED ==========');
     console.log(`   Total Bets    : ${totalBets}`);
     console.log(`   UP Bets       : ${upBets.length} bets = ₦${upTotal.toLocaleString()}`);
     console.log(`   DOWN Bets     : ${downBets.length} bets = ₦${downTotal.toLocaleString()}`);
-    console.log(`   Gap           : ₦${Math.abs(upTotal - downTotal).toLocaleString()}`);
-    console.log(`   Imbalance     : ${finalImbalance.toFixed(1)}% (vs larger side)`);
-    console.log(`   Threshold     : ${this.upDownBalance * 100}%`);
+    console.log(`   Difference    : ₦${finalDifference.toLocaleString()}`);
+    console.log(`   Max Allowed   : ₦${this.maxDifferenceNaira}`);
     console.log(`   Status        : ${isBalanced ? '✅ BALANCED' : '❌ OVER THRESHOLD'}`);
     console.log(`   Spread Window : 0 - 270 seconds (4.5 min)`);
     console.log('============================================');
     console.log('');
 
-    // Critical warning if final imbalance is way too high
+    // Critical warning if final difference is too high
     if (!isBalanced) {
       console.error(
-        `❌ CRITICAL: Final imbalance ${finalImbalance.toFixed(1)}% exceeds threshold ${this.upDownBalance * 100}%!`
+        `❌ CRITICAL: Final difference ₦${finalDifference} exceeds threshold ₦${this.maxDifferenceNaira}!`
       );
     }
 
@@ -362,11 +342,8 @@ class BotService {
         });
       }
 
-      // Calculate current imbalance
-      const largerSide = Math.max(totalUp, totalDown);
-      const currentImbalance = largerSide > 0 
-        ? (Math.abs(totalUp - totalDown) / largerSide * 100).toFixed(1)
-        : 0;
+      // Calculate current difference in NAIRA
+      const currentDifference = Math.abs(totalUp - totalDown);
 
       // Log the bet
       console.log(
@@ -377,7 +354,7 @@ class BotService {
       console.log(
         `   Pool: UP ₦${totalUp.toLocaleString()} (${round.totalUpBets}) | ` +
         `DOWN ₦${totalDown.toLocaleString()} (${round.totalDownBets}) | ` +
-        `Imbalance: ${currentImbalance}%`
+        `Difference: ₦${currentDifference.toLocaleString()}`
       );
 
       return true;
@@ -432,7 +409,7 @@ class BotService {
         config: {
           betsPerRound: `${this.minBetsPerRound}-${this.maxBetsPerRound}`,
           amountRange: `₦${this.minBetAmount}-₦${this.maxBetAmount}`,
-          balanceThreshold: `${this.upDownBalance * 100}%`,
+          maxDifference: `₦${this.maxDifferenceNaira}`,
           bot1Id: this.botUser1Id,
           bot2Id: this.botUser2Id
         },
@@ -475,10 +452,10 @@ class BotService {
     return { min: this.minBetAmount, max: this.maxBetAmount };
   }
 
-  setBalanceThreshold(threshold) {
-    this.upDownBalance = parseFloat(threshold);
-    console.log(`🤖 Balance threshold: ${threshold * 100}%`);
-    return this.upDownBalance;
+  setMaxDifference(maxDifference) {
+    this.maxDifferenceNaira = parseInt(maxDifference);
+    console.log(`🤖 Max difference: ₦${maxDifference}`);
+    return this.maxDifferenceNaira;
   }
 }
 
