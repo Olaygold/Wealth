@@ -243,7 +243,7 @@ router.get('/referrals/stats', getReferralStats);
 //  * @access  Private/Admin
 //  * @body    { amount: number, reason: string }
 //  */
-// router.post('/users/:userId/credit', creditUserWallet);
+ router.post('/users/:userId/credit', creditUserWallet);
 
 // /**
 //  * @route   POST /api/admin/users/:userId/debit
@@ -251,7 +251,7 @@ router.get('/referrals/stats', getReferralStats);
 //  * @access  Private/Admin
 //  * @body    { amount: number, reason: string }
 //  */
-// router.post('/users/:userId/debit', debitUserWallet);
+ router.post('/users/:userId/debit', debitUserWallet);
 
 // /**
 //  * @route   PUT /api/admin/settings
@@ -259,21 +259,21 @@ router.get('/referrals/stats', getReferralStats);
 //  * @access  Private/Admin
 //  * @body    { fees: {...}, betting: {...}, payments: {...} }
 //  */
-// router.put('/settings', updateSettings);
+ router.put('/settings', updateSettings);
 
 // /**
 //  * @route   GET /api/admin/system/health
 //  * @desc    Get system health status
 //  * @access  Private/Admin
 //  */
-// router.get('/system/health', getSystemHealth);
+ router.get('/system/health', getSystemHealth);
 
 // /**
 //  * @route   POST /api/admin/system/clear-cache
 //  * @desc    Clear system cache
 //  * @access  Private/Admin
 //  */
-// router.post('/system/clear-cache', clearCache);
+ router.post('/system/clear-cache', clearCache);
 
 // =====================================================
 // EXPORT
