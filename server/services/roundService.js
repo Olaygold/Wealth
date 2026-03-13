@@ -57,31 +57,30 @@ class RoundService {
     
     // ✅ CACHE to reduce DB calls
     this.cachedActiveRound = null;
+    this.cachedLockedRound = null;
     this.cacheExpiry = null;
     this.CACHE_DURATION = 5000; // 5 seconds cache
     
+    // ✅ NEW: Only betting duration, locked removed
     this.BETTING_DURATION = parseInt(process.env.BETTING_DURATION_MINUTES) || 5;
-    this.LOCKED_DURATION = parseInt(process.env.LOCKED_DURATION_MINUTES) || 5;
-    this.TOTAL_ROUND_DURATION = this.BETTING_DURATION + this.LOCKED_DURATION;
   }
 
   async startRoundManager(io) {
     this.io = io;
-    console.log('🎮 Starting Round Manager...');
+    console.log('🎮 Starting Round Manager (NEW FLOW)...');
     console.log(`   ⏱️ Betting Period: ${this.BETTING_DURATION} minutes`);
-    console.log(`   🔒 Locked Period: ${this.LOCKED_DURATION} minutes`);
-    console.log(`   📊 Total Round: ${this.TOTAL_ROUND_DURATION} minutes`);
+    console.log(`   🔄 Flow: Active → Locked (with result) → New Active immediately`);
 
     try {
       await new Promise(resolve => setTimeout(resolve, 2000));
       await this.initializeRounds();
 
-      // ✅ Check every 15 seconds - BALANCED for Supabase free tier
+      // ✅ Check every 10 seconds for faster transitions
       this.checkInterval = setInterval(async () => {
         await this.checkAndUpdateRounds();
-      }, 15000);
+      }, 10000);
 
-      console.log('✅ Round Manager started successfully (checking every 15s)');
+      console.log('✅ Round Manager started successfully (checking every 10s)');
     } catch (error) {
       console.error('❌ Round Manager startup error:', error.message);
     }
@@ -90,18 +89,24 @@ class RoundService {
   async initializeRounds() {
     try {
       const activeRound = await Round.findOne({
-        where: { status: { [Op.in]: ['active', 'locked'] } },
+        where: { status: 'active' },
         order: [['startTime', 'DESC']]
+      });
+
+      const lockedRound = await Round.findOne({
+        where: { status: 'locked' },
+        order: [['endTime', 'DESC']]
       });
 
       if (activeRound) {
         this.currentRound = activeRound;
         this.cachedActiveRound = activeRound;
-        this.cacheExpiry = Date.now() + this.CACHE_DURATION;
-        console.log(`📊 Found active round #${activeRound.roundNumber} (${activeRound.status})`);
+        console.log(`📊 Found active round #${activeRound.roundNumber}`);
         
         const now = new Date();
-        if (now > new Date(activeRound.endTime)) {
+        const endTime = new Date(activeRound.startTime.getTime() + (this.BETTING_DURATION * 60 * 1000));
+        
+        if (now > endTime) {
           console.log('⚠️ Active round expired, ending it now...');
           await this.endRound(activeRound);
         }
@@ -110,7 +115,15 @@ class RoundService {
         await this.createNewRound(true);
       }
 
+      if (lockedRound) {
+        this.cachedLockedRound = lockedRound;
+        console.log(`🔒 Found locked round #${lockedRound.roundNumber}`);
+      }
+
+      // ✅ Always ensure upcoming round exists
       await this.ensureUpcomingRound();
+      
+      this.cacheExpiry = Date.now() + this.CACHE_DURATION;
     } catch (error) {
       console.error('❌ Error initializing rounds:', error.message);
       try {
@@ -131,33 +144,35 @@ class RoundService {
       
       const nextRoundNumber = lastRound ? lastRound.roundNumber + 1 : 1;
 
-      let startTime, lockTime, endTime;
+      let startTime, endTime;
 
       if (startImmediately) {
+        // ✅ Start NOW
         startTime = now;
-        lockTime = new Date(now.getTime() + (this.BETTING_DURATION * 60 * 1000));
-        endTime = new Date(now.getTime() + (this.TOTAL_ROUND_DURATION * 60 * 1000));
+        endTime = new Date(now.getTime() + (this.BETTING_DURATION * 60 * 1000));
       } else {
+        // ✅ Upcoming round starts when current active ends
         const currentRound = await this.getCurrentRound();
         if (currentRound) {
-          startTime = new Date(new Date(currentRound.endTime).getTime() + 5000);
+          startTime = new Date(currentRound.startTime.getTime() + (this.BETTING_DURATION * 60 * 1000) + 1000);
         } else {
-          startTime = new Date(now.getTime() + 10000);
+          startTime = new Date(now.getTime() + (this.BETTING_DURATION * 60 * 1000));
         }
-        lockTime = new Date(startTime.getTime() + (this.BETTING_DURATION * 60 * 1000));
-        endTime = new Date(startTime.getTime() + (this.TOTAL_ROUND_DURATION * 60 * 1000));
+        endTime = new Date(startTime.getTime() + (this.BETTING_DURATION * 60 * 1000));
       }
 
       const round = await Round.create({
         roundNumber: nextRoundNumber,
         status: startImmediately ? 'active' : 'upcoming',
         startTime,
-        lockTime,
+        lockTime: endTime, // ✅ Lock time = end time now
         endTime,
         startPrice: startImmediately ? priceService.getPrice() : null
       });
 
       console.log(`✅ Created round #${round.roundNumber} (${round.status})`);
+      console.log(`   Start: ${startTime.toLocaleTimeString()}`);
+      console.log(`   End: ${endTime.toLocaleTimeString()}`);
 
       // ✅ Clear cache
       this.cachedActiveRound = null;
@@ -165,13 +180,14 @@ class RoundService {
 
       if (startImmediately) {
         this.currentRound = round;
+        this.cachedActiveRound = round;
+        
         if (this.io) {
           this.io.emit('round_start', {
             roundId: round.id,
             roundNumber: round.roundNumber,
             startPrice: round.startPrice,
             startTime: round.startTime,
-            lockTime: round.lockTime,
             endTime: round.endTime
           });
         }
@@ -192,6 +208,7 @@ class RoundService {
       });
 
       if (!upcomingRound) {
+        console.log('📊 Creating upcoming round...');
         await this.createNewRound(false);
       }
     } catch (error) {
@@ -200,34 +217,36 @@ class RoundService {
   }
 
   async checkAndUpdateRounds() {
-    // ✅ Prevent overlapping checks
-    if (this.isChecking) {
-      return;
-    }
+    if (this.isChecking) return;
 
     this.isChecking = true;
     this.lastCheckTime = new Date();
     const now = new Date();
 
     try {
-      // ✅ SINGLE optimized query for rounds that need action
+      // ✅ Check rounds that need action
       const roundsNeedingAction = await Round.findAll({
         where: {
           [Op.or]: [
             { status: 'upcoming', startTime: { [Op.lte]: now } },
-            { status: 'active', lockTime: { [Op.lte]: now } },
-            { status: 'locked', endTime: { [Op.lte]: now } }
+            { 
+              status: 'active', 
+              startTime: { 
+                [Op.lte]: new Date(now.getTime() - (this.BETTING_DURATION * 60 * 1000)) 
+              } 
+            }
           ]
         },
         order: [['startTime', 'ASC']]
       });
 
       for (const round of roundsNeedingAction) {
+        const roundAge = now - new Date(round.startTime);
+        const bettingDurationMs = this.BETTING_DURATION * 60 * 1000;
+
         if (round.status === 'upcoming' && new Date(round.startTime) <= now) {
           await this.startRound(round);
-        } else if (round.status === 'active' && new Date(round.lockTime) <= now) {
-          await this.lockRound(round);
-        } else if (round.status === 'locked' && new Date(round.endTime) <= now) {
+        } else if (round.status === 'active' && roundAge >= bettingDurationMs) {
           await this.endRound(round);
         }
       }
@@ -252,7 +271,7 @@ class RoundService {
       await round.update({ status: 'active', startPrice });
       this.currentRound = round;
       
-      // ✅ Clear cache
+      // ✅ Update cache
       this.cachedActiveRound = round;
       this.cacheExpiry = Date.now() + this.CACHE_DURATION;
 
@@ -264,36 +283,14 @@ class RoundService {
           roundNumber: round.roundNumber,
           startPrice,
           startTime: round.startTime,
-          lockTime: round.lockTime,
           endTime: round.endTime
         });
       }
 
+      // ✅ Ensure next upcoming round exists
       await this.ensureUpcomingRound();
     } catch (error) {
       console.error('❌ Error starting round:', error.message);
-    }
-  }
-
-  async lockRound(round) {
-    try {
-      await round.update({ status: 'locked' });
-
-      // ✅ Clear cache
-      this.cachedActiveRound = null;
-      this.cacheExpiry = null;
-
-      console.log(`🔒 Round #${round.roundNumber} LOCKED`);
-
-      if (this.io) {
-        this.io.emit('round_lock', {
-          roundId: round.id,
-          roundNumber: round.roundNumber,
-          message: `Betting closed! Result in ${this.LOCKED_DURATION} minutes`
-        });
-      }
-    } catch (error) {
-      console.error('❌ Error locking round:', error.message);
     }
   }
 
@@ -316,25 +313,28 @@ class RoundService {
         result = 'down';
       }
 
-      await round.update({ status: 'completed', endPrice, result }, { transaction });
+      // ✅ NEW: Set to 'locked' first to show result
+      await round.update({ status: 'locked', endPrice, result }, { transaction });
 
-      console.log(`🏁 Round #${round.roundNumber} ENDED`);
+      console.log(`🔒 Round #${round.roundNumber} LOCKED with result`);
       console.log(`   💰 Start: $${startPrice.toLocaleString()} → End: $${endPrice.toLocaleString()}`);
       console.log(`   📊 Change: ${priceDiff > 0 ? '+' : ''}${priceDiff.toFixed(2)} (${percentChange.toFixed(3)}%)`);
       console.log(`   🎯 Result: ${result.toUpperCase()}`);
 
+      // ✅ Process bets
       await this.processBets(round, result, transaction);
 
       await transaction.commit();
       console.log('   ✅ Transaction committed successfully');
 
-      // ✅ Clear cache and cleanup bot
+      // ✅ Update locked round cache
+      this.cachedLockedRound = round;
       this.cachedActiveRound = null;
-      this.cacheExpiry = null;
       botService.cleanupRound(round.id);
 
+      // ✅ Emit locked event with result
       if (this.io) {
-        this.io.emit('round_end', {
+        this.io.emit('round_locked', {
           roundId: round.id,
           roundNumber: round.roundNumber,
           startPrice,
@@ -345,7 +345,23 @@ class RoundService {
         });
       }
 
-      await this.ensureUpcomingRound();
+      // ✅ IMMEDIATELY start the upcoming round (NO DELAY)
+      await this.startNextRound();
+
+      // ✅ After 30 seconds, mark locked round as completed
+      setTimeout(async () => {
+        try {
+          await round.update({ status: 'completed' });
+          console.log(`✅ Round #${round.roundNumber} marked as completed`);
+          
+          if (this.cachedLockedRound?.id === round.id) {
+            this.cachedLockedRound = null;
+          }
+        } catch (err) {
+          console.error('❌ Error marking round complete:', err.message);
+        }
+      }, 30000);
+
     } catch (error) {
       await transaction.rollback();
       console.error('❌ Error ending round:', error.message);
@@ -357,6 +373,55 @@ class RoundService {
         console.error('❌ Failed to mark round as cancelled');
       }
     }
+  }
+
+  // ✅ NEW: Start the next upcoming round immediately
+  async startNextRound() {
+    try {
+      const upcomingRound = await Round.findOne({
+        where: { status: 'upcoming' },
+        order: [['startTime', 'ASC']]
+      });
+
+      if (upcomingRound) {
+        console.log(`🚀 Starting next round #${upcomingRound.roundNumber} immediately...`);
+        await this.startRound(upcomingRound);
+      } else {
+        console.log('⚠️ No upcoming round found, creating new one...');
+        await this.createNewRound(true);
+      }
+    } catch (error) {
+      console.error('❌ Error starting next round:', error.message);
+      // Fallback: create new round
+      try {
+        await this.createNewRound(true);
+      } catch (createError) {
+        console.error('❌ Failed to create emergency round:', createError.message);
+      }
+    }
+  }
+
+  // ✅ NEW: Get locked round for display
+  async getLockedRound() {
+    if (this.cachedLockedRound && this.cacheExpiry && Date.now() < this.cacheExpiry) {
+      return this.cachedLockedRound;
+    }
+
+    const round = await Round.findOne({
+      where: { status: 'locked' },
+      order: [['endTime', 'DESC']]
+    });
+
+    this.cachedLockedRound = round;
+    return round;
+  }
+
+  // ✅ NEW: Get upcoming round
+  async getUpcomingRound() {
+    return await Round.findOne({
+      where: { status: 'upcoming' },
+      order: [['startTime', 'ASC']]
+    });
   }
 
   // ✅ ADMIN FUNCTIONS
@@ -394,7 +459,6 @@ class RoundService {
         throw new Error('Round already ended or cancelled');
       }
 
-      // Get all pending bets for this round
       const bets = await Bet.findAll({
         where: { roundId: round.id, result: 'pending' },
         include: [{ 
@@ -406,7 +470,6 @@ class RoundService {
         transaction
       });
 
-      // Refund all bets
       if (bets.length > 0) {
         console.log(`   🔄 Refunding ${bets.length} bets...`);
         await this.refundAllBets(round, bets, transaction, reason);
@@ -419,8 +482,8 @@ class RoundService {
 
       await transaction.commit();
 
-      // ✅ Clear cache
       this.cachedActiveRound = null;
+      this.cachedLockedRound = null;
       this.cacheExpiry = null;
 
       console.log(`❌ Round #${round.roundNumber} CANCELLED - ${reason}`);
@@ -443,7 +506,6 @@ class RoundService {
 
   async forceStartNewRound() {
     try {
-      // Cancel any current active/locked rounds
       const activeRounds = await Round.findAll({
         where: { status: { [Op.in]: ['active', 'locked'] } }
       });
@@ -452,7 +514,6 @@ class RoundService {
         await this.cancelRound(round.id, 'Force new round started');
       }
 
-      // Create new round
       const newRound = await this.createNewRound(true);
       
       return { success: true, message: `New round #${newRound.roundNumber} started`, round: newRound };
@@ -481,7 +542,6 @@ class RoundService {
         return;
       }
 
-      // ✅ Separate bot and real bets for logging
       const realBets = bets.filter(bet => !bet.isBot);
       const botBets = bets.filter(bet => bet.isBot);
 
@@ -520,21 +580,18 @@ class RoundService {
       console.log(`   ✅ Winners: ${winners.length} (₦${winnerPool.toLocaleString()})`);
       console.log(`   ❌ Losers: ${losers.length} (₦${loserPool.toLocaleString()})`);
 
-      // Everyone predicted WRONG
       if (winners.length === 0 && losers.length > 0) {
         console.log('   ❌ EVERYONE PREDICTED WRONG - All lose!');
         await this.processAllAsLosers(round, losers, transaction);
         return;
       }
 
-      // Everyone predicted CORRECT but no opponents
       if (winners.length > 0 && losers.length === 0) {
         console.log('   🎯 NO OPPONENTS - Refunding winners');
         await this.refundAllBets(round, winners, transaction, 'No opposing bets');
         return;
       }
 
-      // NORMAL CASE
       console.log('   🎮 NORMAL CASE - Processing payouts');
       
       const platformFee = roundToTwo(loserPool * 0.30);
@@ -566,7 +623,6 @@ class RoundService {
           isPaid: true
         }, { transaction });
 
-        // ✅ SKIP WALLET UPDATE FOR BOT BETS
         if (bet.isBot) {
           console.log(`   🤖 Bot WIN: ${bet.prediction.toUpperCase()} ₦${betAmount} → ₦${payout} (${multiplier}x)`);
           continue;
@@ -616,7 +672,6 @@ class RoundService {
 
         console.log(`   ✅ ${bet.user?.username || bet.userId}: Bet ₦${betAmount} → Won ₦${payout} (${multiplier}x)`);
 
-        // SAFE REFERRAL
         if (bet.user?.referredBy && !bet.user?.hasPlacedFirstBet) {
           await safeProcessReferral('first_bet', bet.userId, betAmount, bet.id, transaction);
         }
@@ -645,7 +700,6 @@ class RoundService {
           isPaid: true
         }, { transaction });
 
-        // ✅ SKIP WALLET UPDATE FOR BOT BETS
         if (bet.isBot) {
           console.log(`   🤖 Bot LOSS: ${bet.prediction.toUpperCase()} ₦${betAmount}`);
           continue;
@@ -688,7 +742,6 @@ class RoundService {
 
         console.log(`   ❌ ${bet.user?.username || bet.userId}: Lost ₦${betAmount}`);
 
-        // SAFE REFERRAL
         if (bet.user?.referredBy) {
           if (!bet.user.hasPlacedFirstBet) {
             await safeProcessReferral('first_bet', bet.userId, betAmount, bet.id, transaction);
@@ -731,7 +784,6 @@ class RoundService {
         isPaid: true
       }, { transaction });
 
-      // ✅ SKIP WALLET UPDATE FOR BOT BETS
       if (bet.isBot) {
         console.log(`   🤖 Bot LOSS: ${bet.prediction.toUpperCase()} ₦${betAmount}`);
         continue;
@@ -774,7 +826,6 @@ class RoundService {
 
       console.log(`   ❌ ${bet.user?.username || bet.userId}: Lost ₦${betAmount}`);
 
-      // SAFE REFERRAL
       if (bet.user?.referredBy) {
         if (!bet.user.hasPlacedFirstBet) {
           await safeProcessReferral('first_bet', bet.userId, betAmount, bet.id, transaction);
@@ -814,7 +865,6 @@ class RoundService {
         isPaid: true
       }, { transaction });
 
-      // ✅ SKIP WALLET UPDATE FOR BOT BETS
       if (bet.isBot) {
         console.log(`   🤖 Bot REFUND: ${bet.prediction.toUpperCase()} ₦${betAmount}`);
         continue;
@@ -854,7 +904,6 @@ class RoundService {
 
       console.log(`   🔄 ${bet.user?.username || bet.userId}: Refunded ₦${betAmount}`);
 
-      // SAFE REFERRAL
       if (bet.user?.referredBy && !bet.user?.hasPlacedFirstBet) {
         await safeProcessReferral('first_bet', bet.userId, betAmount, bet.id, transaction);
       }
@@ -878,27 +927,22 @@ class RoundService {
     }, { transaction });
   }
 
-  // ✅ OPTIMIZED - Uses cache to reduce DB calls
   async getCurrentRound() {
-    // Check cache first
     if (this.cachedActiveRound && this.cacheExpiry && Date.now() < this.cacheExpiry) {
       return this.cachedActiveRound;
     }
 
-    // Fetch from DB
     const round = await Round.findOne({
-      where: { status: { [Op.in]: ['active', 'locked'] } },
+      where: { status: 'active' },
       order: [['startTime', 'DESC']]
     });
 
-    // Update cache
     this.cachedActiveRound = round;
     this.cacheExpiry = Date.now() + this.CACHE_DURATION;
 
     return round;
   }
 
-  // ✅ Get server time for frontend sync
   getServerTime() {
     return {
       serverTime: new Date().toISOString(),
