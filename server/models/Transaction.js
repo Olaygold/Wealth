@@ -27,7 +27,10 @@ const Transaction = sequelize.define('Transaction', {
       'fee', 
       'refund',
       'referral_bonus',      // ✅ ADDED
-      'referral_commission'  // ✅ ADDED
+      'referral_commission', // ✅ ADDED
+      'admin_debit',
+    'bonus',        // ✅ ADD THIS
+    'admin_credit'  // ✅ ADD THIS
     ),
     allowNull: false
   },
