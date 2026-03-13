@@ -9,45 +9,45 @@ const {
   getLockedRound,
   getUpcomingRound,
   getPreviousRounds,
+  getRoundChart,
   placeBet,
   getMyActiveBets,
   getMyBetHistory,
   getRoundHistory,
   getRoundDetails,
   getPlatformStats,
-  getLeaderboard,
-  getRoundChart
+  getLeaderboard
 } = require('../controllers/tradingController');
 const { protect } = require('../middleware/auth');
 const { bettingLimiter, apiLimiter } = require('../middleware/rateLimiter');
 
 // ==================== PUBLIC ROUTES ====================
 
-// ✅ Get all rounds (previous, locked, active, upcoming) - FOR DASHBOARD
+// ✅ NEW: Get all rounds (previous[], locked, active, upcoming) - FOR DASHBOARD
 router.get('/rounds/all', getAllRounds);
 
 // ✅ Get current BTC price
 router.get('/current-price', getCurrentPrice);
 
-// ✅ Get active round (for betting)
+// ✅ NEW: Get active round (for betting)
 router.get('/active-round', getActiveRound);
 
-// ✅ Get locked round (waiting for result with chart)
+// ✅ NEW: Get locked round (waiting for result with chart)
 router.get('/locked-round', getLockedRound);
 
 // ✅ Get upcoming round
 router.get('/upcoming-round', getUpcomingRound);
 
-// ✅ Get previous completed rounds (last 3)
+// ✅ NEW: Get previous completed rounds (last 3)
 router.get('/previous-rounds', getPreviousRounds);
 
-// ✅ Get round chart data (for locked round)
+// ✅ NEW: Get round chart data (for locked round)
 router.get('/rounds/:roundId/chart', getRoundChart);
 
 // Legacy: Get current round (backward compatibility)
 router.get('/current-round', getCurrentRound);
 
-// Get round history (completed rounds)
+// Get round history (completed rounds with pagination)
 router.get('/rounds/history', getRoundHistory);
 
 // Get specific round details
