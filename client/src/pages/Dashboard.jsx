@@ -41,7 +41,9 @@ import {
   ExternalLink,
   Lock,
   Play,
-  Eye
+  Eye,
+  History,
+  BarChart3
 } from 'lucide-react';
 
 // ==================== HELPER FUNCTIONS ====================
@@ -55,8 +57,9 @@ const formatCurrency = (amount) => {
 };
 
 const formatTime = (seconds) => {
+  if (seconds < 0) seconds = 0;
   const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
+  const secs = Math.floor(seconds % 60);
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
 
@@ -291,14 +294,31 @@ const FloatingSupportButton = () => {
 };
 
 // ==================== PROFESSIONAL TRADING CHART ====================
-const TradingChart = ({ priceHistory, startPrice, currentPrice, isLocked = false }) => {
+const TradingChart = ({ priceHistory, startPrice, currentPrice, isLocked = false, roundId }) => {
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null);
   const seriesRef = useRef(null);
   const priceLineRef = useRef(null);
+  const lastRoundIdRef = useRef(null);
 
+  // ✅ Initialize chart only once or when roundId changes
   useEffect(() => {
     if (!chartContainerRef.current) return;
+
+    // Only recreate chart if roundId changed
+    if (lastRoundIdRef.current === roundId && chartRef.current) {
+      return;
+    }
+
+    // Cleanup previous chart
+    if (chartRef.current) {
+      chartRef.current.remove();
+      chartRef.current = null;
+      seriesRef.current = null;
+      priceLineRef.current = null;
+    }
+
+    lastRoundIdRef.current = roundId;
 
     const chart = createChart(chartContainerRef.current, {
       layout: {
@@ -328,16 +348,16 @@ const TradingChart = ({ priceHistory, startPrice, currentPrice, isLocked = false
       crosshair: {
         mode: 1,
         vertLine: {
-          color: '#6366f1',
+          color: isLocked ? '#f59e0b' : '#6366f1',
           width: 1,
           style: 2,
-          labelBackgroundColor: '#6366f1',
+          labelBackgroundColor: isLocked ? '#f59e0b' : '#6366f1',
         },
         horzLine: {
-          color: '#6366f1',
+          color: isLocked ? '#f59e0b' : '#6366f1',
           width: 1,
           style: 2,
-          labelBackgroundColor: '#6366f1',
+          labelBackgroundColor: isLocked ? '#f59e0b' : '#6366f1',
         },
       },
       handleScroll: {
@@ -371,12 +391,10 @@ const TradingChart = ({ priceHistory, startPrice, currentPrice, isLocked = false
 
     return () => {
       window.removeEventListener('resize', handleResize);
-      if (chartRef.current) {
-        chartRef.current.remove();
-      }
     };
-  }, [isLocked]);
+  }, [roundId, isLocked]);
 
+  // ✅ Update start price line
   useEffect(() => {
     if (!seriesRef.current || !startPrice || startPrice <= 0) return;
 
@@ -394,19 +412,20 @@ const TradingChart = ({ priceHistory, startPrice, currentPrice, isLocked = false
     });
   }, [startPrice]);
 
+  // ✅ Update chart data (append new points without resetting)
   useEffect(() => {
     if (!seriesRef.current || priceHistory.length === 0) return;
 
     const now = Math.floor(Date.now() / 1000);
     const chartData = priceHistory.map((item, index) => ({
-      time: now - (priceHistory.length - index - 1) * 5,
+      time: item.time ? Math.floor(item.time / 1000) : now - (priceHistory.length - index - 1) * 5,
       value: item.price,
     }));
 
     seriesRef.current.setData(chartData);
 
     if (chartRef.current) {
-      chartRef.current.timeScale().fitContent();
+      chartRef.current.timeScale().scrollToRealTime();
     }
   }, [priceHistory]);
 
@@ -422,6 +441,12 @@ const TradingChart = ({ priceHistory, startPrice, currentPrice, isLocked = false
             <Activity className="w-8 h-8 text-primary animate-pulse mx-auto mb-2" />
             <p className="text-gray-400 text-sm">Loading chart data...</p>
           </div>
+        </div>
+      )}
+      {isLocked && (
+        <div className="absolute top-2 right-2 bg-amber-500/20 border border-amber-500/50 rounded-lg px-2 py-1 flex items-center gap-1">
+          <Lock size={12} className="text-amber-500" />
+          <span className="text-amber-500 text-xs font-bold">Locked</span>
         </div>
       )}
     </div>
@@ -499,6 +524,73 @@ const LivePoolIndicator = ({ totalUp, totalDown, upBets, downBets, isLocked = fa
   );
 };
 
+// ==================== PREVIOUS ROUND CARD ====================
+const PreviousRoundCard = ({ round, index }) => {
+  if (!round) return null;
+
+  return (
+    <div className="bg-slate-800/60 rounded-2xl p-4 border border-slate-700 hover:border-slate-600 transition">
+      <div className="flex justify-between items-start mb-3">
+        <div>
+          <p className="text-xs text-gray-500">Round #{round.roundNumber}</p>
+          <p className="text-sm text-gray-400">
+            {new Date(round.endTime).toLocaleTimeString('en-US', {
+              hour: '2-digit',
+              minute: '2-digit'
+            })}
+          </p>
+        </div>
+        <div className={`px-3 py-1 rounded-lg font-bold text-sm ${
+          round.result === 'up'
+            ? 'bg-green-500/20 text-green-500'
+            : round.result === 'down'
+            ? 'bg-red-500/20 text-red-500'
+            : 'bg-yellow-500/20 text-yellow-500'
+        }`}>
+          {round.result === 'up' ? '📈 UP' :
+           round.result === 'down' ? '📉 DOWN' : '➖ TIE'}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 mb-3">
+        <div className="bg-slate-900/50 p-2 rounded-lg">
+          <p className="text-[10px] text-gray-500">Start</p>
+          <p className="text-sm font-bold text-white">
+            ${parseFloat(round.startPrice || 0).toLocaleString()}
+          </p>
+        </div>
+        <div className="bg-slate-900/50 p-2 rounded-lg">
+          <p className="text-[10px] text-gray-500">End</p>
+          <p className="text-sm font-bold text-white">
+            ${parseFloat(round.endPrice || 0).toLocaleString()}
+          </p>
+        </div>
+      </div>
+
+      <div className={`text-center py-2 rounded-lg ${
+        round.percentChange >= 0 ? 'bg-green-500/10' : 'bg-red-500/10'
+      }`}>
+        <span className={`font-bold ${
+          round.percentChange >= 0 ? 'text-green-500' : 'text-red-500'
+        }`}>
+          {round.percentChange >= 0 ? '+' : ''}{round.percentChange?.toFixed(3)}%
+        </span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
+        <div className={`p-2 rounded ${round.result === 'up' ? 'bg-green-500/20 ring-1 ring-green-500' : 'bg-green-500/5'}`}>
+          <span className="text-green-400">UP: </span>
+          <span className="text-white font-bold">₦{formatCurrency(round.totalUpAmount)}</span>
+        </div>
+        <div className={`p-2 rounded ${round.result === 'down' ? 'bg-red-500/20 ring-1 ring-red-500' : 'bg-red-500/5'}`}>
+          <span className="text-red-400">DOWN: </span>
+          <span className="text-white font-bold">₦{formatCurrency(round.totalDownAmount)}</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ==================== USER GUIDE MODAL ====================
 const UserGuideModal = ({ isOpen, onClose }) => {
   const [currentStep, setCurrentStep] = useState(0);
@@ -513,32 +605,26 @@ const UserGuideModal = ({ isOpen, onClose }) => {
     {
       icon: <Clock className="w-12 h-12 text-blue-500" />,
       title: "How Rounds Work ⏰",
-      content: "Each round lasts 5 minutes:\n• Active Round: Place your bets\n• Round Ends: Results shown instantly\n• New Round: Starts immediately!\n\nThere's always an active round to bet on!",
-      tip: "Watch the countdown timer - place your bets before time runs out!"
+      content: "Each round has 2 phases:\n\n• Active (5 min): Place your bets\n• Locked (5 min): Watch the chart, wait for result\n\nWhen a round locks, a NEW round starts immediately!",
+      tip: "There's always an active round to bet on!"
     },
     {
       icon: <DollarSign className="w-12 h-12 text-green-500" />,
       title: "Placing a Bet 💰",
-      content: "1. Select your bet amount (min ₦100)\n2. Check the potential payout\n3. Click PREDICT UP or PREDICT DOWN\n4. Wait for the round to end!",
+      content: "1. Select your bet amount (min ₦100)\n2. Check the potential payout\n3. Click PREDICT UP or PREDICT DOWN\n4. Wait for the round to lock!",
       tip: "The potential payout updates in real-time based on the pool!"
+    },
+    {
+      icon: <Eye className="w-12 h-12 text-amber-500" />,
+      title: "Locked Round = Watch & Wait 👀",
+      content: "When your round LOCKS:\n• You can still see the live chart\n• Watch the price movement\n• Result calculated after 5 minutes\n\nMeanwhile, bet on the NEW active round!",
+      tip: "Swipe to see the locked round with its chart!"
     },
     {
       icon: <Trophy className="w-12 h-12 text-yellow-500" />,
       title: "Winning & Payouts 🏆",
       content: "If your prediction is correct:\n• You get your bet back\n• Plus 70% of the losing pool!\n\nThe more opponents, the higher your potential win!",
       tip: "No opponents = Full refund if you win"
-    },
-    {
-      icon: <Zap className="w-12 h-12 text-orange-500" />,
-      title: "Understanding Multipliers 📊",
-      content: "The multiplier shows your potential return:\n• 1.5x = ₦1000 bet wins ₦1500\n• 2.0x = ₦1000 bet wins ₦2000\n\nMultiplier changes as more bets come in!",
-      tip: "Higher multiplier = More profit if you win!"
-    },
-    {
-      icon: <Eye className="w-12 h-12 text-amber-500" />,
-      title: "View Last Round Results 📊",
-      content: "After each round ends:\n• See the locked round with results\n• View the price chart\n• See who won (UP or DOWN)\n\nSwipe left to see the last completed round!",
-      tip: "Learn from past rounds to improve your strategy!"
     },
     {
       icon: <Gift className="w-12 h-12 text-purple-500" />,
@@ -636,16 +722,20 @@ const Dashboard = () => {
   // ========== ALL STATES ==========
   const [currentPrice, setCurrentPrice] = useState(0);
   const [priceHistory, setPriceHistory] = useState([]);
-  const [lockedRound, setLockedRound] = useState(null); // ✅ NEW: Last completed round with results
-  const [activeRound, setActiveRound] = useState(null); // ✅ Current betting round
+  const [lockedPriceHistory, setLockedPriceHistory] = useState([]); // ✅ Separate history for locked round
+  const [previousRounds, setPreviousRounds] = useState([]); // ✅ Array of 3 completed rounds
+  const [lockedRound, setLockedRound] = useState(null); // ✅ Locked round (5min countdown, shows chart)
+  const [activeRound, setActiveRound] = useState(null); // ✅ Active round (for betting)
   const [upcomingRound, setUpcomingRound] = useState(null);
-  const [activeSlide, setActiveSlide] = useState(1); // Default to active round
+  const [activeSlide, setActiveSlide] = useState(2); // Default to active round (index 2)
   const [betAmount, setBetAmount] = useState(1000);
   const [loading, setLoading] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(0);
+  const [activeTimeLeft, setActiveTimeLeft] = useState(0);
+  const [lockedTimeLeft, setLockedTimeLeft] = useState(0);
   const [myActiveBets, setMyActiveBets] = useState([]);
   const [dataLoading, setDataLoading] = useState(true);
-  const [roundStartPrice, setRoundStartPrice] = useState(0);
+  const [activeStartPrice, setActiveStartPrice] = useState(0);
+  const [lockedStartPrice, setLockedStartPrice] = useState(0);
   const [showGuide, setShowGuide] = useState(false);
   const [walletData, setWalletData] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -659,8 +749,17 @@ const Dashboard = () => {
   const walletBalance = parseFloat(walletData?.nairaBalance || 0);
   const lockedBalance = parseFloat(walletData?.lockedBalance || 0);
   const availableBalance = roundToTwo(walletBalance - lockedBalance);
-  const priceChange = roundStartPrice > 0 ? ((currentPrice - roundStartPrice) / roundStartPrice) * 100 : 0;
-  const canBet = activeRound?.status === 'active' && timeLeft >= 10;
+  const activePriceChange = activeStartPrice > 0 ? ((currentPrice - activeStartPrice) / activeStartPrice) * 100 : 0;
+  const lockedPriceChange = lockedStartPrice > 0 ? ((currentPrice - lockedStartPrice) / lockedStartPrice) * 100 : 0;
+  const canBet = activeRound?.status === 'active' && activeTimeLeft >= 10;
+
+  // ========== SLIDE CONFIGURATION ==========
+  const slides = [
+    { id: 'previous', label: '📊 History (3)' },
+    { id: 'locked', label: '🔒 Locked Round' },
+    { id: 'active', label: '🔴 LIVE Betting' },
+    { id: 'upcoming', label: '⏳ Next Round' }
+  ];
 
   // ========== NAVIGATE TO REFERRAL PAGE ==========
   const goToReferralPage = () => {
@@ -694,41 +793,7 @@ const Dashboard = () => {
     }
   }, [user, bannerDismissed]);
 
-  // ========== SHOW POPUP AFTER BIG WIN ==========
-  useEffect(() => {
-    if (!socket || !isConnected) return;
-
-    const handleBetResult = (data) => {
-      fetchMyBets();
-      fetchWalletData();
-      
-      if (data.result === 'win') {
-        toast.success(`🎉 You WON ₦${data.payout?.toLocaleString()}! (${data.multiplier}x)`, { duration: 5000 });
-        
-        if (data.payout > 2000) {
-          setTimeout(() => {
-            setShowReferralPopup(true);
-            toast('🎁 Share your success! Refer friends & earn 25%!', {
-              duration: 5000,
-              icon: '💰'
-            });
-          }, 4000);
-        }
-      } else if (data.result === 'loss') {
-        toast.error(`😢 You lost ₦${Math.abs(data.profit || data.amount)?.toLocaleString()}`, { duration: 4000 });
-      } else if (data.result === 'refund') {
-        toast.success(`🔄 Refunded ₦${data.payout?.toLocaleString()}`, { duration: 4000 });
-      }
-    };
-
-    socket.on('bet_result', handleBetResult);
-
-    return () => {
-      socket.off('bet_result', handleBetResult);
-    };
-  }, [socket, isConnected]);
-
-  // ========== MULTIPLIER CALCULATION (INCLUDING USER'S BET) ==========
+  // ========== MULTIPLIER CALCULATION ==========
   const calculatePotentialPayout = useCallback((prediction) => {
     if (!activeRound || betAmount <= 0) {
       return { 
@@ -780,7 +845,7 @@ const Dashboard = () => {
     };
   }, [activeRound, betAmount]);
 
-  // ========== GET CURRENT POOL MULTIPLIER (WITHOUT USER'S BET) ==========
+  // ========== GET CURRENT POOL MULTIPLIER ==========
   const getCurrentMultiplier = useCallback((prediction) => {
     if (!activeRound) return { value: 1.7, display: '~1.7x' };
 
@@ -875,25 +940,33 @@ const Dashboard = () => {
     }
   };
 
-  // ========== FETCH ALL ROUNDS - UPDATED FOR NEW FLOW ==========
+  // ========== FETCH ALL ROUNDS ==========
   const fetchAllRounds = async () => {
     try {
       const data = await api.get('/trading/rounds/all');
 
       if (data) {
-        // ✅ NEW: Set locked round (last completed with results)
-        setLockedRound(data.lockedRound || data.previousRound || null);
+        // ✅ Set previous rounds (array of 3)
+        setPreviousRounds(data.previousRounds || []);
         
-        // ✅ Set active round (current betting round)
-        setActiveRound(data.activeRound || data.currentRound || null);
+        // ✅ Set locked round
+        if (data.lockedRound) {
+          setLockedRound(data.lockedRound);
+          setLockedStartPrice(parseFloat(data.lockedRound.startPrice || 0));
+        } else {
+          setLockedRound(null);
+        }
+        
+        // ✅ Set active round
+        if (data.activeRound) {
+          setActiveRound(data.activeRound);
+          setActiveStartPrice(parseFloat(data.activeRound.startPrice || 0));
+        } else {
+          setActiveRound(null);
+        }
         
         // ✅ Set upcoming round
         setUpcomingRound(data.upcomingRound || null);
-
-        // ✅ Set start price from active round
-        if (data.activeRound?.startPrice || data.currentRound?.startPrice) {
-          setRoundStartPrice(parseFloat(data.activeRound?.startPrice || data.currentRound?.startPrice));
-        }
       }
     } catch (err) {
       console.error('Rounds fetch error:', err);
@@ -907,13 +980,19 @@ const Dashboard = () => {
       const price = data?.price;
       if (price) {
         setCurrentPrice(parseFloat(price));
-        setPriceHistory(prev => {
-          const newEntry = {
-            time: Date.now(),
-            price: parseFloat(price)
-          };
-          return [...prev.slice(-59), newEntry];
-        });
+        
+        const newEntry = {
+          time: Date.now(),
+          price: parseFloat(price)
+        };
+        
+        // Update price history for active round
+        setPriceHistory(prev => [...prev.slice(-59), newEntry]);
+        
+        // Update price history for locked round (if exists)
+        if (lockedRound) {
+          setLockedPriceHistory(prev => [...prev.slice(-119), newEntry]);
+        }
       }
     } catch (err) {
       console.error('Price fetch error:', err);
@@ -931,7 +1010,7 @@ const Dashboard = () => {
     }
   };
 
-  // ========== SOCKET LISTENERS - UPDATED FOR NEW FLOW ==========
+  // ========== SOCKET LISTENERS ==========
   useEffect(() => {
     if (!socket || !isConnected) return;
 
@@ -940,17 +1019,21 @@ const Dashboard = () => {
       if (data?.price) {
         const price = parseFloat(data.price);
         setCurrentPrice(price);
-        setPriceHistory(prev => {
-          const newEntry = {
-            time: Date.now(),
-            price: price
-          };
-          return [...prev.slice(-59), newEntry];
-        });
+        
+        const newEntry = {
+          time: Date.now(),
+          price: price
+        };
+        
+        setPriceHistory(prev => [...prev.slice(-59), newEntry]);
+        
+        if (lockedRound) {
+          setLockedPriceHistory(prev => [...prev.slice(-119), newEntry]);
+        }
       }
     });
 
-    // Bet placed by ANY user - Update pool instantly
+    // Bet placed by ANY user
     socket.on('bet_placed', (data) => {
       console.log('🎰 New bet placed:', data);
       
@@ -968,50 +1051,67 @@ const Dashboard = () => {
       });
     });
 
-    // ✅ NEW: Round started - New active round
+    // Round started
     socket.on('round_start', (data) => {
       console.log('🚀 Round started:', data);
       fetchAllRounds();
       fetchMyBets();
       if (data.startPrice) {
-        setRoundStartPrice(parseFloat(data.startPrice));
+        setActiveStartPrice(parseFloat(data.startPrice));
       }
-      setPriceHistory([]); // Clear chart for new round
+      setPriceHistory([]); // Reset chart for new active round
       toast.success(`🚀 Round #${data.roundNumber} Started! Place your bets!`, { duration: 3000 });
-      setActiveSlide(1); // Switch to active round
+      setActiveSlide(2); // Switch to active round
     });
 
-    // ✅ NEW: Round locked - Round ended with result
+    // Round locked
     socket.on('round_locked', (data) => {
-      console.log('🔒 Round locked with result:', data);
+      console.log('🔒 Round locked:', data);
+      fetchAllRounds();
+      fetchMyBets();
+      
+      // ✅ Preserve price history for locked round
+      setLockedPriceHistory([...priceHistory]);
+      setLockedStartPrice(parseFloat(data.startPrice || 0));
+      
+      toast('🔒 Betting closed! Waiting for result...', { 
+        icon: '⏰', 
+        duration: 3000 
+      });
+    });
+
+    // Round completed
+    socket.on('round_completed', (data) => {
+      console.log('🏁 Round completed:', data);
       fetchAllRounds();
       fetchMyBets();
       fetchWalletData();
       
       const emoji = data.result === 'up' ? '📈' : data.result === 'down' ? '📉' : '➖';
       toast.success(`${emoji} Round #${data.roundNumber} Result: ${data.result?.toUpperCase()}!`, { duration: 4000 });
-      
-      // Show notification to view results
-      toast('👈 Swipe left to see round results!', { 
-        icon: '📊', 
-        duration: 3000 
-      });
     });
 
-    // Legacy event support
-    socket.on('round_end', (data) => {
-      console.log('🏁 Round ended (legacy):', data);
-      fetchAllRounds();
+    // Bet result for current user
+    socket.on('bet_result', (data) => {
       fetchMyBets();
       fetchWalletData();
+      
+      if (data.result === 'win') {
+        toast.success(`🎉 You WON ₦${data.payout?.toLocaleString()}! (${data.multiplier}x)`, { duration: 5000 });
+        
+        if (data.payout > 2000) {
+          setTimeout(() => {
+            setShowReferralPopup(true);
+          }, 4000);
+        }
+      } else if (data.result === 'loss') {
+        toast.error(`😢 You lost ₦${Math.abs(data.profit || data.amount)?.toLocaleString()}`, { duration: 4000 });
+      } else if (data.result === 'refund') {
+        toast.success(`🔄 Refunded ₦${data.payout?.toLocaleString()}`, { duration: 4000 });
+      }
     });
 
-    socket.on('round_lock', (data) => {
-      console.log('🔒 Round lock (legacy):', data);
-      fetchAllRounds();
-    });
-
-    // Balance update for current user
+    // Balance update
     socket.on('balance_update', (data) => {
       console.log('💰 Balance update:', data);
       setWalletData(prev => ({
@@ -1026,31 +1126,39 @@ const Dashboard = () => {
       socket.off('bet_placed');
       socket.off('round_start');
       socket.off('round_locked');
-      socket.off('round_end');
-      socket.off('round_lock');
+      socket.off('round_completed');
+      socket.off('bet_result');
       socket.off('balance_update');
     };
-  }, [socket, isConnected]);
+  }, [socket, isConnected, priceHistory, lockedRound]);
 
-  // ========== COUNTDOWN TIMER ==========
+  // ========== COUNTDOWN TIMERS ==========
   useEffect(() => {
-    if (!activeRound?.endTime) {
-      setTimeLeft(0);
-      return;
-    }
-
-    const updateTimer = () => {
+    const updateTimers = () => {
       const now = Date.now();
-      const end = new Date(activeRound.endTime).getTime();
-      const diff = end - now;
-      setTimeLeft(Math.max(0, Math.floor(diff / 1000)));
+      
+      // Active round timer
+      if (activeRound?.lockTime) {
+        const lockTime = new Date(activeRound.lockTime).getTime();
+        setActiveTimeLeft(Math.max(0, Math.floor((lockTime - now) / 1000)));
+      } else {
+        setActiveTimeLeft(0);
+      }
+      
+      // Locked round timer
+      if (lockedRound?.endTime) {
+        const endTime = new Date(lockedRound.endTime).getTime();
+        setLockedTimeLeft(Math.max(0, Math.floor((endTime - now) / 1000)));
+      } else {
+        setLockedTimeLeft(0);
+      }
     };
 
-    updateTimer();
-    const interval = setInterval(updateTimer, 100);
+    updateTimers();
+    const interval = setInterval(updateTimers, 100);
 
     return () => clearInterval(interval);
-  }, [activeRound]);
+  }, [activeRound, lockedRound]);
 
   // ========== PLACE BET ==========
   const handlePlaceBet = async (prediction) => {
@@ -1064,7 +1172,7 @@ const Dashboard = () => {
       return;
     }
 
-    if (timeLeft < 10) {
+    if (activeTimeLeft < 10) {
       toast.error('⏰ Too late! Round ending soon.');
       return;
     }
@@ -1196,7 +1304,7 @@ const Dashboard = () => {
 
             <button
               onClick={() => setShowReferralPopup(true)}
-              className="p-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl border border-purple-500/50 transition hover:from-purple-700 hover:to-pink-700 hover:shadow-lg hover:shadow-purple-500/30"
+              className="p-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl border border-purple-500/50 transition hover:from-purple-700 hover:to-pink-700"
               title="Refer & Earn 25%"
             >
               <Gift size={20} />
@@ -1248,21 +1356,21 @@ const Dashboard = () => {
               </div>
             </div>
 
-            {roundStartPrice > 0 && (
+            {activeStartPrice > 0 && (
               <div className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-300 ${
-                priceChange >= 0 ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'
+                activePriceChange >= 0 ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'
               }`}>
-                {priceChange >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
+                {activePriceChange >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
                 <span className="font-bold tabular-nums text-lg">
-                  {priceChange >= 0 ? '+' : ''}{priceChange.toFixed(3)}%
+                  {activePriceChange >= 0 ? '+' : ''}{activePriceChange.toFixed(3)}%
                 </span>
-                <span className="text-xs opacity-70">from round start</span>
+                <span className="text-xs opacity-70">from active start</span>
               </div>
             )}
           </div>
         </div>
 
-        {/* ==================== SWIPEABLE ROUNDS - UPDATED ==================== */}
+        {/* ==================== SWIPEABLE ROUNDS ==================== */}
         <div className="mb-6">
           {/* Slide Navigation */}
           <div className="flex items-center justify-between mb-4">
@@ -1275,13 +1383,11 @@ const Dashboard = () => {
                 <ChevronLeft size={20} />
               </button>
               <span className="text-sm text-gray-400 min-w-[200px] text-center font-medium">
-                {activeSlide === 0 ? '🔒 Last Round Results' :
-                 activeSlide === 1 ? '🔴 LIVE - Place Your Bets!' :
-                 '⏳ Next Round'}
+                {slides[activeSlide]?.label}
               </span>
               <button
-                onClick={() => setActiveSlide(prev => Math.min(2, prev + 1))}
-                disabled={activeSlide === 2}
+                onClick={() => setActiveSlide(prev => Math.min(3, prev + 1))}
+                disabled={activeSlide === 3}
                 className="p-2 bg-slate-800 rounded-lg text-gray-400 hover:text-white disabled:opacity-30 transition border border-slate-700"
               >
                 <ChevronRight size={20} />
@@ -1289,12 +1395,14 @@ const Dashboard = () => {
             </div>
 
             <div className="flex gap-2">
-              {[0, 1, 2].map(i => (
+              {slides.map((_, i) => (
                 <button
                   key={i}
                   onClick={() => setActiveSlide(i)}
                   className={`h-2 rounded-full transition-all ${
-                    activeSlide === i ? 'w-8 bg-primary' : 'w-2 bg-gray-600 hover:bg-gray-500'
+                    activeSlide === i 
+                      ? i === 2 ? 'w-8 bg-red-500' : 'w-8 bg-primary' 
+                      : 'w-2 bg-gray-600 hover:bg-gray-500'
                   }`}
                 />
               ))}
@@ -1307,115 +1415,135 @@ const Dashboard = () => {
               className="flex transition-transform duration-500 ease-out"
               style={{ transform: `translateX(-${activeSlide * 100}%)` }}
             >
-              {/* ===== SLIDE 0: LOCKED/COMPLETED ROUND (RESULTS) ===== */}
+
+              {/* ===== SLIDE 0: PREVIOUS ROUNDS (HISTORY) ===== */}
+              <div className="min-w-full px-1">
+                <div className="bg-slate-800/40 rounded-3xl p-6 border border-slate-700">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <History className="text-primary" size={20} />
+                      <h3 className="text-lg font-bold text-white">Previous Rounds</h3>
+                    </div>
+                    <span className="text-xs text-gray-500">Last 3 completed</span>
+                  </div>
+
+                  {previousRounds.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {previousRounds.map((round, index) => (
+                        <PreviousRoundCard key={round.id} round={round} index={index} />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12">
+                      <Trophy className="mx-auto mb-4 text-gray-600" size={48} />
+                      <p className="text-gray-500 text-lg">No completed rounds yet</p>
+                      <p className="text-gray-600 text-sm mt-2">Complete a round to see history here</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* ===== SLIDE 1: LOCKED ROUND (WAITING FOR RESULT) ===== */}
               <div className="min-w-full px-1">
                 {lockedRound ? (
-                  <div className="bg-gradient-to-br from-amber-900/20 to-slate-900 rounded-3xl p-6 border-2 border-amber-500/30">
+                  <div className="bg-gradient-to-br from-amber-900/20 to-slate-900 rounded-3xl p-6 border-2 border-amber-500/50 shadow-lg shadow-amber-500/10">
                     {/* Header */}
                     <div className="flex justify-between items-center mb-4">
                       <div>
                         <div className="flex items-center gap-2 mb-1">
                           <Lock className="text-amber-500" size={16} />
                           <p className="text-sm text-amber-500 font-bold">
-                            COMPLETED • Round #{lockedRound.roundNumber}
+                            LOCKED • Round #{lockedRound.roundNumber}
                           </p>
                         </div>
-                        <h3 className="text-xl font-bold text-white">Last Round Results</h3>
+                        <h3 className="text-xl font-bold text-white">Waiting for Result</h3>
                       </div>
-                      <div className={`px-4 py-2 rounded-xl font-bold text-lg ${
-                        lockedRound.result === 'up'
-                          ? 'bg-green-500/20 text-green-500 border border-green-500'
-                          : lockedRound.result === 'down'
-                          ? 'bg-red-500/20 text-red-500 border border-red-500'
-                          : 'bg-yellow-500/20 text-yellow-500 border border-yellow-500'
+
+                      {/* Timer */}
+                      <div className={`px-5 py-3 rounded-2xl border ${
+                        lockedTimeLeft < 30 ? 'bg-red-500/20 border-red-500' :
+                        lockedTimeLeft < 60 ? 'bg-yellow-500/20 border-yellow-500' : 
+                        'bg-amber-500/20 border-amber-500'
                       }`}>
-                        {lockedRound.result === 'up' ? '📈 UP WON' :
-                         lockedRound.result === 'down' ? '📉 DOWN WON' : '➖ TIE'}
-                      </div>
-                    </div>
-
-                    {/* Price Results */}
-                    <div className="grid grid-cols-3 gap-4 mb-4">
-                      <div className="bg-slate-900/50 p-4 rounded-xl text-center">
-                        <p className="text-xs text-gray-400 mb-1">Start Price</p>
-                        <p className="text-lg font-bold text-white">
-                          ${parseFloat(lockedRound.startPrice || 0).toLocaleString()}
-                        </p>
-                      </div>
-                      <div className="bg-slate-900/50 p-4 rounded-xl text-center">
-                        <p className="text-xs text-gray-400 mb-1">End Price</p>
-                        <p className="text-lg font-bold text-white">
-                          ${parseFloat(lockedRound.endPrice || 0).toLocaleString()}
-                        </p>
-                      </div>
-                      <div className="bg-slate-900/50 p-4 rounded-xl text-center">
-                        <p className="text-xs text-gray-400 mb-1">Change</p>
-                        <p className={`text-lg font-bold ${
-                          (lockedRound.endPrice - lockedRound.startPrice) >= 0
-                            ? 'text-green-500'
-                            : 'text-red-500'
+                        <p className="text-xs text-gray-400 text-center">Result In</p>
+                        <p className={`text-3xl font-mono font-bold text-center tabular-nums ${
+                          lockedTimeLeft < 30 ? 'text-red-500 animate-pulse' :
+                          lockedTimeLeft < 60 ? 'text-yellow-500' : 'text-amber-500'
                         }`}>
-                          {lockedRound.startPrice > 0 
-                            ? (((lockedRound.endPrice - lockedRound.startPrice) / lockedRound.startPrice) * 100).toFixed(3)
-                            : 0}%
+                          {formatTime(lockedTimeLeft)}
                         </p>
                       </div>
                     </div>
 
-                    {/* Pool Results */}
-                    <div className="grid grid-cols-2 gap-3 mb-4">
-                      <div className={`p-4 rounded-xl ${lockedRound.result === 'up' ? 'bg-green-500/20 ring-2 ring-green-500' : 'bg-green-500/10'}`}>
-                        <div className="flex justify-between items-center">
-                          <span className="text-green-400 text-sm font-medium flex items-center gap-1">
-                            <TrendingUp size={14} /> UP Pool
-                          </span>
-                          <span className="text-green-400 text-xs">{lockedRound.totalUpBets || 0} bets</span>
-                        </div>
-                        <p className="text-xl font-bold text-green-500 mt-1">
-                          ₦{formatCurrency(lockedRound.totalUpAmount)}
-                        </p>
-                        {lockedRound.result === 'up' && (
-                          <p className="text-xs text-green-400 mt-1 flex items-center gap-1">
-                            <Trophy size={12} /> Winners!
+                    {/* Price Info */}
+                    <div className="bg-slate-900/50 rounded-2xl p-4 mb-4">
+                      <div className="grid grid-cols-2 gap-4 mb-3">
+                        <div>
+                          <p className="text-xs text-gray-400 mb-1">Round Start Price</p>
+                          <p className="text-xl font-bold text-white tabular-nums">
+                            ${lockedStartPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                           </p>
-                        )}
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-gray-400 mb-1">Current Price</p>
+                          <p className="text-xl font-bold text-white tabular-nums">
+                            ${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          </p>
+                        </div>
                       </div>
-                      <div className={`p-4 rounded-xl ${lockedRound.result === 'down' ? 'bg-red-500/20 ring-2 ring-red-500' : 'bg-red-500/10'}`}>
-                        <div className="flex justify-between items-center">
-                          <span className="text-red-400 text-sm font-medium flex items-center gap-1">
-                            <TrendingDown size={14} /> DOWN Pool
-                          </span>
-                          <span className="text-red-400 text-xs">{lockedRound.totalDownBets || 0} bets</span>
-                        </div>
-                        <p className="text-xl font-bold text-red-500 mt-1">
-                          ₦{formatCurrency(lockedRound.totalDownAmount)}
-                        </p>
-                        {lockedRound.result === 'down' && (
-                          <p className="text-xs text-red-400 mt-1 flex items-center gap-1">
-                            <Trophy size={12} /> Winners!
-                          </p>
-                        )}
+
+                      <div className="flex items-center justify-center gap-2 pt-2 border-t border-slate-700">
+                        <span className="text-gray-400 text-sm">Current Direction:</span>
+                        <span className={`font-bold text-lg flex items-center gap-1 ${
+                          lockedPriceChange >= 0 ? 'text-green-500' : 'text-red-500'
+                        }`}>
+                          {lockedPriceChange >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
+                          {lockedPriceChange >= 0 ? 'UP' : 'DOWN'} ({lockedPriceChange >= 0 ? '+' : ''}{lockedPriceChange.toFixed(3)}%)
+                        </span>
                       </div>
                     </div>
+
+                    {/* ✅ Chart (persisted for locked round) */}
+                    <div className="bg-slate-900/50 rounded-xl p-2 mb-4">
+                      <TradingChart 
+                        priceHistory={lockedPriceHistory.length > 0 ? lockedPriceHistory : priceHistory} 
+                        startPrice={lockedStartPrice}
+                        currentPrice={currentPrice}
+                        isLocked={true}
+                        roundId={lockedRound.id}
+                      />
+                    </div>
+
+                    {/* Pool Distribution */}
+                    <LivePoolIndicator
+                      totalUp={parseFloat(lockedRound.totalUpAmount || 0)}
+                      totalDown={parseFloat(lockedRound.totalDownAmount || 0)}
+                      upBets={lockedRound.totalUpBets || 0}
+                      downBets={lockedRound.totalDownBets || 0}
+                      isLocked={true}
+                    />
 
                     {/* Info Box */}
-                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 text-center">
+                    <div className="mt-4 bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 text-center">
                       <p className="text-amber-400 text-sm flex items-center justify-center gap-2">
                         <Eye size={16} />
-                        View the chart above to see how the price moved
+                        Watch the price! Result will be calculated when timer ends
+                      </p>
+                      <p className="text-amber-400/70 text-xs mt-1">
+                        Meanwhile, you can bet on the ACTIVE round →
                       </p>
                     </div>
                   </div>
                 ) : (
                   <div className="bg-slate-800/20 rounded-3xl p-12 border border-dashed border-slate-700 text-center">
-                    <Trophy className="mx-auto mb-4 text-gray-600" size={48} />
-                    <p className="text-gray-500 text-lg">No previous round data</p>
-                    <p className="text-gray-600 text-sm mt-2">Complete a round to see results here</p>
+                    <Lock className="mx-auto mb-4 text-gray-600" size={48} />
+                    <p className="text-gray-500 text-lg">No locked round</p>
+                    <p className="text-gray-600 text-sm mt-2">When an active round locks, it will appear here</p>
                   </div>
                 )}
               </div>
 
-              {/* ===== SLIDE 1: ACTIVE ROUND (BETTING) ===== */}
+              {/* ===== SLIDE 2: ACTIVE ROUND (BETTING) ===== */}
               <div className="min-w-full px-1">
                 {activeRound ? (
                   <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-3xl p-6 border-2 border-primary/50 shadow-lg shadow-primary/10">
@@ -1436,16 +1564,16 @@ const Dashboard = () => {
 
                       {/* Timer */}
                       <div className={`px-5 py-3 rounded-2xl border ${
-                        timeLeft < 30 ? 'bg-red-500/20 border-red-500' :
-                        timeLeft < 60 ? 'bg-yellow-500/20 border-yellow-500' : 
+                        activeTimeLeft < 30 ? 'bg-red-500/20 border-red-500' :
+                        activeTimeLeft < 60 ? 'bg-yellow-500/20 border-yellow-500' : 
                         'bg-slate-900/80 border-slate-700'
                       }`}>
-                        <p className="text-xs text-gray-400 text-center">Time Left</p>
+                        <p className="text-xs text-gray-400 text-center">Betting Ends</p>
                         <p className={`text-3xl font-mono font-bold text-center tabular-nums ${
-                          timeLeft < 30 ? 'text-red-500 animate-pulse' :
-                          timeLeft < 60 ? 'text-yellow-500' : 'text-primary'
+                          activeTimeLeft < 30 ? 'text-red-500 animate-pulse' :
+                          activeTimeLeft < 60 ? 'text-yellow-500' : 'text-primary'
                         }`}>
-                          {formatTime(timeLeft)}
+                          {formatTime(activeTimeLeft)}
                         </p>
                       </div>
                     </div>
@@ -1456,7 +1584,7 @@ const Dashboard = () => {
                         <div>
                           <p className="text-xs text-gray-400 mb-1">Round Start Price</p>
                           <p className="text-xl font-bold text-white tabular-nums">
-                            ${roundStartPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            ${activeStartPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                           </p>
                         </div>
                         <div className="text-right">
@@ -1470,20 +1598,21 @@ const Dashboard = () => {
                       <div className="flex items-center justify-center gap-2 pt-2 border-t border-slate-700">
                         <span className="text-gray-400 text-sm">Current Direction:</span>
                         <span className={`font-bold text-lg flex items-center gap-1 ${
-                          priceChange >= 0 ? 'text-green-500' : 'text-red-500'
+                          activePriceChange >= 0 ? 'text-green-500' : 'text-red-500'
                         }`}>
-                          {priceChange >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
-                          {priceChange >= 0 ? 'UP' : 'DOWN'} ({priceChange >= 0 ? '+' : ''}{priceChange.toFixed(3)}%)
+                          {activePriceChange >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
+                          {activePriceChange >= 0 ? 'UP' : 'DOWN'} ({activePriceChange >= 0 ? '+' : ''}{activePriceChange.toFixed(3)}%)
                         </span>
                       </div>
                     </div>
 
-                    {/* Professional TradingView Chart */}
+                    {/* Chart */}
                     <div className="bg-slate-900/50 rounded-xl p-2 mb-4">
                       <TradingChart 
                         priceHistory={priceHistory} 
-                        startPrice={roundStartPrice}
+                        startPrice={activeStartPrice}
                         currentPrice={currentPrice}
+                        roundId={activeRound.id}
                       />
                     </div>
 
@@ -1611,7 +1740,7 @@ const Dashboard = () => {
                     </div>
 
                     {/* Status Messages */}
-                    {!canBet && timeLeft < 10 && timeLeft > 0 && (
+                    {!canBet && activeTimeLeft < 10 && activeTimeLeft > 0 && (
                       <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-center">
                         <p className="text-red-500 font-medium flex items-center justify-center gap-2">
                           <AlertCircle size={18} />
@@ -1620,11 +1749,11 @@ const Dashboard = () => {
                       </div>
                     )}
 
-                    {timeLeft === 0 && (
+                    {activeTimeLeft === 0 && (
                       <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 text-center">
                         <p className="text-yellow-500 font-medium flex items-center justify-center gap-2">
                           <Clock size={18} />
-                          Processing results... New round starting soon!
+                          Round locking... New round starting soon!
                         </p>
                       </div>
                     )}
@@ -1645,7 +1774,7 @@ const Dashboard = () => {
                 )}
               </div>
 
-              {/* ===== SLIDE 2: UPCOMING ROUND ===== */}
+              {/* ===== SLIDE 3: UPCOMING ROUND ===== */}
               <div className="min-w-full px-1">
                 {upcomingRound ? (
                   <div className="bg-slate-800/40 rounded-3xl p-6 border border-slate-700">
@@ -1667,7 +1796,7 @@ const Dashboard = () => {
                         <Play className="text-blue-500" size={40} />
                       </div>
                       <p className="text-gray-300 text-lg mb-2">This round starts automatically</p>
-                      <p className="text-gray-400 mb-6">when the current round ends</p>
+                      <p className="text-gray-400 mb-6">when the current round locks</p>
 
                       <div className="bg-slate-900/50 p-4 rounded-xl inline-block">
                         <p className="text-xs text-gray-400 mb-1">Scheduled Start</p>
@@ -1811,7 +1940,10 @@ const Dashboard = () => {
                     </div>
 
                     <div className="flex justify-between items-center text-xs pt-3 border-t border-slate-700">
-                      <span className="text-gray-500">Round #{bet.roundNumber}</span>
+                      <span className="text-gray-500 flex items-center gap-1">
+                        {bet.roundStatus === 'locked' && <Lock size={10} className="text-amber-500" />}
+                        Round #{bet.roundNumber}
+                      </span>
                       <div className="flex items-center gap-2">
                         <span className="text-primary font-bold">{multiplier}x</span>
                         {bet.isCurrentlyWinning !== undefined && (
@@ -1832,7 +1964,7 @@ const Dashboard = () => {
           )}
         </div>
 
-        {/* ==================== REFERRAL PROMO CARD (BOTTOM) ==================== */}
+        {/* ==================== REFERRAL PROMO CARD ==================== */}
         <div className="bg-gradient-to-r from-purple-600/20 via-pink-600/20 to-orange-500/20 p-6 rounded-3xl border border-purple-500/30">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-4">
