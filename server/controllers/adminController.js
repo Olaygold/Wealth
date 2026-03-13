@@ -1661,7 +1661,380 @@ const getSettings = async (req, res) => {
     });
   }
 };
+// ============================================================
+// @desc    Credit user wallet (Admin)
+// @route   POST /api/admin/users/:userId/credit
+// @access  Private/Admin
+// ============================================================
+const creditUserWallet = async (req, res) => {
+  const transaction = await sequelize.transaction();
+  
+  try {
+    const { userId } = req.params;
+    const { amount, reason, type = 'bonus' } = req.body;
 
+    // Validate amount
+    const creditAmount = parseFloat(amount);
+    if (!creditAmount || creditAmount <= 0) {
+      await transaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a valid amount greater than 0'
+      });
+    }
+
+    if (creditAmount > 10000000) {
+      await transaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Maximum credit amount is ₦10,000,000'
+      });
+    }
+
+    // Get user
+    const user = await User.findByPk(userId, { transaction });
+    if (!user) {
+      await transaction.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Get wallet
+    const wallet = await Wallet.findOne({
+      where: { userId },
+      transaction,
+      lock: transaction.LOCK.UPDATE
+    });
+
+    if (!wallet) {
+      await transaction.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'User wallet not found'
+      });
+    }
+
+    const balanceBefore = parseFloat(wallet.nairaBalance) || 0;
+    const newBalance = roundToTwo(balanceBefore + creditAmount);
+
+    // Update wallet
+    await wallet.update({
+      nairaBalance: newBalance
+    }, { transaction });
+
+    // Create transaction record
+    await Transaction.create({
+      userId: userId,
+      type: type, // 'bonus', 'refund', 'admin_credit', 'promotional'
+      method: 'admin',
+      amount: creditAmount,
+      currency: 'NGN',
+      status: 'completed',
+      description: reason || `Admin credit: ₦${creditAmount.toLocaleString()}`,
+      metadata: {
+        adminId: req.user.id,
+        adminUsername: req.user.username,
+        reason: reason || 'Admin credit',
+        type: type
+      },
+      balanceBefore: balanceBefore,
+      balanceAfter: newBalance
+    }, { transaction });
+
+    await transaction.commit();
+
+    console.log(`💰 Admin ${req.user.username} credited ${user.username} with ₦${creditAmount}`);
+
+    // Send real-time notification
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user_${userId}`).emit('balance_update', {
+        nairaBalance: newBalance,
+        message: `Your account has been credited with ₦${creditAmount.toLocaleString()}`
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Successfully credited ₦${creditAmount.toLocaleString()} to ${user.username}`,
+      data: {
+        userId: userId,
+        username: user.username,
+        creditedAmount: creditAmount,
+        balanceBefore: balanceBefore,
+        balanceAfter: newBalance,
+        reason: reason || 'Admin credit'
+      }
+    });
+
+  } catch (error) {
+    await transaction.rollback();
+    console.error('❌ Credit user wallet error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to credit user wallet',
+      error: error.message
+    });
+  }
+};
+
+// ============================================================
+// @desc    Debit user wallet (Admin)
+// @route   POST /api/admin/users/:userId/debit
+// @access  Private/Admin
+// ============================================================
+const debitUserWallet = async (req, res) => {
+  const transaction = await sequelize.transaction();
+  
+  try {
+    const { userId } = req.params;
+    const { amount, reason } = req.body;
+
+    // Validate amount
+    const debitAmount = parseFloat(amount);
+    if (!debitAmount || debitAmount <= 0) {
+      await transaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a valid amount greater than 0'
+      });
+    }
+
+    // Get user
+    const user = await User.findByPk(userId, { transaction });
+    if (!user) {
+      await transaction.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Get wallet
+    const wallet = await Wallet.findOne({
+      where: { userId },
+      transaction,
+      lock: transaction.LOCK.UPDATE
+    });
+
+    if (!wallet) {
+      await transaction.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'User wallet not found'
+      });
+    }
+
+    const balanceBefore = parseFloat(wallet.nairaBalance) || 0;
+    const lockedBalance = parseFloat(wallet.lockedBalance) || 0;
+    const availableBalance = balanceBefore - lockedBalance;
+
+    if (debitAmount > availableBalance) {
+      await transaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: `Insufficient balance. User has ₦${availableBalance.toLocaleString()} available`,
+        availableBalance: availableBalance,
+        lockedBalance: lockedBalance
+      });
+    }
+
+    const newBalance = roundToTwo(balanceBefore - debitAmount);
+
+    // Update wallet
+    await wallet.update({
+      nairaBalance: newBalance
+    }, { transaction });
+
+    // Create transaction record
+    await Transaction.create({
+      userId: userId,
+      type: 'admin_debit',
+      method: 'admin',
+      amount: debitAmount,
+      currency: 'NGN',
+      status: 'completed',
+      description: reason || `Admin debit: ₦${debitAmount.toLocaleString()}`,
+      metadata: {
+        adminId: req.user.id,
+        adminUsername: req.user.username,
+        reason: reason || 'Admin debit'
+      },
+      balanceBefore: balanceBefore,
+      balanceAfter: newBalance
+    }, { transaction });
+
+    await transaction.commit();
+
+    console.log(`💸 Admin ${req.user.username} debited ${user.username} with ₦${debitAmount}`);
+
+    // Send real-time notification
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user_${userId}`).emit('balance_update', {
+        nairaBalance: newBalance,
+        message: `₦${debitAmount.toLocaleString()} has been debited from your account`
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Successfully debited ₦${debitAmount.toLocaleString()} from ${user.username}`,
+      data: {
+        userId: userId,
+        username: user.username,
+        debitedAmount: debitAmount,
+        balanceBefore: balanceBefore,
+        balanceAfter: newBalance,
+        reason: reason || 'Admin debit'
+      }
+    });
+
+  } catch (error) {
+    await transaction.rollback();
+    console.error('❌ Debit user wallet error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to debit user wallet',
+      error: error.message
+    });
+  }
+};
+
+// ============================================================
+// @desc    Update platform settings (Admin)
+// @route   PUT /api/admin/settings
+// @access  Private/Admin
+// ============================================================
+const updateSettings = async (req, res) => {
+  try {
+    const { fees, betting, payments } = req.body;
+
+    // In production, you'd store these in a database
+    // For now, we'll just return success
+    // You can implement actual settings storage later
+
+    console.log(`✅ Admin ${req.user.username} updated platform settings`);
+
+    res.json({
+      success: true,
+      message: 'Settings updated successfully (Note: Implement persistent storage)',
+      data: {
+        fees: fees || {},
+        betting: betting || {},
+        payments: payments || {}
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Update settings error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update settings',
+      error: error.message
+    });
+  }
+};
+
+// ============================================================
+// @desc    Get system health status (Admin)
+// @route   GET /api/admin/system/health
+// @access  Private/Admin
+// ============================================================
+const getSystemHealth = async (req, res) => {
+  try {
+    // Check database connection
+    let dbStatus = 'healthy';
+    let dbResponseTime = 0;
+    
+    try {
+      const startTime = Date.now();
+      await sequelize.authenticate();
+      dbResponseTime = Date.now() - startTime;
+    } catch (error) {
+      dbStatus = 'unhealthy';
+      console.error('Database health check failed:', error);
+    }
+
+    // Get system stats
+    const [userCount, roundCount, transactionCount] = await Promise.all([
+      User.count(),
+      Round.count(),
+      Transaction.count()
+    ]);
+
+    // Check for stuck pending transactions
+    const stuckWithdrawals = await Transaction.count({
+      where: {
+        type: 'withdrawal',
+        status: 'pending',
+        createdAt: {
+          [Op.lt]: new Date(Date.now() - 24 * 60 * 60 * 1000) // Older than 24 hours
+        }
+      }
+    });
+
+    res.json({
+      success: true,
+      data: {
+        status: dbStatus === 'healthy' ? 'healthy' : 'degraded',
+        timestamp: new Date(),
+        database: {
+          status: dbStatus,
+          responseTime: `${dbResponseTime}ms`
+        },
+        stats: {
+          totalUsers: userCount,
+          totalRounds: roundCount,
+          totalTransactions: transactionCount,
+          stuckWithdrawals: stuckWithdrawals
+        },
+        uptime: process.uptime(),
+        memory: {
+          used: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`,
+          total: `${Math.round(process.memoryUsage().heapTotal / 1024 / 1024)}MB`
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ System health check error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get system health',
+      error: error.message
+    });
+  }
+};
+
+// ============================================================
+// @desc    Clear system cache (Admin)
+// @route   POST /api/admin/system/clear-cache
+// @access  Private/Admin
+// ============================================================
+const clearCache = async (req, res) => {
+  try {
+    // If you're using Redis or any caching system, clear it here
+    // For now, just a placeholder
+
+    console.log(`✅ Admin ${req.user.username} cleared system cache`);
+
+    res.json({
+      success: true,
+      message: 'Cache cleared successfully (Note: Implement actual cache clearing)'
+    });
+
+  } catch (error) {
+    console.error('❌ Clear cache error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to clear cache',
+      error: error.message
+    });
+  }
+};
 // =====================================================
 // EXPORTS
 // =====================================================
@@ -1673,6 +2046,8 @@ module.exports = {
   getAllUsers,
   getUserDetails,
   updateUserStatus,
+  creditUserWallet,      // ✅ NEW
+  debitUserWallet,       // ✅ NEW
   
   // Transactions
   getAllTransactions,
@@ -1700,5 +2075,10 @@ module.exports = {
   searchUsersForInfluencer,
   
   // Settings
-  getSettings
+  getSettings,
+  updateSettings,        // ✅ NEW
+  
+  // System
+  getSystemHealth,       // ✅ NEW
+  clearCache            // ✅ NEW
 };
