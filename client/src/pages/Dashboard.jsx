@@ -1273,41 +1273,85 @@ const Dashboard = () => {
       <div className="p-4 lg:p-8 max-w-7xl mx-auto">
 
 
-            {/* ========== ⚠️ SYSTEM NOTICE - DELETE THIS ENTIRE BLOCK WHEN RESOLVED ========== */}
-<div className="bg-gradient-to-r from-red-600 via-red-500 to-orange-500 px-4 py-4 border-b-4 border-red-800">
-  <div className="max-w-4xl mx-auto">
-    <div className="flex flex-col sm:flex-row items-center justify-center gap-3 text-center sm:text-left">
-      <div className="flex-shrink-0 w-12 h-12 bg-white/20 rounded-full flex items-center justify-center animate-pulse">
-        <AlertCircle className="text-white" size={28} />
-      </div>
-      <div className="flex-1">
-        <div className="flex items-center justify-center sm:justify-start gap-2 mb-1">
-          <span className="bg-white/20 text-white text-xs font-black px-2 py-0.5 rounded-full uppercase">
-            ⚠️ Important Notice
-          </span>
+            {/* ========== ⚠️ SYSTEM NOTICE - DELETE WHEN RESOLVED ========== */}
+{(() => {
+  const [expanded, setExpanded] = React.useState(false);
+  const [dismissed, setDismissed] = React.useState(false);
+  
+  if (dismissed) return (
+    <button
+      onClick={() => setDismissed(false)}
+      className="fixed top-4 right-4 z-50 bg-red-500 text-white p-2 rounded-full shadow-lg animate-pulse hover:scale-110 transition"
+      title="View Notice"
+    >
+      <AlertCircle size={20} />
+    </button>
+  );
+  
+  return (
+    <div className="bg-red-500 text-white">
+      {/* Compact Bar */}
+      <div className="px-4 py-2">
+        <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
+          <div 
+            className="flex items-center gap-3 flex-1 cursor-pointer"
+            onClick={() => setExpanded(!expanded)}
+          >
+            <AlertCircle size={18} className="flex-shrink-0 animate-pulse" />
+            <p className="text-sm font-medium truncate">
+              ⚠️ Withdrawal Notice: Payment gateway issues - <span className="underline">tap for details</span>
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="p-1 hover:bg-white/20 rounded transition"
+            >
+              <ChevronRight size={18} className={`transition-transform ${expanded ? 'rotate-90' : ''}`} />
+            </button>
+            <button
+              onClick={() => setDismissed(true)}
+              className="p-1 hover:bg-white/20 rounded transition"
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
-        {/* ====== EDIT YOUR MESSAGE HERE ====== */}
-        <p className="text-white font-bold text-base sm:text-lg">
-          Payment Gateway Network Issues
-        </p>
-        <p className="text-white/90 text-sm mt-1">
-          We are experiencing network issues from our payment gateway. 
-          <strong> All withdrawals requested now will be marked as FAILED.</strong> Please wait until <strong>MONDAY</strong> to make withdrawal requests. Your funds are 100% safe!
-        </p>
-        {/* ====== END MESSAGE ====== */}
       </div>
-      <a
-        href="https://t.me/Iacafevtu1"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="flex-shrink-0 px-4 py-2 bg-white text-red-600 rounded-xl font-bold text-sm hover:bg-gray-100 transition flex items-center gap-2 shadow-lg"
-      >
-        <HelpCircle size={18} />
-        Contact Support
-      </a>
+      
+      {/* Expandable Content */}
+      {expanded && (
+        <div className="bg-red-600 px-4 py-3 border-t border-red-400/30 animate-in slide-in-from-top duration-200">
+          <div className="max-w-4xl mx-auto">
+            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+              <div className="flex-1 space-y-2">
+                <p className="font-bold">Payment Gateway Network Issues</p>
+                <p className="text-sm text-red-100">
+                  We are experiencing network issues from our payment gateway.
+                  <strong> All withdrawals requested now will be marked as FAILED.</strong>
+                </p>
+                <p className="text-sm text-red-100">
+                  ✅ Please wait until <strong>MONDAY</strong> to make withdrawals.
+                  <br/>
+                  ✅ Your funds are <strong>100% SAFE</strong> in your wallet.
+                </p>
+              </div>
+              <a
+                href="https://t.me/Iacafevtu1"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-shrink-0 px-4 py-2 bg-white text-red-600 rounded-lg font-bold text-sm hover:bg-red-50 transition flex items-center gap-2"
+              >
+                <HelpCircle size={16} />
+                Support
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
-  </div>
-</div>
+  );
+})()}
 {/* ========== END SYSTEM NOTICE ========== */}
         {/* ==================== HEADER ==================== */}
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 gap-4">
