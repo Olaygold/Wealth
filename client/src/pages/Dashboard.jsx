@@ -293,19 +293,20 @@ const FloatingSupportButton = () => {
   );
 };
 
-// ==================== PROFESSIONAL TRADING CHART ====================
+// ==================== PROFESSIONAL TRADING CHART (FIXED) ====================
 const TradingChart = ({ priceHistory, startPrice, currentPrice, isLocked = false, roundId }) => {
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null);
   const seriesRef = useRef(null);
   const priceLineRef = useRef(null);
   const lastRoundIdRef = useRef(null);
+  const resizeObserverRef = useRef(null);
 
-  // ✅ Initialize chart only once or when roundId changes
+  // ✅ Initialize chart ONLY ONCE per round
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
-    // Only recreate chart if roundId changed
+    // Only recreate if round changed
     if (lastRoundIdRef.current === roundId && chartRef.current) {
       return;
     }
@@ -318,6 +319,10 @@ const TradingChart = ({ priceHistory, startPrice, currentPrice, isLocked = false
       priceLineRef.current = null;
     }
 
+    if (resizeObserverRef.current) {
+      resizeObserverRef.current.disconnect();
+    }
+
     lastRoundIdRef.current = roundId;
 
     const chart = createChart(chartContainerRef.current, {
@@ -326,8 +331,8 @@ const TradingChart = ({ priceHistory, startPrice, currentPrice, isLocked = false
         textColor: '#9ca3af',
       },
       grid: {
-        vertLines: { color: '#1e293b', style: 1 },
-        horzLines: { color: '#1e293b', style: 1 },
+        vertLines: { color: '#1e293b', style: 1, visible: true },
+        horzLines: { color: '#1e293b', style: 1, visible: true },
       },
       width: chartContainerRef.current.clientWidth,
       height: 220,
@@ -336,14 +341,19 @@ const TradingChart = ({ priceHistory, startPrice, currentPrice, isLocked = false
         secondsVisible: true,
         borderColor: '#334155',
         rightOffset: 5,
-        barSpacing: 10,
+        barSpacing: 8,
+        minBarSpacing: 4,
+        fixLeftEdge: true,
+        fixRightEdge: false,
+        lockVisibleTimeRangeOnResize: true,
       },
       rightPriceScale: {
         borderColor: '#334155',
         scaleMargins: {
-          top: 0.1,
-          bottom: 0.1,
+          top: 0.15,
+          bottom: 0.15,
         },
+        autoScale: true,
       },
       crosshair: {
         mode: 1,
@@ -362,6 +372,13 @@ const TradingChart = ({ priceHistory, startPrice, currentPrice, isLocked = false
       },
       handleScroll: {
         vertTouchDrag: false,
+        mouseWheel: false,
+        pressedMouseMove: false,
+      },
+      handleScale: {
+        axisPressedMouseMove: false,
+        mouseWheel: false,
+        pinch: false,
       },
     });
 
@@ -374,23 +391,35 @@ const TradingChart = ({ priceHistory, startPrice, currentPrice, isLocked = false
       lastValueVisible: true,
       crosshairMarkerVisible: true,
       crosshairMarkerRadius: 6,
+      priceFormat: {
+        type: 'price',
+        precision: 2,
+        minMove: 0.01,
+      },
     });
 
     chartRef.current = chart;
     seriesRef.current = areaSeries;
 
+    // ✅ Handle responsive resize
     const handleResize = () => {
       if (chartContainerRef.current && chartRef.current) {
-        chartRef.current.applyOptions({ 
-          width: chartContainerRef.current.clientWidth 
-        });
+        const width = chartContainerRef.current.clientWidth;
+        chartRef.current.applyOptions({ width });
+        chartRef.current.timeScale().fitContent();
       }
     };
 
-    window.addEventListener('resize', handleResize);
+    resizeObserverRef.current = new ResizeObserver(handleResize);
+    resizeObserverRef.current.observe(chartContainerRef.current);
 
     return () => {
-      window.removeEventListener('resize', handleResize);
+      if (resizeObserverRef.current) {
+        resizeObserverRef.current.disconnect();
+      }
+      if (chartRef.current) {
+        chartRef.current.remove();
+      }
     };
   }, [roundId, isLocked]);
 
@@ -412,20 +441,46 @@ const TradingChart = ({ priceHistory, startPrice, currentPrice, isLocked = false
     });
   }, [startPrice]);
 
-  // ✅ Update chart data (append new points without resetting)
+  // ✅ FIX: Update chart data with proper timestamp handling
   useEffect(() => {
-    if (!seriesRef.current || priceHistory.length === 0) return;
+    if (!seriesRef.current || !chartRef.current || priceHistory.length === 0) return;
 
-    const now = Math.floor(Date.now() / 1000);
-    const chartData = priceHistory.map((item, index) => ({
-      time: item.time ? Math.floor(item.time / 1000) : now - (priceHistory.length - index - 1) * 5,
-      value: item.price,
-    }));
+    try {
+      // ✅ Convert to proper UTC timestamps and sort
+      const chartData = priceHistory
+        .map((item) => {
+          const timestamp = item.time 
+            ? (typeof item.time === 'number' ? Math.floor(item.time / 1000) : Math.floor(new Date(item.time).getTime() / 1000))
+            : Math.floor(Date.now() / 1000);
+          
+          return {
+            time: timestamp,
+            value: parseFloat(item.price) || 0,
+          };
+        })
+        .filter(item => item.value > 0 && item.time > 0) // Remove invalid data
+        .sort((a, b) => a.time - b.time); // ✅ Sort by time ascending
 
-    seriesRef.current.setData(chartData);
+      // ✅ Remove duplicate timestamps (keep last value)
+      const uniqueData = [];
+      const seenTimes = new Set();
+      
+      for (let i = chartData.length - 1; i >= 0; i--) {
+        if (!seenTimes.has(chartData[i].time)) {
+          uniqueData.unshift(chartData[i]);
+          seenTimes.add(chartData[i].time);
+        }
+      }
 
-    if (chartRef.current) {
-      chartRef.current.timeScale().scrollToRealTime();
+      if (uniqueData.length > 0) {
+        seriesRef.current.setData(uniqueData);
+        
+        // ✅ Fit content and scroll to latest
+        chartRef.current.timeScale().fitContent();
+        chartRef.current.timeScale().scrollToRealTime();
+      }
+    } catch (error) {
+      console.error('Chart update error:', error);
     }
   }, [priceHistory]);
 
@@ -433,13 +488,13 @@ const TradingChart = ({ priceHistory, startPrice, currentPrice, isLocked = false
     <div className="relative">
       <div 
         ref={chartContainerRef} 
-        className="w-full h-[220px] rounded-xl overflow-hidden"
+        className="w-full h-[220px] rounded-xl overflow-hidden bg-slate-900/30"
       />
       {priceHistory.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center bg-slate-900/50 rounded-xl">
           <div className="text-center">
             <Activity className="w-8 h-8 text-primary animate-pulse mx-auto mb-2" />
-            <p className="text-gray-400 text-sm">Loading chart data...</p>
+            <p className="text-gray-400 text-sm">Waiting for price data...</p>
           </div>
         </div>
       )}
@@ -722,12 +777,12 @@ const Dashboard = () => {
   // ========== ALL STATES ==========
   const [currentPrice, setCurrentPrice] = useState(0);
   const [priceHistory, setPriceHistory] = useState([]);
-  const [lockedPriceHistory, setLockedPriceHistory] = useState([]); // ✅ Separate history for locked round
-  const [previousRounds, setPreviousRounds] = useState([]); // ✅ Array of 3 completed rounds
-  const [lockedRound, setLockedRound] = useState(null); // ✅ Locked round (5min countdown, shows chart)
-  const [activeRound, setActiveRound] = useState(null); // ✅ Active round (for betting)
+  const [lockedPriceHistory, setLockedPriceHistory] = useState([]);
+  const [previousRounds, setPreviousRounds] = useState([]);
+  const [lockedRound, setLockedRound] = useState(null);
+  const [activeRound, setActiveRound] = useState(null);
   const [upcomingRound, setUpcomingRound] = useState(null);
-  const [activeSlide, setActiveSlide] = useState(2); // Default to active round (index 2)
+  const [activeSlide, setActiveSlide] = useState(2);
   const [betAmount, setBetAmount] = useState(1000);
   const [loading, setLoading] = useState(false);
   const [activeTimeLeft, setActiveTimeLeft] = useState(0);
@@ -946,10 +1001,8 @@ const Dashboard = () => {
       const data = await api.get('/trading/rounds/all');
 
       if (data) {
-        // ✅ Set previous rounds (array of 3)
         setPreviousRounds(data.previousRounds || []);
         
-        // ✅ Set locked round
         if (data.lockedRound) {
           setLockedRound(data.lockedRound);
           setLockedStartPrice(parseFloat(data.lockedRound.startPrice || 0));
@@ -957,7 +1010,6 @@ const Dashboard = () => {
           setLockedRound(null);
         }
         
-        // ✅ Set active round
         if (data.activeRound) {
           setActiveRound(data.activeRound);
           setActiveStartPrice(parseFloat(data.activeRound.startPrice || 0));
@@ -965,7 +1017,6 @@ const Dashboard = () => {
           setActiveRound(null);
         }
         
-        // ✅ Set upcoming round
         setUpcomingRound(data.upcomingRound || null);
       }
     } catch (err) {
@@ -979,19 +1030,27 @@ const Dashboard = () => {
       const data = await api.get('/trading/current-price');
       const price = data?.price;
       if (price) {
-        setCurrentPrice(parseFloat(price));
+        const priceValue = parseFloat(price);
+        setCurrentPrice(priceValue);
         
+        const now = Date.now();
         const newEntry = {
-          time: Date.now(),
-          price: parseFloat(price)
+          time: now,
+          price: priceValue
         };
         
-        // Update price history for active round
-        setPriceHistory(prev => [...prev.slice(-59), newEntry]);
+        // ✅ Update active round price history
+        setPriceHistory(prev => {
+          const updated = [...prev, newEntry].slice(-60); // Keep last 60 points (5 min at 5s intervals)
+          return updated;
+        });
         
-        // Update price history for locked round (if exists)
+        // ✅ Update locked round price history (if exists)
         if (lockedRound) {
-          setLockedPriceHistory(prev => [...prev.slice(-119), newEntry]);
+          setLockedPriceHistory(prev => {
+            const updated = [...prev, newEntry].slice(-120); // Keep last 120 points (10 min)
+            return updated;
+          });
         }
       }
     } catch (err) {
@@ -1014,21 +1073,22 @@ const Dashboard = () => {
   useEffect(() => {
     if (!socket || !isConnected) return;
 
-    // Price updates
+    // ✅ Price updates
     socket.on('price_update', (data) => {
       if (data?.price) {
-        const price = parseFloat(data.price);
-        setCurrentPrice(price);
+        const priceValue = parseFloat(data.price);
+        setCurrentPrice(priceValue);
         
+        const now = Date.now();
         const newEntry = {
-          time: Date.now(),
-          price: price
+          time: now,
+          price: priceValue
         };
         
-        setPriceHistory(prev => [...prev.slice(-59), newEntry]);
+        setPriceHistory(prev => [...prev, newEntry].slice(-60));
         
         if (lockedRound) {
-          setLockedPriceHistory(prev => [...prev.slice(-119), newEntry]);
+          setLockedPriceHistory(prev => [...prev, newEntry].slice(-120));
         }
       }
     });
@@ -1059,9 +1119,9 @@ const Dashboard = () => {
       if (data.startPrice) {
         setActiveStartPrice(parseFloat(data.startPrice));
       }
-      setPriceHistory([]); // Reset chart for new active round
+      setPriceHistory([]); // ✅ Reset chart for new active round
       toast.success(`🚀 Round #${data.roundNumber} Started! Place your bets!`, { duration: 3000 });
-      setActiveSlide(2); // Switch to active round
+      setActiveSlide(2);
     });
 
     // Round locked
@@ -1137,7 +1197,6 @@ const Dashboard = () => {
     const updateTimers = () => {
       const now = Date.now();
       
-      // Active round timer
       if (activeRound?.lockTime) {
         const lockTime = new Date(activeRound.lockTime).getTime();
         setActiveTimeLeft(Math.max(0, Math.floor((lockTime - now) / 1000)));
@@ -1145,7 +1204,6 @@ const Dashboard = () => {
         setActiveTimeLeft(0);
       }
       
-      // Locked round timer
       if (lockedRound?.endTime) {
         const endTime = new Date(lockedRound.endTime).getTime();
         setLockedTimeLeft(Math.max(0, Math.floor((endTime - now) / 1000)));
@@ -1271,10 +1329,6 @@ const Dashboard = () => {
       )}
 
       <div className="p-4 lg:p-8 max-w-7xl mx-auto">
-
-
-
-        
         {/* ==================== HEADER ==================== */}
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 gap-4">
           <div>
