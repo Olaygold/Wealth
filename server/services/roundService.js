@@ -386,18 +386,19 @@ class RoundService {
       const endPrice = priceService.getPrice();
       const startPrice = parseFloat(round.startPrice);
 
-      let result;
-      const priceDiff = endPrice - startPrice;
-      const percentChange = (priceDiff / startPrice) * 100;
       
-      if (Math.abs(percentChange) < 0.01) {
-        result = 'tie';
-      } else if (priceDiff > 0) {
-        result = 'up';
-      } else {
-        result = 'down';
-      }
+let result;
+const priceDiff = endPrice - startPrice;
+const percentChange = (priceDiff / startPrice) * 100;
 
+// ✅ TIE only if prices are EXACTLY the same (e.g., 58373.727 === 58373.727)
+if (endPrice === startPrice) {
+  result = 'tie';
+} else if (priceDiff > 0) {
+  result = 'up';
+} else {
+  result = 'down';
+}
       await round.update({ status: 'completed', endPrice, result }, { transaction });
 
       console.log(`🏁 Round #${round.roundNumber} COMPLETED`);
