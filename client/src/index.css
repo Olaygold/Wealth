@@ -20,6 +20,8 @@ html {
   font-size: 16px;
   scroll-behavior: smooth;
   -webkit-text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
@@ -87,24 +89,86 @@ code {
 }
 
 /* Firefox */
-* {
+html {
   scrollbar-width: thin;
   scrollbar-color: #475569 #1e293b;
 }
 
 /* ============================================
-   SMOOTH TRANSITIONS
+   PERFORMANCE OPTIMIZATIONS
    ============================================ */
-*:not(.no-transition) {
-  transition: background-color 0.2s ease, 
-              color 0.2s ease, 
+
+/* Reduce tap highlight on mobile */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Hardware acceleration for animated elements */
+.animate-spin,
+.animate-pulse,
+.animate-bounce,
+.animate-fade-in,
+.animate-fade-in-up,
+.animate-fade-in-down,
+.animate-scale-in,
+[class*="animate-"] {
+  will-change: transform, opacity;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+/* Reduce reflows for images */
+img,
+video {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* ============================================
+   SMOOTH TRANSITIONS (OPTIMIZED)
+   ============================================ */
+
+/* ✅ ONLY apply transitions to interactive elements - NOT everything */
+button,
+a,
+input,
+select,
+textarea,
+.card,
+.card-hover,
+.btn,
+.btn-primary,
+.btn-success,
+.btn-danger,
+.btn-outline,
+.badge,
+.modal-content,
+.glass-effect,
+.glass-effect-dark,
+.input,
+.loader,
+[role="button"],
+[type="button"],
+[type="submit"] {
+  transition: background-color 0.2s ease,
+              color 0.2s ease,
               border-color 0.2s ease,
               transform 0.2s ease,
               box-shadow 0.2s ease,
               opacity 0.2s ease;
 }
 
+/* Disable ALL transitions during initial page load */
+.preload,
 .preload * {
+  transition: none !important;
+  animation: none !important;
+}
+
+/* Disable transitions on elements that don't need them */
+.no-transition,
+.no-transition * {
   transition: none !important;
 }
 
@@ -365,7 +429,6 @@ code {
   cursor: pointer;
   text-decoration: none;
   white-space: nowrap;
-  transition: all 0.2s ease;
 }
 
 .btn:disabled {
@@ -426,7 +489,6 @@ code {
   border: 1px solid #334155;
   border-radius: 8px;
   outline: none;
-  transition: all 0.2s ease;
 }
 
 .input:focus {
@@ -734,13 +796,14 @@ code {
   box-shadow: 0 4px 20px rgba(99, 102, 241, 0.1);
 }
 
-/* Admin Inputs */
+/* Admin Inputs - with performance hints */
 .admin-panel input,
 .admin-panel select,
 .admin-panel textarea {
   color: #1e293b !important;
   background-color: white !important;
   border-color: #e2e8f0 !important;
+  will-change: border-color, box-shadow;
 }
 
 .admin-panel input:focus,
