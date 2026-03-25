@@ -65,6 +65,9 @@ class RoundService {
     this.BETTING_DURATION = parseInt(process.env.BETTING_DURATION_MINUTES) || 5;
     this.LOCKED_DURATION = parseInt(process.env.LOCKED_DURATION_MINUTES) || 5;
     this.TOTAL_ROUND_DURATION = this.BETTING_DURATION + this.LOCKED_DURATION;
+    
+    // 🔒 PREVENT DUPLICATE PROCESSING
+    this.processingRounds = new Set(); // Track rounds being processed
   }
 
   async startRoundManager(io) {
@@ -88,12 +91,15 @@ class RoundService {
     }
   }
 
-  // ==================== FIXED INITIALIZE ROUNDS ====================
+  // ==================== INITIALIZE ROUNDS ====================
   async initializeRounds() {
     try {
       console.log('🔄 Initializing round system...');
       
       const now = new Date();
+      
+      // Clean up any orphaned rounds
+      await this.cleanupOrphanedRounds();
       
       // Get current system state
       const activeRound = await Round.findOne({
@@ -116,19 +122,18 @@ class RoundService {
       console.log(`   Locked: ${lockedRound ? `#${lockedRound.roundNumber}` : 'NONE'}`);
       console.log(`   Upcoming: ${upcomingRound ? `#${upcomingRound.roundNumber}` : 'NONE'}`);
 
-      // ✅ Check if locked round should complete
+      // ✅ Process overdue rounds FIRST
       if (lockedRound && now > new Date(lockedRound.endTime)) {
         console.log('⚠️ Locked round overdue, completing now...');
         await this.endRound(lockedRound);
       }
 
-      // ✅ Check if active round should lock
       if (activeRound && now > new Date(activeRound.lockTime)) {
         console.log('⚠️ Active round overdue, locking now...');
         await this.lockRound(activeRound);
       }
 
-      // ✅ Re-fetch after transitions
+      // ✅ Re-check state after transitions
       const currentActive = await Round.findOne({
         where: { status: 'active' },
         order: [['roundNumber', 'DESC']]
@@ -178,16 +183,69 @@ class RoundService {
     }
   }
 
+  // ==================== CLEANUP ORPHANED ROUNDS ====================
+  async cleanupOrphanedRounds() {
+    try {
+      const now = new Date();
+      const fifteenMinutesAgo = new Date(now.getTime() - 15 * 60 * 1000);
+
+      // Cancel stuck locked rounds
+      const stuckLocked = await Round.update(
+        { status: 'cancelled', result: 'cancelled', isProcessed: true },
+        {
+          where: {
+            status: 'locked',
+            endTime: { [Op.lt]: fifteenMinutesAgo }
+          }
+        }
+      );
+
+      // Cancel stuck active rounds
+      const stuckActive = await Round.update(
+        { status: 'cancelled', result: 'cancelled', isProcessed: true },
+        {
+          where: {
+            status: 'active',
+            lockTime: { [Op.lt]: fifteenMinutesAgo }
+          }
+        }
+      );
+
+      if (stuckLocked[0] > 0 || stuckActive[0] > 0) {
+        console.log(`🧹 Cleaned up ${stuckLocked[0]} stuck locked, ${stuckActive[0]} stuck active rounds`);
+      }
+    } catch (error) {
+      console.error('⚠️ Cleanup error:', error.message);
+    }
+  }
+
   // ==================== CREATE NEW ROUND ====================
   async createNewRound(startImmediately = false) {
+    const transaction = await sequelize.transaction();
+    
     try {
       const now = new Date();
       
+      // 🔒 Get last round WITH LOCK to prevent race conditions
       const lastRound = await Round.findOne({
-        order: [['roundNumber', 'DESC']]
+        order: [['roundNumber', 'DESC']],
+        lock: transaction.LOCK.UPDATE,
+        transaction
       });
       
       const nextRoundNumber = lastRound ? lastRound.roundNumber + 1 : 1;
+
+      // ✅ Check if round already exists
+      const existing = await Round.findOne({
+        where: { roundNumber: nextRoundNumber },
+        transaction
+      });
+
+      if (existing) {
+        console.log(`⚠️ Round #${nextRoundNumber} already exists, skipping creation`);
+        await transaction.rollback();
+        return existing;
+      }
 
       let startTime, lockTime, endTime;
 
@@ -198,7 +256,8 @@ class RoundService {
       } else {
         const currentActive = await Round.findOne({
           where: { status: 'active' },
-          order: [['startTime', 'DESC']]
+          order: [['startTime', 'DESC']],
+          transaction
         });
         
         if (currentActive) {
@@ -217,7 +276,9 @@ class RoundService {
         lockTime,
         endTime,
         startPrice: startImmediately ? priceService.getPrice() : null
-      });
+      }, { transaction });
+
+      await transaction.commit();
 
       console.log(`✅ Created round #${round.roundNumber} (${round.status})`);
       console.log(`   Start: ${startTime.toLocaleTimeString()}`);
@@ -243,7 +304,17 @@ class RoundService {
 
       return round;
     } catch (error) {
-      console.error('❌ Error creating round:', error);
+      await transaction.rollback();
+      console.error('❌ Error creating round:', error.message);
+      
+      // If it's a duplicate error, just fetch the existing round
+      if (error.name === 'SequelizeUniqueConstraintError') {
+        const existing = await Round.findOne({
+          order: [['roundNumber', 'DESC']]
+        });
+        return existing;
+      }
+      
       throw error;
     }
   }
@@ -265,44 +336,61 @@ class RoundService {
     }
   }
 
-  // ==================== FIXED CHECK AND UPDATE ROUNDS ====================
+  // ==================== CHECK AND UPDATE ROUNDS ====================
   async checkAndUpdateRounds() {
-    if (this.isChecking) return;
+    if (this.isChecking) {
+      return; // ✅ Prevent overlapping checks
+    }
 
     this.isChecking = true;
     this.lastCheckTime = new Date();
     const now = new Date();
 
     try {
-      // ✅ Get rounds that need action, ordered by round number
+      // ✅ Get rounds that need action, ordered by priority
       const roundsNeedingAction = await Round.findAll({
         where: {
           [Op.or]: [
-            { status: 'upcoming', startTime: { [Op.lte]: now } },
+            { status: 'locked', endTime: { [Op.lte]: now } },
             { status: 'active', lockTime: { [Op.lte]: now } },
-            { status: 'locked', endTime: { [Op.lte]: now } }
+            { status: 'upcoming', startTime: { [Op.lte]: now } }
           ]
         },
-        order: [['roundNumber', 'ASC']] // ✅ Process in order!
+        order: [
+          ['status', 'DESC'], // locked first, then active, then upcoming
+          ['roundNumber', 'ASC']
+        ]
       });
 
-      // ✅ Process rounds IN SEQUENCE
+      // ✅ Process rounds IN SEQUENCE, skip if already processing
       for (const round of roundsNeedingAction) {
-        if (round.status === 'locked' && new Date(round.endTime) <= now) {
-          console.log(`🔄 Completing Round #${round.roundNumber}...`);
-          await this.endRound(round);
-          await new Promise(resolve => setTimeout(resolve, 100)); // Small delay
-        } 
-        else if (round.status === 'active' && new Date(round.lockTime) <= now) {
-          console.log(`🔄 Locking Round #${round.roundNumber}...`);
-          await this.lockRound(round);
-          await new Promise(resolve => setTimeout(resolve, 100));
-        } 
-        else if (round.status === 'upcoming' && new Date(round.startTime) <= now) {
-          console.log(`🔄 Starting Round #${round.roundNumber}...`);
-          await this.startRound(round);
-          await new Promise(resolve => setTimeout(resolve, 100));
+        const roundKey = `${round.id}-${round.status}`;
+        
+        if (this.processingRounds.has(roundKey)) {
+          console.log(`⏭️ Skipping round #${round.roundNumber} (already processing)`);
+          continue;
         }
+
+        this.processingRounds.add(roundKey);
+        
+        try {
+          if (round.status === 'locked' && new Date(round.endTime) <= now) {
+            console.log(`🔄 Completing Round #${round.roundNumber}...`);
+            await this.endRound(round);
+          } 
+          else if (round.status === 'active' && new Date(round.lockTime) <= now) {
+            console.log(`🔄 Locking Round #${round.roundNumber}...`);
+            await this.lockRound(round);
+          } 
+          else if (round.status === 'upcoming' && new Date(round.startTime) <= now) {
+            console.log(`🔄 Starting Round #${round.roundNumber}...`);
+            await this.startRound(round);
+          }
+        } finally {
+          this.processingRounds.delete(roundKey);
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
 
       // ✅ BOT CHECK
@@ -312,7 +400,7 @@ class RoundService {
       }
 
     } catch (error) {
-      console.error('❌ Error in round check cycle:', error);
+      console.error('❌ Error in round check cycle:', error.message);
     } finally {
       this.isChecking = false;
     }
@@ -320,114 +408,160 @@ class RoundService {
 
   // ==================== START ROUND ====================
   async startRound(round) {
+    const transaction = await sequelize.transaction();
+    
     try {
+      // ✅ Re-fetch with lock
+      const freshRound = await Round.findByPk(round.id, {
+        transaction,
+        lock: transaction.LOCK.UPDATE
+      });
+
+      if (!freshRound || freshRound.status !== 'upcoming') {
+        console.log(`⚠️ Round #${round.roundNumber} already started or doesn't exist`);
+        await transaction.rollback();
+        return;
+      }
+
       const startPrice = priceService.getPrice();
 
-      await round.update({ status: 'active', startPrice });
-      this.currentRound = round;
-      this.cachedActiveRound = round;
+      await freshRound.update({ 
+        status: 'active', 
+        startPrice,
+        startTime: new Date() // Update to actual start time
+      }, { transaction });
+
+      await transaction.commit();
+
+      this.currentRound = freshRound;
+      this.cachedActiveRound = freshRound;
       this.cacheExpiry = Date.now() + this.CACHE_DURATION;
 
-      console.log(`🟢 Round #${round.roundNumber} STARTED at $${startPrice.toLocaleString()}`);
+      console.log(`🟢 Round #${freshRound.roundNumber} STARTED at $${startPrice.toLocaleString()}`);
 
       if (this.io) {
         this.io.emit('round_start', {
-          roundId: round.id,
-          roundNumber: round.roundNumber,
+          roundId: freshRound.id,
+          roundNumber: freshRound.roundNumber,
           startPrice,
-          startTime: round.startTime,
-          lockTime: round.lockTime,
-          endTime: round.endTime
+          startTime: freshRound.startTime,
+          lockTime: freshRound.lockTime,
+          endTime: freshRound.endTime
         });
       }
 
       await this.ensureUpcomingRound();
     } catch (error) {
-      console.error('❌ Error starting round:', error);
+      await transaction.rollback();
+      console.error('❌ Error starting round:', error.message);
     }
   }
 
-  // ==================== FIXED LOCK ROUND (WITH TRANSACTION) ====================
+  // ==================== LOCK ROUND (FIXED) ====================
   async lockRound(round) {
     const transaction = await sequelize.transaction();
     
     try {
+      // ✅ Re-fetch current round with lock
+      const freshRound = await Round.findByPk(round.id, {
+        transaction,
+        lock: transaction.LOCK.UPDATE
+      });
+
+      if (!freshRound || freshRound.status !== 'active') {
+        console.log(`⚠️ Round #${round.roundNumber} already locked or doesn't exist`);
+        await transaction.rollback();
+        return;
+      }
+
       const lockPrice = priceService.getPrice();
       
-      console.log(`🔒 LOCKING Round #${round.roundNumber}...`);
+      console.log(`🔒 LOCKING Round #${freshRound.roundNumber}...`);
       
       // ✅ STEP 1: Lock the current round
-      await round.update({ 
+      await freshRound.update({ 
         status: 'locked',
         lockPrice: lockPrice
       }, { transaction });
 
-      console.log(`   ✅ Round #${round.roundNumber} locked at $${lockPrice.toLocaleString()}`);
-      console.log(`   ⏳ Result in ${this.LOCKED_DURATION} minutes`);
+      console.log(`   ✅ Round #${freshRound.roundNumber} locked at $${lockPrice.toLocaleString()}`);
 
-      // ✅ STEP 2: Find the SPECIFIC upcoming round (next sequential)
+      // ✅ STEP 2: Find upcoming round with lock
       const upcomingRound = await Round.findOne({
         where: { 
           status: 'upcoming',
-          roundNumber: round.roundNumber + 1 // ✅ CRITICAL: Must be next round!
+          roundNumber: freshRound.roundNumber + 1
         },
-        transaction
+        transaction,
+        lock: transaction.LOCK.UPDATE
       });
 
       if (!upcomingRound) {
-        console.error(`❌ CRITICAL: No upcoming round #${round.roundNumber + 1} found!`);
-        await transaction.rollback();
+        console.log(`⚠️ No upcoming round #${freshRound.roundNumber + 1}, creating emergency round`);
+        await transaction.commit();
         
-        // Create emergency round
+        // Create emergency round outside transaction
         await this.createNewRound(true);
         return;
       }
 
-      // ✅ STEP 3: Start the upcoming round IMMEDIATELY
+      // ✅ STEP 3: Start the upcoming round
       const startPrice = priceService.getPrice();
+      const now = new Date();
       
       await upcomingRound.update({ 
         status: 'active',
         startPrice: startPrice,
-        startTime: new Date() // Start NOW
+        startTime: now
       }, { transaction });
 
-      console.log(`🚀 Round #${upcomingRound.roundNumber} started immediately at $${startPrice.toLocaleString()}`);
+      console.log(`🚀 Round #${upcomingRound.roundNumber} started at $${startPrice.toLocaleString()}`);
 
-      // ✅ STEP 4: Create the NEXT upcoming round
+      // ✅ STEP 4: Create next upcoming round
       const nextRoundNumber = upcomingRound.roundNumber + 1;
-      const nextStartTime = new Date(upcomingRound.lockTime.getTime() + 1000);
-      const nextLockTime = new Date(nextStartTime.getTime() + (this.BETTING_DURATION * 60 * 1000));
-      const nextEndTime = new Date(nextStartTime.getTime() + (this.TOTAL_ROUND_DURATION * 60 * 1000));
+      
+      // Check if it already exists
+      const existingNext = await Round.findOne({
+        where: { roundNumber: nextRoundNumber },
+        transaction
+      });
 
-      await Round.create({
-        roundNumber: nextRoundNumber,
-        status: 'upcoming',
-        startTime: nextStartTime,
-        lockTime: nextLockTime,
-        endTime: nextEndTime,
-        startPrice: null
-      }, { transaction });
+      if (!existingNext) {
+        const nextStartTime = new Date(upcomingRound.lockTime.getTime() + 1000);
+        const nextLockTime = new Date(nextStartTime.getTime() + (this.BETTING_DURATION * 60 * 1000));
+        const nextEndTime = new Date(nextStartTime.getTime() + (this.TOTAL_ROUND_DURATION * 60 * 1000));
 
-      console.log(`📅 Created upcoming Round #${nextRoundNumber}`);
+        await Round.create({
+          roundNumber: nextRoundNumber,
+          status: 'upcoming',
+          startTime: nextStartTime,
+          lockTime: nextLockTime,
+          endTime: nextEndTime,
+          startPrice: null
+        }, { transaction });
+
+        console.log(`📅 Created upcoming Round #${nextRoundNumber}`);
+      } else {
+        console.log(`✅ Upcoming Round #${nextRoundNumber} already exists`);
+      }
 
       // ✅ COMMIT TRANSACTION
       await transaction.commit();
 
-      // ✅ Update cache AFTER successful commit
+      // ✅ Update cache
       this.cachedActiveRound = upcomingRound;
-      this.cachedLockedRound = round;
+      this.cachedLockedRound = freshRound;
       this.cacheExpiry = Date.now() + this.CACHE_DURATION;
       this.currentRound = upcomingRound;
 
-      // ✅ Emit socket events
+      // ✅ Emit events
       if (this.io) {
         this.io.emit('round_locked', {
-          roundId: round.id,
-          roundNumber: round.roundNumber,
+          roundId: freshRound.id,
+          roundNumber: freshRound.roundNumber,
           lockPrice: lockPrice,
-          startPrice: round.startPrice,
-          endTime: round.endTime,
+          startPrice: freshRound.startPrice,
+          endTime: freshRound.endTime,
           message: `Betting closed! Result in ${this.LOCKED_DURATION} minutes`
         });
 
@@ -441,21 +575,21 @@ class RoundService {
         });
       }
 
-      console.log(`✅ Round transition complete: #${round.roundNumber} locked, #${upcomingRound.roundNumber} active`);
+      console.log(`✅ Transition complete: #${freshRound.roundNumber} locked → #${upcomingRound.roundNumber} active`);
 
     } catch (error) {
       await transaction.rollback();
-      console.error('❌ Error locking round:', error);
+      console.error('❌ Error locking round:', error.message);
       
-      // Emergency: ensure system keeps running
+      // Emergency recovery
       try {
         const hasActive = await Round.findOne({ where: { status: 'active' } });
         if (!hasActive) {
-          console.log('⚠️ Creating emergency round...');
+          console.log('⚠️ Creating emergency active round...');
           await this.createNewRound(true);
         }
       } catch (emergencyError) {
-        console.error('❌ Emergency round creation failed:', emergencyError);
+        console.error('❌ Emergency recovery failed:', emergencyError.message);
       }
     }
   }
@@ -465,10 +599,22 @@ class RoundService {
     const transaction = await sequelize.transaction();
 
     try {
-      console.log(`🏁 ENDING Round #${round.roundNumber}...`);
+      // ✅ Re-fetch with lock
+      const freshRound = await Round.findByPk(round.id, {
+        transaction,
+        lock: transaction.LOCK.UPDATE
+      });
+
+      if (!freshRound || freshRound.status !== 'locked') {
+        console.log(`⚠️ Round #${round.roundNumber} already completed or doesn't exist`);
+        await transaction.rollback();
+        return;
+      }
+
+      console.log(`🏁 ENDING Round #${freshRound.roundNumber}...`);
       
       const endPrice = priceService.getPrice();
-      const startPrice = parseFloat(round.startPrice);
+      const startPrice = parseFloat(freshRound.startPrice);
 
       let result;
       const priceDiff = endPrice - startPrice;
@@ -482,7 +628,7 @@ class RoundService {
         result = 'down';
       }
 
-      await round.update({ 
+      await freshRound.update({ 
         status: 'completed', 
         endPrice, 
         result 
@@ -492,19 +638,19 @@ class RoundService {
       console.log(`   📊 Change: ${priceDiff > 0 ? '+' : ''}${priceDiff.toFixed(2)} (${percentChange.toFixed(3)}%)`);
       console.log(`   🎯 Result: ${result.toUpperCase()}`);
 
-      await this.processBets(round, result, transaction);
+      await this.processBets(freshRound, result, transaction);
 
       await transaction.commit();
-      console.log(`   ✅ Round #${round.roundNumber} completed successfully`);
+      console.log(`   ✅ Round #${freshRound.roundNumber} completed successfully`);
 
       // Clear cache
       this.cachedLockedRound = null;
-      botService.cleanupRound(round.id);
+      botService.cleanupRound(freshRound.id);
 
       if (this.io) {
         this.io.emit('round_completed', {
-          roundId: round.id,
-          roundNumber: round.roundNumber,
+          roundId: freshRound.id,
+          roundNumber: freshRound.roundNumber,
           startPrice,
           endPrice,
           result,
@@ -515,10 +661,13 @@ class RoundService {
 
     } catch (error) {
       await transaction.rollback();
-      console.error('❌ Error ending round:', error);
+      console.error('❌ Error ending round:', error.message);
       
       try {
-        await round.update({ status: 'cancelled' });
+        await Round.update(
+          { status: 'cancelled' },
+          { where: { id: round.id } }
+        );
       } catch (updateError) {
         console.error('❌ Failed to mark round as cancelled');
       }
@@ -687,7 +836,7 @@ class RoundService {
     }
   }
 
-  // ==================== PROCESS BETS ====================
+  // ==================== PROCESS BETS (unchanged) ====================
   async processBets(round, result, transaction) {
     try {
       const bets = await Bet.findAll({
