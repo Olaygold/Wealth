@@ -1,5 +1,4 @@
 
-
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
@@ -293,7 +292,7 @@ const FloatingSupportButton = () => {
   );
 };
 
-// ==================== PROFESSIONAL TRADING CHART (FIXED - NO MORE BLANK PAGE) ====================
+// ==================== PROFESSIONAL TRADING CHART (FULLY FIXED) ====================
 const TradingChart = ({ priceHistory, startPrice, currentPrice, isLocked = false, roundId }) => {
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null);
@@ -508,21 +507,21 @@ const TradingChart = ({ priceHistory, startPrice, currentPrice, isLocked = false
   );
 };
 
-// ==================== LIVE POOL INDICATOR ====================
+// ==================== LIVE POOL INDICATOR (MOBILE OPTIMIZED) ====================
 const LivePoolIndicator = ({ totalUp, totalDown, upBets, downBets, isLocked = false }) => {
   const total = totalUp + totalDown;
   const upPercent = total > 0 ? (totalUp / total) * 100 : 50;
   const downPercent = total > 0 ? (totalDown / total) * 100 : 50;
 
   return (
-    <div className="bg-slate-900/50 rounded-xl p-5 shadow-lg">
-      <div className="flex justify-between items-center mb-4">
+    <div className="bg-slate-900/50 rounded-xl p-4 md:p-5 shadow-lg">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-4">
         <span className="text-sm text-white font-bold flex items-center gap-2">
-          <Users size={18} className="text-primary" />
-          {isLocked ? 'Final Pool Distribution' : 'Live Pool Distribution'}
+          <Users size={18} className="text-primary flex-shrink-0" />
+          <span className="truncate">{isLocked ? 'Final Pool Distribution' : 'Live Pool Distribution'}</span>
         </span>
         {!isLocked && (
-          <span className="text-xs text-green-500 font-bold flex items-center gap-1 animate-pulse">
+          <span className="text-xs text-green-500 font-bold flex items-center gap-1 animate-pulse w-fit">
             <span className="w-2 h-2 bg-green-500 rounded-full"></span>
             LIVE
           </span>
@@ -548,52 +547,52 @@ const LivePoolIndicator = ({ totalUp, totalDown, upBets, downBets, isLocked = fa
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div className="flex flex-col bg-green-500/10 p-4 rounded-xl border border-green-500/30 hover:border-green-500/50 transition-colors">
+      <div className="grid grid-cols-2 gap-3 md:gap-4">
+        <div className="flex flex-col bg-green-500/10 p-3 md:p-4 rounded-xl border border-green-500/30 hover:border-green-500/50 transition-colors">
           <div className="flex items-center gap-2 mb-2">
-            <div className="p-2 bg-green-500/20 rounded-lg">
-              <TrendingUp className="text-green-500" size={20} />
+            <div className="p-1.5 md:p-2 bg-green-500/20 rounded-lg">
+              <TrendingUp className="text-green-500" size={16} />
             </div>
-            <div>
-              <p className="text-green-500 font-bold text-lg">UP</p>
-              <p className="text-xs text-gray-400">{upBets} bets</p>
+            <div className="min-w-0 flex-1">
+              <p className="text-green-500 font-bold text-base md:text-lg">UP</p>
+              <p className="text-xs text-gray-400 truncate">{upBets} bets</p>
             </div>
           </div>
-          <p className="text-green-500 font-black text-2xl">₦{formatCurrency(totalUp)}</p>
+          <p className="text-green-500 font-black text-xl md:text-2xl truncate">₦{formatCurrency(totalUp)}</p>
         </div>
         
-        <div className="flex flex-col bg-red-500/10 p-4 rounded-xl border border-red-500/30 hover:border-red-500/50 transition-colors">
+        <div className="flex flex-col bg-red-500/10 p-3 md:p-4 rounded-xl border border-red-500/30 hover:border-red-500/50 transition-colors">
           <div className="flex items-center gap-2 mb-2">
-            <div className="p-2 bg-red-500/20 rounded-lg">
-              <TrendingDown className="text-red-500" size={20} />
+            <div className="p-1.5 md:p-2 bg-red-500/20 rounded-lg">
+              <TrendingDown className="text-red-500" size={16} />
             </div>
-            <div>
-              <p className="text-red-500 font-bold text-lg">DOWN</p>
-              <p className="text-xs text-gray-400">{downBets} bets</p>
+            <div className="min-w-0 flex-1">
+              <p className="text-red-500 font-bold text-base md:text-lg">DOWN</p>
+              <p className="text-xs text-gray-400 truncate">{downBets} bets</p>
             </div>
           </div>
-          <p className="text-red-500 font-black text-2xl">₦{formatCurrency(totalDown)}</p>
+          <p className="text-red-500 font-black text-xl md:text-2xl truncate">₦{formatCurrency(totalDown)}</p>
         </div>
       </div>
 
       <div className="mt-4 pt-4 border-t border-slate-700/50 text-center">
-        <div className="flex items-center justify-center gap-2">
-          <span className="text-gray-400 text-sm">Total Pool:</span>
-          <span className="text-white font-black text-xl">₦{formatCurrency(total)}</span>
+        <div className="flex items-center justify-center gap-2 flex-wrap">
+          <span className="text-gray-400 text-sm font-medium">Total Pool:</span>
+          <span className="text-white font-black text-lg md:text-xl">₦{formatCurrency(total)}</span>
         </div>
       </div>
     </div>
   );
 };
 
-// ==================== PREVIOUS ROUND CARD ====================
+// ==================== PREVIOUS ROUND CARD (MOBILE OPTIMIZED) ====================
 const PreviousRoundCard = ({ round, index }) => {
   if (!round) return null;
 
   const priceChange = parseFloat(round.percentChange || 0);
 
   return (
-    <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700 hover:border-slate-600 hover:shadow-xl hover:shadow-slate-900/50 transition-all duration-300 transform hover:-translate-y-1">
+    <div className="bg-slate-800/60 rounded-2xl p-4 md:p-5 border border-slate-700 hover:border-slate-600 hover:shadow-xl hover:shadow-slate-900/50 transition-all duration-300 transform hover:-translate-y-1">
       <div className="flex justify-between items-start mb-4">
         <div>
           <p className="text-xs text-gray-500 flex items-center gap-1">
@@ -607,7 +606,7 @@ const PreviousRoundCard = ({ round, index }) => {
             })}
           </p>
         </div>
-        <div className={`px-3 py-1.5 rounded-lg font-bold text-sm shadow-lg ${
+        <div className={`px-2 md:px-3 py-1.5 rounded-lg font-bold text-xs md:text-sm shadow-lg ${
           round.result === 'up'
             ? 'bg-green-500/20 text-green-500 border border-green-500/30'
             : round.result === 'down'
@@ -620,21 +619,21 @@ const PreviousRoundCard = ({ round, index }) => {
       </div>
 
       <div className="grid grid-cols-2 gap-3 mb-4">
-        <div className="bg-slate-900/70 p-3 rounded-lg border border-slate-700/50">
+        <div className="bg-slate-900/70 p-2 md:p-3 rounded-lg border border-slate-700/50">
           <p className="text-[10px] text-gray-500 uppercase tracking-wide">Start</p>
-          <p className="text-base font-bold text-white mt-1">
+          <p className="text-sm md:text-base font-bold text-white mt-1 truncate">
             ${parseFloat(round.startPrice || 0).toLocaleString()}
           </p>
         </div>
-        <div className="bg-slate-900/70 p-3 rounded-lg border border-slate-700/50">
+        <div className="bg-slate-900/70 p-2 md:p-3 rounded-lg border border-slate-700/50">
           <p className="text-[10px] text-gray-500 uppercase tracking-wide">End</p>
-          <p className="text-base font-bold text-white mt-1">
+          <p className="text-sm md:text-base font-bold text-white mt-1 truncate">
             ${parseFloat(round.endPrice || 0).toLocaleString()}
           </p>
         </div>
       </div>
 
-      <div className={`text-center py-3 rounded-xl font-black text-lg ${
+      <div className={`text-center py-2 md:py-3 rounded-xl font-black text-base md:text-lg ${
         priceChange >= 0 
           ? 'bg-green-500/10 text-green-500 border border-green-500/30' 
           : 'bg-red-500/10 text-red-500 border border-red-500/30'
@@ -643,13 +642,13 @@ const PreviousRoundCard = ({ round, index }) => {
       </div>
 
       <div className="grid grid-cols-2 gap-3 mt-4 text-xs">
-        <div className={`p-3 rounded-lg ${round.result === 'up' ? 'bg-green-500/20 ring-2 ring-green-500/50' : 'bg-green-500/5'}`}>
-          <span className="text-green-400 block mb-1">UP Pool</span>
-          <span className="text-white font-bold text-sm">₦{formatCurrency(round.totalUpAmount)}</span>
+        <div className={`p-2 md:p-3 rounded-lg ${round.result === 'up' ? 'bg-green-500/20 ring-2 ring-green-500/50' : 'bg-green-500/5'}`}>
+          <span className="text-green-400 block mb-1 text-xs">UP Pool</span>
+          <span className="text-white font-bold text-xs md:text-sm truncate block">₦{formatCurrency(round.totalUpAmount)}</span>
         </div>
-        <div className={`p-3 rounded-lg ${round.result === 'down' ? 'bg-red-500/20 ring-2 ring-red-500/50' : 'bg-red-500/5'}`}>
-          <span className="text-red-400 block mb-1">DOWN Pool</span>
-          <span className="text-white font-bold text-sm">₦{formatCurrency(round.totalDownAmount)}</span>
+        <div className={`p-2 md:p-3 rounded-lg ${round.result === 'down' ? 'bg-red-500/20 ring-2 ring-red-500/50' : 'bg-red-500/5'}`}>
+          <span className="text-red-400 block mb-1 text-xs">DOWN Pool</span>
+          <span className="text-white font-bold text-xs md:text-sm truncate block">₦{formatCurrency(round.totalDownAmount)}</span>
         </div>
       </div>
     </div>
@@ -708,8 +707,8 @@ const UserGuideModal = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-slate-900 rounded-3xl max-w-md w-full border border-slate-700 overflow-hidden animate-in zoom-in-95 duration-300 shadow-2xl">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-slate-900 rounded-3xl max-w-md w-full border border-slate-700 overflow-hidden animate-in zoom-in-95 duration-300 shadow-2xl my-8">
         <div className="bg-gradient-to-r from-primary to-purple-600 p-6 text-center relative">
           <button
             onClick={onClose}
@@ -969,7 +968,7 @@ const Dashboard = () => {
     }
   };
 
-  // ========== AUTO-REFRESH DATA EVERY 3 SECONDS ==========
+  // ========== AUTO-REFRESH DATA EVERY 3 SECONDS (NO PAGE REFRESH) ==========
   useEffect(() => {
     if (!user) return;
 
@@ -1205,7 +1204,7 @@ const Dashboard = () => {
     };
   }, [socket, isConnected, priceHistory, lockedRound]);
 
-  // ========== COUNTDOWN TIMERS ==========
+  // ========== COUNTDOWN TIMERS (NO PAGE REFRESH) ==========
   useEffect(() => {
     const updateTimers = () => {
       const now = Date.now();
@@ -1226,7 +1225,7 @@ const Dashboard = () => {
     };
 
     updateTimers();
-    const interval = setInterval(updateTimers, 100);
+    const interval = setInterval(updateTimers, 1000); // Update every second, NO PAGE REFRESH
 
     return () => clearInterval(interval);
   }, [activeRound, lockedRound]);
@@ -1309,7 +1308,7 @@ const Dashboard = () => {
     );
   }
 
-  // ========== MAIN RENDER ==========
+  // ========== MAIN RENDER (MOBILE OPTIMIZED) ==========
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 pb-24 lg:pb-8">
       {/* ========== MODALS ========== */}
@@ -1341,29 +1340,29 @@ const Dashboard = () => {
         </div>
       )}
 
-      <div className="p-4 lg:p-8 max-w-7xl mx-auto space-y-6">
-        {/* ==================== MATERIAL DESIGN HEADER CARD ==================== */}
-        <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 backdrop-blur-xl rounded-3xl p-6 border border-slate-700/50 shadow-2xl shadow-slate-900/50">
-          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
+      <div className="p-3 md:p-4 lg:p-8 max-w-7xl mx-auto space-y-4 md:space-y-6">
+        {/* ==================== MATERIAL DESIGN HEADER CARD (MOBILE OPTIMIZED) ==================== */}
+        <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 backdrop-blur-xl rounded-2xl md:rounded-3xl p-4 md:p-6 border border-slate-700/50 shadow-2xl shadow-slate-900/50">
+          <div className="flex flex-col gap-4 md:gap-6">
             {/* Left Section */}
             <div className="flex-1">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="p-3 bg-primary/20 rounded-2xl">
-                  <Activity className="text-primary animate-pulse" size={32} />
+              <div className="flex items-center gap-2 md:gap-3 mb-2">
+                <div className="p-2 md:p-3 bg-primary/20 rounded-xl md:rounded-2xl">
+                  <Activity className="text-primary animate-pulse" size={24} />
                 </div>
-                <div>
-                  <h1 className="text-3xl lg:text-4xl font-black text-white tracking-tight">
+                <div className="min-w-0 flex-1">
+                  <h1 className="text-xl md:text-3xl lg:text-4xl font-black text-white tracking-tight truncate">
                     Wealth Trading
                   </h1>
-                  <p className="text-gray-400 flex items-center gap-2 mt-1">
-                    <span className="text-sm lg:text-base">BTC/USD 5-Minute Prediction</span>
+                  <p className="text-gray-400 flex items-center gap-2 mt-1 text-xs md:text-sm">
+                    <span className="truncate">BTC/USD 5-Min Prediction</span>
                     {isConnected ? (
-                      <span className="flex items-center gap-1 text-green-500 text-xs font-bold px-2 py-1 bg-green-500/10 rounded-full">
-                        <Wifi size={12} /> LIVE
+                      <span className="flex items-center gap-1 text-green-500 text-[10px] md:text-xs font-bold px-2 py-1 bg-green-500/10 rounded-full whitespace-nowrap">
+                        <Wifi size={10} /> LIVE
                       </span>
                     ) : (
-                      <span className="flex items-center gap-1 text-yellow-500 text-xs font-bold px-2 py-1 bg-yellow-500/10 rounded-full">
-                        <WifiOff size={12} /> Connecting...
+                      <span className="flex items-center gap-1 text-yellow-500 text-[10px] md:text-xs font-bold px-2 py-1 bg-yellow-500/10 rounded-full whitespace-nowrap">
+                        <WifiOff size={10} /> Connecting...
                       </span>
                     )}
                   </p>
@@ -1371,141 +1370,141 @@ const Dashboard = () => {
               </div>
             </div>
 
-            {/* Right Section - Balance & Actions */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full lg:w-auto">
+            {/* Balance & Actions (STACKED ON MOBILE) */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 md:gap-4 w-full">
               {/* Balance Card */}
-              <div className="flex-1 lg:flex-none bg-gradient-to-br from-green-600/20 to-emerald-600/20 backdrop-blur-sm p-5 rounded-2xl border border-green-500/30 shadow-lg shadow-green-500/10">
-                <div className="flex items-center gap-4">
-                  <div className="flex-1">
-                    <p className="text-xs text-gray-400 uppercase tracking-wider mb-1 font-medium">Available Balance</p>
-                    <p className="text-2xl lg:text-3xl font-black text-green-400 tabular-nums">
+              <div className="flex-1 bg-gradient-to-br from-green-600/20 to-emerald-600/20 backdrop-blur-sm p-4 md:p-5 rounded-xl md:rounded-2xl border border-green-500/30 shadow-lg shadow-green-500/10">
+                <div className="flex items-center gap-3 md:gap-4">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] md:text-xs text-gray-400 uppercase tracking-wider mb-1 font-medium">Available Balance</p>
+                    <p className="text-xl md:text-2xl lg:text-3xl font-black text-green-400 tabular-nums truncate">
                       ₦{formatCurrency(availableBalance)}
                     </p>
                     {lockedBalance > 0 && (
-                      <p className="text-xs text-orange-400 mt-1 flex items-center gap-1">
+                      <p className="text-[10px] md:text-xs text-orange-400 mt-1 flex items-center gap-1">
                         <Lock size={10} />
-                        Locked: ₦{formatCurrency(lockedBalance)}
+                        <span className="truncate">Locked: ₦{formatCurrency(lockedBalance)}</span>
                       </p>
                     )}
                   </div>
-                  <div className="w-14 h-14 bg-green-500/20 rounded-2xl flex items-center justify-center text-green-500 shadow-lg">
-                    <WalletIcon size={28} />
+                  <div className="w-12 h-12 md:w-14 md:h-14 bg-green-500/20 rounded-xl md:rounded-2xl flex items-center justify-center text-green-500 shadow-lg flex-shrink-0">
+                    <WalletIcon size={24} />
                   </div>
                 </div>
               </div>
 
               {/* Action Buttons */}
-              <div className="flex gap-3">
+              <div className="flex gap-2 md:gap-3 justify-center sm:justify-start">
                 <button
                   onClick={() => setShowGuide(true)}
-                  className="p-3.5 bg-slate-800/80 backdrop-blur-sm text-gray-400 hover:text-white rounded-2xl border border-slate-700 transition-all hover:border-primary hover:shadow-lg hover:shadow-primary/20 hover:scale-105"
+                  className="p-2.5 md:p-3.5 bg-slate-800/80 backdrop-blur-sm text-gray-400 hover:text-white rounded-xl md:rounded-2xl border border-slate-700 transition-all hover:border-primary hover:shadow-lg hover:shadow-primary/20 hover:scale-105"
                   title="How to Play"
                 >
-                  <HelpCircle size={22} />
+                  <HelpCircle size={20} />
                 </button>
 
                 <button
                   onClick={() => setShowReferralPopup(true)}
-                  className="p-3.5 bg-gradient-to-br from-purple-600 to-pink-600 text-white rounded-2xl border border-purple-500/50 transition-all hover:from-purple-700 hover:to-pink-700 shadow-lg shadow-purple-500/30 hover:scale-105"
+                  className="p-2.5 md:p-3.5 bg-gradient-to-br from-purple-600 to-pink-600 text-white rounded-xl md:rounded-2xl border border-purple-500/50 transition-all hover:from-purple-700 hover:to-pink-700 shadow-lg shadow-purple-500/30 hover:scale-105"
                   title="Refer & Earn 25%"
                 >
-                  <Gift size={22} />
+                  <Gift size={20} />
                 </button>
 
                 <button
                   onClick={handleRefresh}
                   disabled={refreshing}
-                  className="p-3.5 bg-slate-800/80 backdrop-blur-sm text-gray-400 hover:text-white rounded-2xl border border-slate-700 transition-all disabled:opacity-50 hover:border-primary hover:shadow-lg hover:shadow-primary/20 hover:scale-105"
+                  className="p-2.5 md:p-3.5 bg-slate-800/80 backdrop-blur-sm text-gray-400 hover:text-white rounded-xl md:rounded-2xl border border-slate-700 transition-all disabled:opacity-50 hover:border-primary hover:shadow-lg hover:shadow-primary/20 hover:scale-105"
                   title="Refresh Data"
                 >
-                  <RefreshCw size={22} className={refreshing ? 'animate-spin' : ''} />
+                  <RefreshCw size={20} className={refreshing ? 'animate-spin' : ''} />
                 </button>
               </div>
             </div>
           </div>
         </div>
 
-        {/* ==================== LIVE PRICE BANNER (MATERIAL DESIGN) ==================== */}
-        <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 backdrop-blur-xl rounded-3xl p-6 border border-slate-700/50 shadow-2xl shadow-slate-900/50">
-          <div className="flex flex-col sm:flex-row justify-between items-center gap-6">
-            <div className="flex items-center gap-5">
-              <div className="p-4 bg-gradient-to-br from-orange-500/20 to-amber-500/20 rounded-2xl text-orange-500 shadow-lg">
-                <TrendUp size={32} />
+        {/* ==================== LIVE PRICE BANNER (MOBILE OPTIMIZED) ==================== */}
+        <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 backdrop-blur-xl rounded-2xl md:rounded-3xl p-4 md:p-6 border border-slate-700/50 shadow-2xl shadow-slate-900/50">
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-4 md:gap-6">
+            <div className="flex items-center gap-3 md:gap-5 w-full sm:w-auto">
+              <div className="p-2 md:p-4 bg-gradient-to-br from-orange-500/20 to-amber-500/20 rounded-xl md:rounded-2xl text-orange-500 shadow-lg flex-shrink-0">
+                <TrendUp size={24} className="md:w-8 md:h-8" />
               </div>
-              <div>
-                <p className="text-xs text-gray-400 uppercase flex items-center gap-2 mb-1 font-medium tracking-wider">
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] md:text-xs text-gray-400 uppercase flex items-center gap-2 mb-1 font-medium tracking-wider">
                   Live BTC Price
                   <span className="relative flex h-2.5 w-2.5">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
                   </span>
                 </p>
-                <h2 className="text-3xl lg:text-4xl font-black text-white tabular-nums tracking-tight">
+                <h2 className="text-2xl md:text-3xl lg:text-4xl font-black text-white tabular-nums tracking-tight truncate">
                   ${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </h2>
               </div>
             </div>
 
             {activeStartPrice > 0 && (
-              <div className={`flex items-center gap-3 px-6 py-4 rounded-2xl transition-all duration-300 shadow-lg ${
+              <div className={`flex items-center gap-2 md:gap-3 px-4 md:px-6 py-3 md:py-4 rounded-xl md:rounded-2xl transition-all duration-300 shadow-lg w-full sm:w-auto justify-center ${
                 activePriceChange >= 0 
                   ? 'bg-gradient-to-br from-green-500/20 to-emerald-500/20 border border-green-500/30' 
                   : 'bg-gradient-to-br from-red-500/20 to-rose-500/20 border border-red-500/30'
               }`}>
-                <div className={`p-2 rounded-xl ${
+                <div className={`p-1.5 md:p-2 rounded-lg md:rounded-xl ${
                   activePriceChange >= 0 ? 'bg-green-500/20' : 'bg-red-500/20'
                 }`}>
                   {activePriceChange >= 0 ? 
-                    <TrendingUp className="text-green-500" size={24} /> : 
-                    <TrendingDown className="text-red-500" size={24} />
+                    <TrendingUp className="text-green-500" size={20} /> : 
+                    <TrendingDown className="text-red-500" size={20} />
                   }
                 </div>
-                <div>
-                  <span className={`font-black tabular-nums text-2xl ${
+                <div className="min-w-0">
+                  <span className={`font-black tabular-nums text-xl md:text-2xl truncate block ${
                     activePriceChange >= 0 ? 'text-green-500' : 'text-red-500'
                   }`}>
                     {activePriceChange >= 0 ? '+' : ''}{activePriceChange.toFixed(3)}%
                   </span>
-                  <p className="text-xs opacity-70 text-gray-400 mt-0.5">from active start</p>
+                  <p className="text-[10px] md:text-xs opacity-70 text-gray-400 mt-0.5 truncate">from active start</p>
                 </div>
               </div>
             )}
           </div>
         </div>
 
-        {/* ==================== SWIPEABLE ROUNDS (MATERIAL CARDS) ==================== */}
-        <div className="bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-xl rounded-3xl p-6 border border-slate-700/50 shadow-2xl shadow-slate-900/50">
+        {/* ==================== SWIPEABLE ROUNDS (MOBILE OPTIMIZED) ==================== */}
+        <div className="bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-xl rounded-2xl md:rounded-3xl p-4 md:p-6 border border-slate-700/50 shadow-2xl shadow-slate-900/50">
           {/* Slide Navigation */}
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between mb-4 md:mb-6">
+            <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0">
               <button
                 onClick={() => setActiveSlide(prev => Math.max(0, prev - 1))}
                 disabled={activeSlide === 0}
-                className="p-3 bg-slate-800/80 backdrop-blur-sm rounded-2xl text-gray-400 hover:text-white disabled:opacity-30 transition-all border border-slate-700 hover:border-primary hover:shadow-lg disabled:hover:border-slate-700 disabled:hover:shadow-none"
+                className="p-2 md:p-3 bg-slate-800/80 backdrop-blur-sm rounded-xl md:rounded-2xl text-gray-400 hover:text-white disabled:opacity-30 transition-all border border-slate-700 hover:border-primary hover:shadow-lg disabled:hover:border-slate-700 disabled:hover:shadow-none flex-shrink-0"
               >
-                <ChevronLeft size={22} />
+                <ChevronLeft size={18} className="md:w-6 md:h-6" />
               </button>
-              <span className="text-base text-gray-300 min-w-[200px] text-center font-bold tracking-wide">
+              <span className="text-sm md:text-base text-gray-300 text-center font-bold tracking-wide truncate px-2">
                 {slides[activeSlide]?.label}
               </span>
               <button
                 onClick={() => setActiveSlide(prev => Math.min(3, prev + 1))}
                 disabled={activeSlide === 3}
-                className="p-3 bg-slate-800/80 backdrop-blur-sm rounded-2xl text-gray-400 hover:text-white disabled:opacity-30 transition-all border border-slate-700 hover:border-primary hover:shadow-lg disabled:hover:border-slate-700 disabled:hover:shadow-none"
+                className="p-2 md:p-3 bg-slate-800/80 backdrop-blur-sm rounded-xl md:rounded-2xl text-gray-400 hover:text-white disabled:opacity-30 transition-all border border-slate-700 hover:border-primary hover:shadow-lg disabled:hover:border-slate-700 disabled:hover:shadow-none flex-shrink-0"
               >
-                <ChevronRight size={22} />
+                <ChevronRight size={18} className="md:w-6 md:h-6" />
               </button>
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex gap-1.5 md:gap-2 flex-shrink-0 ml-2">
               {slides.map((_, i) => (
                 <button
                   key={i}
                   onClick={() => setActiveSlide(i)}
-                  className={`h-2.5 rounded-full transition-all shadow-sm ${
+                  className={`h-2 md:h-2.5 rounded-full transition-all shadow-sm ${
                     activeSlide === i 
-                      ? i === 2 ? 'w-10 bg-red-500 shadow-lg shadow-red-500/50' : 'w-10 bg-primary shadow-lg shadow-primary/50' 
-                      : 'w-2.5 bg-gray-600 hover:bg-gray-500'
+                      ? i === 2 ? 'w-8 md:w-10 bg-red-500 shadow-lg shadow-red-500/50' : 'w-8 md:w-10 bg-primary shadow-lg shadow-primary/50' 
+                      : 'w-2 md:w-2.5 bg-gray-600 hover:bg-gray-500'
                   }`}
                 />
               ))}
@@ -1513,7 +1512,7 @@ const Dashboard = () => {
           </div>
 
           {/* Slides Container */}
-          <div className="overflow-hidden rounded-3xl">
+          <div className="overflow-hidden rounded-2xl md:rounded-3xl">
             <div
               className="flex transition-transform duration-500 ease-out"
               style={{ transform: `translateX(-${activeSlide * 100}%)` }}
@@ -1521,31 +1520,31 @@ const Dashboard = () => {
 
               {/* ===== SLIDE 0: PREVIOUS ROUNDS (HISTORY) ===== */}
               <div className="min-w-full px-1">
-                <div className="rounded-3xl">
-                  <div className="flex items-center justify-between mb-6">
-                    <div className="flex items-center gap-3">
-                      <div className="p-3 bg-primary/20 rounded-2xl">
-                        <History className="text-primary" size={24} />
+                <div className="rounded-2xl md:rounded-3xl">
+                  <div className="flex items-center justify-between mb-4 md:mb-6">
+                    <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
+                      <div className="p-2 md:p-3 bg-primary/20 rounded-xl md:rounded-2xl flex-shrink-0">
+                        <History className="text-primary" size={20} />
                       </div>
-                      <div>
-                        <h3 className="text-xl font-bold text-white">Previous Rounds</h3>
+                      <div className="min-w-0 flex-1">
+                        <h3 className="text-lg md:text-xl font-bold text-white truncate">Previous Rounds</h3>
                         <span className="text-xs text-gray-500">Last 3 completed rounds</span>
                       </div>
                     </div>
                   </div>
 
                   {previousRounds.length > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-5">
                       {previousRounds.map((round, index) => (
                         <PreviousRoundCard key={round.id} round={round} index={index} />
                       ))}
                     </div>
                   ) : (
-                    <div className="text-center py-16 bg-slate-800/30 rounded-3xl border border-dashed border-slate-700">
-                      <div className="p-4 bg-slate-700/30 rounded-full w-20 h-20 flex items-center justify-center mx-auto mb-4">
-                        <Trophy className="text-gray-600" size={40} />
+                    <div className="text-center py-12 md:py-16 bg-slate-800/30 rounded-2xl md:rounded-3xl border border-dashed border-slate-700">
+                      <div className="p-3 md:p-4 bg-slate-700/30 rounded-full w-16 h-16 md:w-20 md:h-20 flex items-center justify-center mx-auto mb-4">
+                        <Trophy className="text-gray-600" size={32} />
                       </div>
-                      <p className="text-gray-400 text-xl font-medium">No completed rounds yet</p>
+                      <p className="text-gray-400 text-lg md:text-xl font-medium">No completed rounds yet</p>
                       <p className="text-gray-600 text-sm mt-2">Complete a round to see history here</p>
                     </div>
                   )}
@@ -1555,29 +1554,29 @@ const Dashboard = () => {
               {/* ===== SLIDE 1: LOCKED ROUND (WAITING FOR RESULT) ===== */}
               <div className="min-w-full px-1">
                 {lockedRound ? (
-                  <div className="bg-gradient-to-br from-amber-900/30 to-orange-900/30 backdrop-blur-xl rounded-3xl p-6 border-2 border-amber-500/50 shadow-2xl shadow-amber-500/20">
+                  <div className="bg-gradient-to-br from-amber-900/30 to-orange-900/30 backdrop-blur-xl rounded-2xl md:rounded-3xl p-4 md:p-6 border-2 border-amber-500/50 shadow-2xl shadow-amber-500/20">
                     {/* Header */}
-                    <div className="flex justify-between items-center mb-6">
-                      <div className="flex items-center gap-3">
-                        <div className="p-3 bg-amber-500/20 rounded-2xl shadow-lg">
-                          <Lock className="text-amber-500" size={24} />
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 md:gap-4 mb-4 md:mb-6">
+                      <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
+                        <div className="p-2 md:p-3 bg-amber-500/20 rounded-xl md:rounded-2xl shadow-lg flex-shrink-0">
+                          <Lock className="text-amber-500" size={20} />
                         </div>
-                        <div>
-                          <p className="text-sm text-amber-400 font-bold tracking-wide uppercase">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs md:text-sm text-amber-400 font-bold tracking-wide uppercase truncate">
                             Round #{lockedRound.roundNumber}
                           </p>
-                          <h3 className="text-2xl font-black text-white">Waiting for Result</h3>
+                          <h3 className="text-xl md:text-2xl font-black text-white truncate">Waiting for Result</h3>
                         </div>
                       </div>
 
                       {/* Timer */}
-                      <div className={`px-6 py-4 rounded-2xl border-2 shadow-2xl transition-all ${
+                      <div className={`px-4 md:px-6 py-3 md:py-4 rounded-xl md:rounded-2xl border-2 shadow-2xl transition-all w-full sm:w-auto ${
                         lockedTimeLeft < 30 ? 'bg-red-500/20 border-red-500 shadow-red-500/30' :
                         lockedTimeLeft < 60 ? 'bg-yellow-500/20 border-yellow-500 shadow-yellow-500/30' : 
                         'bg-amber-500/20 border-amber-500 shadow-amber-500/30'
                       }`}>
-                        <p className="text-xs text-gray-400 text-center uppercase tracking-wider mb-1">Result In</p>
-                        <p className={`text-4xl font-mono font-black text-center tabular-nums ${
+                        <p className="text-[10px] md:text-xs text-gray-400 text-center uppercase tracking-wider mb-1">Result In</p>
+                        <p className={`text-3xl md:text-4xl font-mono font-black text-center tabular-nums ${
                           lockedTimeLeft < 30 ? 'text-red-500 animate-pulse' :
                           lockedTimeLeft < 60 ? 'text-yellow-500' : 'text-amber-500'
                         }`}>
@@ -1587,37 +1586,37 @@ const Dashboard = () => {
                     </div>
 
                     {/* Price Info Card */}
-                    <div className="bg-slate-900/60 backdrop-blur-sm rounded-2xl p-5 mb-5 border border-slate-700/50 shadow-xl">
-                      <div className="grid grid-cols-2 gap-5 mb-4">
-                        <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50">
-                          <p className="text-xs text-gray-400 mb-2 uppercase tracking-wider">Round Start Price</p>
-                          <p className="text-2xl font-black text-white tabular-nums">
+                    <div className="bg-slate-900/60 backdrop-blur-sm rounded-xl md:rounded-2xl p-4 md:p-5 mb-4 md:mb-5 border border-slate-700/50 shadow-xl">
+                      <div className="grid grid-cols-2 gap-3 md:gap-5 mb-4">
+                        <div className="bg-slate-800/50 p-3 md:p-4 rounded-lg md:rounded-xl border border-slate-700/50">
+                          <p className="text-[10px] md:text-xs text-gray-400 mb-2 uppercase tracking-wider">Round Start Price</p>
+                          <p className="text-lg md:text-2xl font-black text-white tabular-nums truncate">
                             ${lockedStartPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                           </p>
                         </div>
-                        <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50">
-                          <p className="text-xs text-gray-400 mb-2 uppercase tracking-wider">Current Price</p>
-                          <p className="text-2xl font-black text-white tabular-nums">
+                        <div className="bg-slate-800/50 p-3 md:p-4 rounded-lg md:rounded-xl border border-slate-700/50">
+                          <p className="text-[10px] md:text-xs text-gray-400 mb-2 uppercase tracking-wider">Current Price</p>
+                          <p className="text-lg md:text-2xl font-black text-white tabular-nums truncate">
                             ${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                           </p>
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-center gap-3 pt-4 border-t border-slate-700/50">
-                        <span className="text-gray-400 text-sm font-medium">Current Direction:</span>
-                        <span className={`font-black text-xl flex items-center gap-2 px-4 py-2 rounded-xl ${
+                      <div className="flex items-center justify-center gap-2 md:gap-3 pt-4 border-t border-slate-700/50 flex-wrap">
+                        <span className="text-gray-400 text-xs md:text-sm font-medium">Current Direction:</span>
+                        <span className={`font-black text-lg md:text-xl flex items-center gap-2 px-3 md:px-4 py-2 rounded-lg md:rounded-xl ${
                           lockedPriceChange >= 0 
                             ? 'text-green-500 bg-green-500/10 border border-green-500/30' 
                             : 'text-red-500 bg-red-500/10 border border-red-500/30'
                         }`}>
-                          {lockedPriceChange >= 0 ? <TrendingUp size={24} /> : <TrendingDown size={24} />}
+                          {lockedPriceChange >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
                           {lockedPriceChange >= 0 ? 'UP' : 'DOWN'} ({lockedPriceChange >= 0 ? '+' : ''}{lockedPriceChange.toFixed(3)}%)
                         </span>
                       </div>
                     </div>
 
                     {/* ✅ Chart (persisted for locked round - NO MORE BLANK PAGE) */}
-                    <div className="bg-slate-900/60 backdrop-blur-sm rounded-2xl p-3 mb-5 border border-slate-700/50 shadow-xl">
+                    <div className="bg-slate-900/60 backdrop-blur-sm rounded-xl md:rounded-2xl p-2 md:p-3 mb-4 md:mb-5 border border-slate-700/50 shadow-xl">
                       <TradingChart 
                         priceHistory={lockedPriceHistory.length > 0 ? lockedPriceHistory : priceHistory} 
                         startPrice={lockedStartPrice}
@@ -1637,61 +1636,60 @@ const Dashboard = () => {
                     />
 
                     {/* Info Box */}
-                    <div className="mt-5 bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/30 rounded-2xl p-5 text-center shadow-lg">
-                      <p className="text-amber-400 font-medium flex items-center justify-center gap-2">
-                        <Eye size={20} />
-                        Watch the price! Result will be calculated when timer ends
+                    <div className="mt-4 md:mt-5 bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/30 rounded-xl md:rounded-2xl p-4 md:p-5 text-center shadow-lg">
+                      <p className="text-amber-400 font-medium flex items-center justify-center gap-2 text-sm md:text-base flex-wrap">
+                        <Eye size={18} />
+                        <span>Watch the price! Result will be calculated when timer ends</span>
                       </p>
-                      <p className="text-amber-400/70 text-sm mt-2 flex items-center justify-center gap-1">
-                        Meanwhile, you can bet on the ACTIVE round
+                      <p className="text-amber-400/70 text-xs md:text-sm mt-2 flex items-center justify-center gap-1 flex-wrap">
+                        <span>Meanwhile, you can bet on the ACTIVE round</span>
                         <ChevronRight size={16} />
                       </p>
                     </div>
                   </div>
                 ) : (
-                  <div className="bg-slate-800/20 rounded-3xl p-16 border-2 border-dashed border-slate-700 text-center">
-                    <div className="p-5 bg-slate-700/30 rounded-full w-24 h-24 flex items-center justify-center mx-auto mb-4">
-                      <Lock className="text-gray-600" size={48} />
+                  <div className="bg-slate-800/20 rounded-2xl md:rounded-3xl p-12 md:p-16 border-2 border-dashed border-slate-700 text-center">
+                    <div className="p-4 md:p-5 bg-slate-700/30 rounded-full w-20 h-20 md:w-24 md:h-24 flex items-center justify-center mx-auto mb-4">
+                      <Lock className="text-gray-600" size={40} />
                     </div>
-                    <p className="text-gray-400 text-xl font-medium">No locked round</p>
+                    <p className="text-gray-400 text-lg md:text-xl font-medium">No locked round</p>
                     <p className="text-gray-600 text-sm mt-2">When an active round locks, it will appear here</p>
                   </div>
                 )}
               </div>
 
-              {/* ===== SLIDE 2: ACTIVE ROUND (BETTING) - Will include betting UI ===== */}
+              {/* ===== SLIDE 2: ACTIVE ROUND (BETTING) ===== */}
               <div className="min-w-full px-1">
                 {activeRound ? (
-                  <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-3xl p-6 border-2 border-primary/50 shadow-2xl shadow-primary/20">
-                    {/* CONTINUE WITH BETTING UI... */}
-                    <div className="flex justify-between items-center mb-6">
-                      <div className="flex items-center gap-3">
-                        <div className="relative">
+                  <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl md:rounded-3xl p-4 md:p-6 border-2 border-primary/50 shadow-2xl shadow-primary/20">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 md:gap-4 mb-4 md:mb-6">
+                      <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
+                        <div className="relative flex-shrink-0">
                           <div className="absolute inset-0 bg-red-500 rounded-full blur-lg opacity-50 animate-pulse"></div>
-                          <div className="relative p-3 bg-red-500/20 rounded-2xl shadow-lg">
-                            <Activity className="text-red-500" size={24} />
+                          <div className="relative p-2 md:p-3 bg-red-500/20 rounded-xl md:rounded-2xl shadow-lg">
+                            <Activity className="text-red-500" size={20} />
                           </div>
                         </div>
-                        <div>
-                          <p className="text-sm text-primary font-bold tracking-wide uppercase flex items-center gap-2">
-                            <span className="relative flex h-3 w-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs md:text-sm text-primary font-bold tracking-wide uppercase flex items-center gap-2">
+                            <span className="relative flex h-2.5 w-2.5 md:h-3 md:w-3 flex-shrink-0">
                               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                              <span className="relative inline-flex rounded-full h-2.5 w-2.5 md:h-3 md:w-3 bg-red-500"></span>
                             </span>
-                            Round #{activeRound.roundNumber}
+                            <span className="truncate">Round #{activeRound.roundNumber}</span>
                           </p>
-                          <h3 className="text-2xl font-black text-white">Place Your Bets!</h3>
+                          <h3 className="text-xl md:text-2xl font-black text-white truncate">Place Your Bets!</h3>
                         </div>
                       </div>
 
                       {/* Timer */}
-                      <div className={`px-6 py-4 rounded-2xl border-2 shadow-2xl transition-all ${
+                      <div className={`px-4 md:px-6 py-3 md:py-4 rounded-xl md:rounded-2xl border-2 shadow-2xl transition-all w-full sm:w-auto ${
                         activeTimeLeft < 30 ? 'bg-red-500/20 border-red-500 shadow-red-500/30' :
                         activeTimeLeft < 60 ? 'bg-yellow-500/20 border-yellow-500 shadow-yellow-500/30' : 
                         'bg-slate-900/80 border-slate-700 shadow-slate-900/50'
                       }`}>
-                        <p className="text-xs text-gray-400 text-center uppercase tracking-wider mb-1">Betting Ends</p>
-                        <p className={`text-4xl font-mono font-black text-center tabular-nums ${
+                        <p className="text-[10px] md:text-xs text-gray-400 text-center uppercase tracking-wider mb-1">Betting Ends</p>
+                        <p className={`text-3xl md:text-4xl font-mono font-black text-center tabular-nums ${
                           activeTimeLeft < 30 ? 'text-red-500 animate-pulse' :
                           activeTimeLeft < 60 ? 'text-yellow-500' : 'text-primary'
                         }`}>
@@ -1701,37 +1699,37 @@ const Dashboard = () => {
                     </div>
 
                     {/* Price Info Card */}
-                    <div className="bg-slate-900/60 backdrop-blur-sm rounded-2xl p-5 mb-5 border border-slate-700/50 shadow-xl">
-                      <div className="grid grid-cols-2 gap-5 mb-4">
-                        <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50">
-                          <p className="text-xs text-gray-400 mb-2 uppercase tracking-wider">Round Start Price</p>
-                          <p className="text-2xl font-black text-white tabular-nums">
+                    <div className="bg-slate-900/60 backdrop-blur-sm rounded-xl md:rounded-2xl p-4 md:p-5 mb-4 md:mb-5 border border-slate-700/50 shadow-xl">
+                      <div className="grid grid-cols-2 gap-3 md:gap-5 mb-4">
+                        <div className="bg-slate-800/50 p-3 md:p-4 rounded-lg md:rounded-xl border border-slate-700/50">
+                          <p className="text-[10px] md:text-xs text-gray-400 mb-2 uppercase tracking-wider">Round Start Price</p>
+                          <p className="text-lg md:text-2xl font-black text-white tabular-nums truncate">
                             ${activeStartPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                           </p>
                         </div>
-                        <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50">
-                          <p className="text-xs text-gray-400 mb-2 uppercase tracking-wider">Current Price</p>
-                          <p className="text-2xl font-black text-white tabular-nums">
+                        <div className="bg-slate-800/50 p-3 md:p-4 rounded-lg md:rounded-xl border border-slate-700/50">
+                          <p className="text-[10px] md:text-xs text-gray-400 mb-2 uppercase tracking-wider">Current Price</p>
+                          <p className="text-lg md:text-2xl font-black text-white tabular-nums truncate">
                             ${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                           </p>
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-center gap-3 pt-4 border-t border-slate-700/50">
-                        <span className="text-gray-400 text-sm font-medium">Current Direction:</span>
-                        <span className={`font-black text-xl flex items-center gap-2 px-4 py-2 rounded-xl ${
+                      <div className="flex items-center justify-center gap-2 md:gap-3 pt-4 border-t border-slate-700/50 flex-wrap">
+                        <span className="text-gray-400 text-xs md:text-sm font-medium">Current Direction:</span>
+                        <span className={`font-black text-lg md:text-xl flex items-center gap-2 px-3 md:px-4 py-2 rounded-lg md:rounded-xl ${
                           activePriceChange >= 0 
                             ? 'text-green-500 bg-green-500/10 border border-green-500/30' 
                             : 'text-red-500 bg-red-500/10 border border-red-500/30'
                         }`}>
-                          {activePriceChange >= 0 ? <TrendingUp size={24} /> : <TrendingDown size={24} />}
+                          {activePriceChange >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
                           {activePriceChange >= 0 ? 'UP' : 'DOWN'} ({activePriceChange >= 0 ? '+' : ''}{activePriceChange.toFixed(3)}%)
                         </span>
                       </div>
                     </div>
 
                     {/* Chart */}
-                    <div className="bg-slate-900/60 backdrop-blur-sm rounded-2xl p-3 mb-5 border border-slate-700/50 shadow-xl">
+                    <div className="bg-slate-900/60 backdrop-blur-sm rounded-xl md:rounded-2xl p-2 md:p-3 mb-4 md:mb-5 border border-slate-700/50 shadow-xl">
                       <TradingChart 
                         priceHistory={priceHistory} 
                         startPrice={activeStartPrice}
@@ -1741,7 +1739,7 @@ const Dashboard = () => {
                     </div>
 
                     {/* Live Pool Distribution */}
-                    <div className="mb-5">
+                    <div className="mb-4 md:mb-5">
                       <LivePoolIndicator
                         totalUp={parseFloat(activeRound.totalUpAmount || 0)}
                         totalDown={parseFloat(activeRound.totalDownAmount || 0)}
@@ -1750,8 +1748,8 @@ const Dashboard = () => {
                       />
                     </div>
 
-                    {/* Betting Buttons */}
-                    <div className="grid grid-cols-2 gap-5 mb-5">
+                    {/* Betting Buttons (STACKED ON MOBILE) */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-5 mb-4 md:mb-5">
                       {/* UP BUTTON */}
                       {(() => {
                         const upCalc = calculatePotentialPayout('up');
@@ -1760,38 +1758,38 @@ const Dashboard = () => {
                           <button
                             onClick={() => handlePlaceBet('up')}
                             disabled={loading || !canBet}
-                            className="relative bg-gradient-to-br from-green-500/10 to-emerald-500/10 hover:from-green-500/20 hover:to-emerald-500/20 border-2 border-green-500/50 hover:border-green-500 p-6 rounded-2xl transition-all disabled:opacity-40 disabled:cursor-not-allowed group overflow-hidden shadow-lg hover:shadow-2xl hover:shadow-green-500/20 disabled:hover:shadow-none transform hover:-translate-y-1 disabled:hover:translate-y-0"
+                            className="relative bg-gradient-to-br from-green-500/10 to-emerald-500/10 hover:from-green-500/20 hover:to-emerald-500/20 border-2 border-green-500/50 hover:border-green-500 p-5 md:p-6 rounded-xl md:rounded-2xl transition-all disabled:opacity-40 disabled:cursor-not-allowed group overflow-hidden shadow-lg hover:shadow-2xl hover:shadow-green-500/20 disabled:hover:shadow-none transform hover:-translate-y-1 disabled:hover:translate-y-0"
                           >
                             <div className="relative z-10">
-                              <div className="p-3 bg-green-500/20 rounded-2xl w-fit mx-auto mb-3 group-hover:scale-110 transition-transform">
+                              <div className="p-2 md:p-3 bg-green-500/20 rounded-xl md:rounded-2xl w-fit mx-auto mb-3 group-hover:scale-110 transition-transform">
                                 <ArrowUpRight
-                                  size={36}
-                                  className="text-green-500"
+                                  size={28}
+                                  className="text-green-500 md:w-9 md:h-9"
                                 />
                               </div>
-                              <p className="text-xl lg:text-2xl font-black text-green-500 mb-2">PREDICT UP</p>
+                              <p className="text-lg md:text-xl lg:text-2xl font-black text-green-500 mb-2">PREDICT UP</p>
                               
                               <p className="text-xs text-gray-400 font-medium">
                                 Current Pool: <span className="text-green-400 font-bold">{currentMult.display}</span>
                               </p>
                               
-                              <div className="mt-4 pt-4 border-t border-green-500/30 space-y-2">
+                              <div className="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-green-500/30 space-y-1.5 md:space-y-2">
                                 {betAmount > 0 ? (
                                   upCalc.hasOpponents ? (
                                     <>
-                                      <p className="text-sm text-green-400 font-bold">
+                                      <p className="text-xs md:text-sm text-green-400 font-bold">
                                         Your Payout: {upCalc.multiplier}x
                                       </p>
-                                      <p className="text-2xl font-black text-green-500">
+                                      <p className="text-xl md:text-2xl font-black text-green-500 truncate">
                                         Win: ₦{formatCurrency(upCalc.payout)}
                                       </p>
-                                      <p className="text-xs text-green-400">
+                                      <p className="text-xs text-green-400 truncate">
                                         Profit: +₦{formatCurrency(upCalc.profit)}
                                       </p>
                                     </>
                                   ) : (
                                     <>
-                                      <p className="text-sm text-yellow-400 font-bold">1x</p>
+                                      <p className="text-xs md:text-sm text-yellow-400 font-bold">1x</p>
                                       <p className="text-xs text-yellow-400">No DOWN bets yet</p>
                                     </>
                                   )
@@ -1801,7 +1799,7 @@ const Dashboard = () => {
                               </div>
                             </div>
                             {loading && (
-                              <div className="absolute inset-0 bg-black/50 flex items-center justify-center backdrop-blur-sm rounded-2xl">
+                              <div className="absolute inset-0 bg-black/50 flex items-center justify-center backdrop-blur-sm rounded-xl md:rounded-2xl">
                                 <Loader2 className="w-10 h-10 text-green-500 animate-spin" />
                               </div>
                             )}
@@ -1817,38 +1815,38 @@ const Dashboard = () => {
                           <button
                             onClick={() => handlePlaceBet('down')}
                             disabled={loading || !canBet}
-                            className="relative bg-gradient-to-br from-red-500/10 to-rose-500/10 hover:from-red-500/20 hover:to-rose-500/20 border-2 border-red-500/50 hover:border-red-500 p-6 rounded-2xl transition-all disabled:opacity-40 disabled:cursor-not-allowed group overflow-hidden shadow-lg hover:shadow-2xl hover:shadow-red-500/20 disabled:hover:shadow-none transform hover:-translate-y-1 disabled:hover:translate-y-0"
+                            className="relative bg-gradient-to-br from-red-500/10 to-rose-500/10 hover:from-red-500/20 hover:to-rose-500/20 border-2 border-red-500/50 hover:border-red-500 p-5 md:p-6 rounded-xl md:rounded-2xl transition-all disabled:opacity-40 disabled:cursor-not-allowed group overflow-hidden shadow-lg hover:shadow-2xl hover:shadow-red-500/20 disabled:hover:shadow-none transform hover:-translate-y-1 disabled:hover:translate-y-0"
                           >
                             <div className="relative z-10">
-                              <div className="p-3 bg-red-500/20 rounded-2xl w-fit mx-auto mb-3 group-hover:scale-110 transition-transform">
+                              <div className="p-2 md:p-3 bg-red-500/20 rounded-xl md:rounded-2xl w-fit mx-auto mb-3 group-hover:scale-110 transition-transform">
                                 <ArrowDownRight
-                                  size={36}
-                                  className="text-red-500"
+                                  size={28}
+                                  className="text-red-500 md:w-9 md:h-9"
                                 />
                               </div>
-                              <p className="text-xl lg:text-2xl font-black text-red-500 mb-2">PREDICT DOWN</p>
+                              <p className="text-lg md:text-xl lg:text-2xl font-black text-red-500 mb-2">PREDICT DOWN</p>
                               
                               <p className="text-xs text-gray-400 font-medium">
                                 Current Pool: <span className="text-red-400 font-bold">{currentMult.display}</span>
                               </p>
                               
-                              <div className="mt-4 pt-4 border-t border-red-500/30 space-y-2">
+                              <div className="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-red-500/30 space-y-1.5 md:space-y-2">
                                 {betAmount > 0 ? (
                                   downCalc.hasOpponents ? (
                                     <>
-                                      <p className="text-sm text-red-400 font-bold">
+                                      <p className="text-xs md:text-sm text-red-400 font-bold">
                                         Your Payout: {downCalc.multiplier}x
                                       </p>
-                                      <p className="text-2xl font-black text-red-500">
+                                      <p className="text-xl md:text-2xl font-black text-red-500 truncate">
                                         Win: ₦{formatCurrency(downCalc.payout)}
                                       </p>
-                                      <p className="text-xs text-red-400">
+                                      <p className="text-xs text-red-400 truncate">
                                         Profit: +₦{formatCurrency(downCalc.profit)}
                                       </p>
                                     </>
                                   ) : (
                                     <>
-                                      <p className="text-sm text-yellow-400 font-bold">1x</p>
+                                      <p className="text-xs md:text-sm text-yellow-400 font-bold">1x</p>
                                       <p className="text-xs text-yellow-400">No UP bets yet</p>
                                     </>
                                   )
@@ -1858,7 +1856,7 @@ const Dashboard = () => {
                               </div>
                             </div>
                             {loading && (
-                              <div className="absolute inset-0 bg-black/50 flex items-center justify-center backdrop-blur-sm rounded-2xl">
+                              <div className="absolute inset-0 bg-black/50 flex items-center justify-center backdrop-blur-sm rounded-xl md:rounded-2xl">
                                 <Loader2 className="w-10 h-10 text-red-500 animate-spin" />
                               </div>
                             )}
@@ -1869,35 +1867,35 @@ const Dashboard = () => {
 
                     {/* Status Messages */}
                     {!canBet && activeTimeLeft < 10 && activeTimeLeft > 0 && (
-                      <div className="bg-gradient-to-r from-red-500/10 to-rose-500/10 border border-red-500/30 rounded-2xl p-5 text-center shadow-lg">
-                        <p className="text-red-500 font-bold flex items-center justify-center gap-2">
-                          <AlertCircle size={20} />
-                          Round ending - Betting disabled
+                      <div className="bg-gradient-to-r from-red-500/10 to-rose-500/10 border border-red-500/30 rounded-xl md:rounded-2xl p-4 md:p-5 text-center shadow-lg">
+                        <p className="text-red-500 font-bold flex items-center justify-center gap-2 text-sm md:text-base flex-wrap">
+                          <AlertCircle size={18} />
+                          <span>Round ending - Betting disabled</span>
                         </p>
                       </div>
                     )}
 
                     {activeTimeLeft === 0 && (
-                      <div className="bg-gradient-to-r from-yellow-500/10 to-orange-500/10 border border-yellow-500/30 rounded-2xl p-5 text-center shadow-lg">
-                        <p className="text-yellow-500 font-bold flex items-center justify-center gap-2">
-                          <Clock size={20} />
-                          Round locking... New round starting soon!
+                      <div className="bg-gradient-to-r from-yellow-500/10 to-orange-500/10 border border-yellow-500/30 rounded-xl md:rounded-2xl p-4 md:p-5 text-center shadow-lg">
+                        <p className="text-yellow-500 font-bold flex items-center justify-center gap-2 text-sm md:text-base flex-wrap">
+                          <Clock size={18} />
+                          <span>Round locking... New round starting soon!</span>
                         </p>
                       </div>
                     )}
                   </div>
                 ) : (
-                  <div className="bg-slate-800/20 rounded-3xl p-16 border-2 border-dashed border-slate-700 text-center">
-                    <div className="p-5 bg-slate-700/30 rounded-full w-24 h-24 flex items-center justify-center mx-auto mb-4">
-                      <Clock className="text-gray-600 animate-pulse" size={48} />
+                  <div className="bg-slate-800/20 rounded-2xl md:rounded-3xl p-12 md:p-16 border-2 border-dashed border-slate-700 text-center">
+                    <div className="p-4 md:p-5 bg-slate-700/30 rounded-full w-20 h-20 md:w-24 md:h-24 flex items-center justify-center mx-auto mb-4">
+                      <Clock className="text-gray-600 animate-pulse" size={40} />
                     </div>
-                    <p className="text-gray-400 text-xl font-medium">Waiting for next round...</p>
+                    <p className="text-gray-400 text-lg md:text-xl font-medium">Waiting for next round...</p>
                     <p className="text-gray-600 text-sm mt-2 mb-4">A new round will start soon</p>
                     <button
                       onClick={handleRefresh}
-                      className="mt-4 px-8 py-4 bg-primary text-white rounded-2xl font-bold hover:bg-primary/80 transition flex items-center gap-2 mx-auto shadow-lg shadow-primary/30"
+                      className="mt-4 px-6 md:px-8 py-3 md:py-4 bg-primary text-white rounded-xl md:rounded-2xl font-bold hover:bg-primary/80 transition flex items-center gap-2 mx-auto shadow-lg shadow-primary/30"
                     >
-                      <RefreshCw size={20} />
+                      <RefreshCw size={18} />
                       Refresh
                     </button>
                   </div>
@@ -1907,35 +1905,35 @@ const Dashboard = () => {
               {/* ===== SLIDE 3: UPCOMING ROUND ===== */}
               <div className="min-w-full px-1">
                 {upcomingRound ? (
-                  <div className="bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-xl rounded-3xl p-6 border border-slate-700/50 shadow-2xl shadow-slate-900/50">
-                    <div className="flex justify-between items-center mb-8">
-                      <div className="flex items-center gap-3">
-                        <div className="p-3 bg-blue-500/20 rounded-2xl shadow-lg">
-                          <Timer className="text-blue-500" size={24} />
+                  <div className="bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-xl rounded-2xl md:rounded-3xl p-4 md:p-6 border border-slate-700/50 shadow-2xl shadow-slate-900/50">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 md:gap-4 mb-6 md:mb-8">
+                      <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
+                        <div className="p-2 md:p-3 bg-blue-500/20 rounded-xl md:rounded-2xl shadow-lg flex-shrink-0">
+                          <Timer className="text-blue-500" size={20} />
                         </div>
-                        <div>
-                          <p className="text-sm text-blue-400 uppercase tracking-wide">Round #{upcomingRound.roundNumber}</p>
-                          <h3 className="text-2xl font-black text-white">Next Round</h3>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs md:text-sm text-blue-400 uppercase tracking-wide truncate">Round #{upcomingRound.roundNumber}</p>
+                          <h3 className="text-xl md:text-2xl font-black text-white truncate">Next Round</h3>
                         </div>
                       </div>
-                      <div className="bg-gradient-to-r from-blue-500/20 to-cyan-500/20 px-5 py-3 rounded-2xl border border-blue-500/30 shadow-lg">
+                      <div className="bg-gradient-to-r from-blue-500/20 to-cyan-500/20 px-4 md:px-5 py-2 md:py-3 rounded-xl md:rounded-2xl border border-blue-500/30 shadow-lg w-full sm:w-auto text-center">
                         <p className="text-sm font-bold text-blue-400">Coming Up</p>
                       </div>
                     </div>
 
-                    <div className="text-center py-12">
-                      <div className="relative w-28 h-28 mx-auto mb-6">
+                    <div className="text-center py-8 md:py-12">
+                      <div className="relative w-24 h-24 md:w-28 md:h-28 mx-auto mb-6">
                         <div className="absolute inset-0 bg-blue-500/20 rounded-full blur-2xl animate-pulse"></div>
                         <div className="relative bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-full flex items-center justify-center w-full h-full border-2 border-blue-500/30 shadow-2xl">
-                          <Play className="text-blue-500" size={48} />
+                          <Play className="text-blue-500" size={40} />
                         </div>
                       </div>
-                      <p className="text-gray-300 text-xl font-medium mb-2">This round starts automatically</p>
-                      <p className="text-gray-400 mb-8">when the current round locks</p>
+                      <p className="text-gray-300 text-lg md:text-xl font-medium mb-2">This round starts automatically</p>
+                      <p className="text-gray-400 mb-6 md:mb-8 text-sm md:text-base">when the current round locks</p>
 
-                      <div className="bg-slate-900/60 backdrop-blur-sm p-6 rounded-2xl inline-block border border-slate-700/50 shadow-xl">
-                        <p className="text-xs text-gray-400 mb-2 uppercase tracking-wider">Scheduled Start</p>
-                        <p className="text-2xl font-black text-white">
+                      <div className="bg-slate-900/60 backdrop-blur-sm p-5 md:p-6 rounded-xl md:rounded-2xl inline-block border border-slate-700/50 shadow-xl">
+                        <p className="text-[10px] md:text-xs text-gray-400 mb-2 uppercase tracking-wider">Scheduled Start</p>
+                        <p className="text-xl md:text-2xl font-black text-white">
                           {new Date(upcomingRound.startTime).toLocaleTimeString('en-US', {
                             hour: '2-digit',
                             minute: '2-digit',
@@ -1945,19 +1943,19 @@ const Dashboard = () => {
                       </div>
                     </div>
 
-                    <div className="bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border border-blue-500/30 rounded-2xl p-5 shadow-lg">
-                      <p className="text-blue-400 text-sm text-center flex items-center justify-center gap-2 font-medium">
-                        <Zap size={18} />
-                        Tip: Prepare your bet amount while waiting!
+                    <div className="bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border border-blue-500/30 rounded-xl md:rounded-2xl p-4 md:p-5 shadow-lg">
+                      <p className="text-blue-400 text-sm md:text-base text-center flex items-center justify-center gap-2 font-medium flex-wrap">
+                        <Zap size={16} />
+                        <span>Tip: Prepare your bet amount while waiting!</span>
                       </p>
                     </div>
                   </div>
                 ) : (
-                  <div className="bg-slate-800/20 rounded-3xl p-16 border-2 border-dashed border-slate-700 text-center">
-                    <div className="p-5 bg-slate-700/30 rounded-full w-24 h-24 flex items-center justify-center mx-auto mb-4">
-                      <Timer className="text-gray-600" size={48} />
+                  <div className="bg-slate-800/20 rounded-2xl md:rounded-3xl p-12 md:p-16 border-2 border-dashed border-slate-700 text-center">
+                    <div className="p-4 md:p-5 bg-slate-700/30 rounded-full w-20 h-20 md:w-24 md:h-24 flex items-center justify-center mx-auto mb-4">
+                      <Timer className="text-gray-600" size={40} />
                     </div>
-                    <p className="text-gray-400 text-xl font-medium">No upcoming round scheduled</p>
+                    <p className="text-gray-400 text-lg md:text-xl font-medium">No upcoming round scheduled</p>
                     <p className="text-gray-600 text-sm mt-2">One will be created automatically</p>
                   </div>
                 )}
@@ -1966,30 +1964,30 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* ==================== BET AMOUNT SELECTOR (MATERIAL CARD) ==================== */}
-        <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 backdrop-blur-xl p-6 rounded-3xl border border-slate-700/50 shadow-2xl shadow-slate-900/50">
-          <div className="flex items-center justify-between mb-5">
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-primary/20 rounded-2xl shadow-lg">
-                <DollarSign size={24} className="text-primary" />
+        {/* ==================== BET AMOUNT SELECTOR (MOBILE OPTIMIZED) ==================== */}
+        <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 backdrop-blur-xl p-4 md:p-6 rounded-2xl md:rounded-3xl border border-slate-700/50 shadow-2xl shadow-slate-900/50">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 md:mb-5">
+            <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
+              <div className="p-2 md:p-3 bg-primary/20 rounded-xl md:rounded-2xl shadow-lg flex-shrink-0">
+                <DollarSign size={20} />
               </div>
-              <div>
-                <p className="text-white font-bold text-lg">Select Bet Amount</p>
+              <div className="min-w-0 flex-1">
+                <p className="text-white font-bold text-base md:text-lg truncate">Select Bet Amount</p>
                 <p className="text-xs text-gray-400">Choose or enter custom amount</p>
               </div>
             </div>
-            <p className="text-sm text-gray-400">
-              Available: <span className="text-green-400 font-black text-base">₦{formatCurrency(availableBalance)}</span>
+            <p className="text-xs md:text-sm text-gray-400">
+              Available: <span className="text-green-400 font-black text-sm md:text-base">₦{formatCurrency(availableBalance)}</span>
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-3 mb-5">
+          <div className="flex flex-wrap gap-2 md:gap-3 mb-4 md:mb-5">
             {[100, 500, 1000, 2000, 5000, 10000, 50000].map(amt => (
               <button
                 key={amt}
                 onClick={() => setBetAmount(amt)}
                 disabled={amt > availableBalance}
-                className={`px-5 py-3.5 rounded-2xl font-bold transition-all shadow-lg ${
+                className={`px-3 md:px-5 py-2.5 md:py-3.5 rounded-xl md:rounded-2xl font-bold transition-all shadow-lg text-sm md:text-base ${
                   betAmount === amt
                     ? 'bg-gradient-to-r from-primary to-purple-600 text-white scale-105 shadow-2xl shadow-primary/40 border-2 border-primary'
                     : amt > availableBalance
@@ -2008,54 +2006,54 @@ const Dashboard = () => {
                 value={betAmount || ''}
                 min="100"
                 max={availableBalance}
-                className="bg-slate-900/80 backdrop-blur-sm border-2 border-slate-700 focus:border-primary rounded-2xl px-5 py-3.5 text-white w-36 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all shadow-lg"
+                className="bg-slate-900/80 backdrop-blur-sm border-2 border-slate-700 focus:border-primary rounded-xl md:rounded-2xl px-3 md:px-5 py-2.5 md:py-3.5 text-white w-28 md:w-36 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all shadow-lg text-sm md:text-base"
                 onChange={(e) => setBetAmount(Number(e.target.value) || 0)}
               />
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-4 text-sm text-gray-400 bg-slate-900/50 p-4 rounded-xl border border-slate-700/50">
+          <div className="flex flex-wrap gap-3 md:gap-4 text-xs md:text-sm text-gray-400 bg-slate-900/50 p-3 md:p-4 rounded-lg md:rounded-xl border border-slate-700/50">
             <span className="flex items-center gap-1">
-              <Info size={14} className="text-blue-400" />
-              Min: ₦100
+              <Info size={12} className="text-blue-400 flex-shrink-0" />
+              <span>Min: ₦100</span>
             </span>
             <span>•</span>
             <span className="flex items-center gap-1">
-              <Info size={14} className="text-blue-400" />
-              Max: ₦100,000
+              <Info size={12} className="text-blue-400 flex-shrink-0" />
+              <span>Max: ₦100,000</span>
             </span>
             <span>•</span>
             <span className="text-primary font-bold flex items-center gap-1">
-              <Shield size={14} />
-              No upfront fees!
+              <Shield size={12} className="flex-shrink-0" />
+              <span>No upfront fees!</span>
             </span>
           </div>
         </div>
 
-        {/* ==================== MY ACTIVE BETS (MATERIAL CARD) ==================== */}
-        <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 backdrop-blur-xl p-6 rounded-3xl border border-slate-700/50 shadow-2xl shadow-slate-900/50">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-primary/20 rounded-2xl shadow-lg">
-                <Activity size={24} className="text-primary" />
+        {/* ==================== MY ACTIVE BETS (MOBILE OPTIMIZED) ==================== */}
+        <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 backdrop-blur-xl p-4 md:p-6 rounded-2xl md:rounded-3xl border border-slate-700/50 shadow-2xl shadow-slate-900/50">
+          <div className="flex items-center justify-between mb-4 md:mb-6 gap-3">
+            <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
+              <div className="p-2 md:p-3 bg-primary/20 rounded-xl md:rounded-2xl shadow-lg flex-shrink-0">
+                <Activity size={20} />
               </div>
-              <h3 className="text-xl font-black text-white">My Active Bets</h3>
+              <h3 className="text-lg md:text-xl font-black text-white truncate">My Active Bets</h3>
             </div>
-            <span className="bg-gradient-to-r from-primary/20 to-purple-600/20 border border-primary/30 text-primary px-4 py-2 rounded-2xl text-sm font-black shadow-lg">
+            <span className="bg-gradient-to-r from-primary/20 to-purple-600/20 border border-primary/30 text-primary px-3 md:px-4 py-1.5 md:py-2 rounded-xl md:rounded-2xl text-xs md:text-sm font-black shadow-lg whitespace-nowrap">
               {myActiveBets.length} Active
             </span>
           </div>
 
           {myActiveBets.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-gray-500 bg-slate-800/30 rounded-3xl border border-dashed border-slate-700">
-              <div className="p-5 bg-slate-700/30 rounded-full mb-4">
-                <Activity size={48} className="opacity-20" />
+            <div className="flex flex-col items-center justify-center py-12 md:py-16 text-gray-500 bg-slate-800/30 rounded-2xl md:rounded-3xl border border-dashed border-slate-700">
+              <div className="p-4 md:p-5 bg-slate-700/30 rounded-full mb-4">
+                <Activity size={40} className="opacity-20" />
               </div>
-              <p className="text-lg font-medium">No active bets</p>
+              <p className="text-base md:text-lg font-medium">No active bets</p>
               <p className="text-sm text-gray-600 mt-1">Place a bet to see it here</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-5">
               {myActiveBets.map(bet => {
                 const betAmountValue = parseFloat(bet.stakeAmount || bet.amount);
                 const multiplier = bet.currentMultiplierRaw || 1.7;
@@ -2065,42 +2063,42 @@ const Dashboard = () => {
                 return (
                   <div
                     key={bet.id}
-                    className={`bg-slate-900/70 backdrop-blur-sm p-5 rounded-2xl border-2 transition-all hover:shadow-2xl transform hover:-translate-y-1 ${
+                    className={`bg-slate-900/70 backdrop-blur-sm p-4 md:p-5 rounded-xl md:rounded-2xl border-2 transition-all hover:shadow-2xl transform hover:-translate-y-1 ${
                       bet.prediction === 'up' 
                         ? 'border-green-500/30 hover:border-green-500/60 hover:shadow-green-500/20' 
                         : 'border-red-500/30 hover:border-red-500/60 hover:shadow-red-500/20'
                     }`}
                   >
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <p className={`text-sm font-black uppercase flex items-center gap-1.5 mb-1 ${
+                    <div className="flex justify-between items-start mb-3 md:mb-4 gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className={`text-xs md:text-sm font-black uppercase flex items-center gap-1.5 mb-1 ${
                           bet.prediction === 'up' ? 'text-green-500' : 'text-red-500'
                         }`}>
-                          {bet.prediction === 'up' ? <ArrowUpRight size={18} /> : <ArrowDownRight size={18} />}
+                          {bet.prediction === 'up' ? <ArrowUpRight size={16} /> : <ArrowDownRight size={16} />}
                           {bet.prediction}
                         </p>
-                        <p className="text-white font-black text-xl">
+                        <p className="text-white font-black text-lg md:text-xl truncate">
                           ₦{formatCurrency(bet.amount || bet.stakeAmount)}
                         </p>
                       </div>
-                      <div className="text-right">
-                        <p className="text-xs text-gray-500 mb-1">Potential Win</p>
-                        <p className="text-lg font-black text-primary">
+                      <div className="text-right min-w-0">
+                        <p className="text-[10px] md:text-xs text-gray-500 mb-1">Potential Win</p>
+                        <p className="text-base md:text-lg font-black text-primary truncate">
                           ₦{formatCurrency(potentialPayout)}
                         </p>
-                        <p className={`text-xs font-bold ${potentialProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        <p className={`text-[10px] md:text-xs font-bold truncate ${potentialProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                           +₦{formatCurrency(potentialProfit)}
                         </p>
                       </div>
                     </div>
 
-                    <div className="flex justify-between items-center text-xs pt-4 border-t border-slate-700">
-                      <span className="text-gray-500 flex items-center gap-1.5 font-medium">
-                        {bet.roundStatus === 'locked' && <Lock size={12} className="text-amber-500" />}
-                        Round #{bet.roundNumber}
+                    <div className="flex justify-between items-center text-xs pt-3 md:pt-4 border-t border-slate-700 gap-2">
+                      <span className="text-gray-500 flex items-center gap-1.5 font-medium min-w-0 flex-1 truncate">
+                        {bet.roundStatus === 'locked' && <Lock size={12} className="text-amber-500 flex-shrink-0" />}
+                        <span className="truncate">Round #{bet.roundNumber}</span>
                       </span>
-                      <div className="flex items-center gap-2">
-                        <span className={`px-2.5 py-1 rounded-lg text-xs font-black ${
+                      <div className="flex items-center gap-1.5 md:gap-2 flex-shrink-0">
+                        <span className={`px-2 md:px-2.5 py-1 rounded-lg text-[10px] md:text-xs font-black whitespace-nowrap ${
                           bet.prediction === 'up' 
                             ? 'bg-green-500/20 text-green-500' 
                             : 'bg-red-500/20 text-red-500'
@@ -2108,12 +2106,12 @@ const Dashboard = () => {
                           {multiplier}x
                         </span>
                         {bet.isCurrentlyWinning !== undefined && (
-                          <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black ${
+                          <span className={`px-2 md:px-2.5 py-1 rounded-lg text-[10px] font-black whitespace-nowrap ${
                             bet.isCurrentlyWinning 
                               ? 'bg-green-500/20 text-green-500' 
                               : 'bg-red-500/20 text-red-500'
                           }`}>
-                            {bet.isCurrentlyWinning ? '✓ Winning' : '✗ Losing'}
+                            {bet.isCurrentlyWinning ? '✓ Win' : '✗ Loss'}
                           </span>
                         )}
                       </div>
@@ -2125,30 +2123,30 @@ const Dashboard = () => {
           )}
         </div>
 
-        {/* ==================== REFERRAL PROMO CARD (MATERIAL DESIGN) ==================== */}
-        <div className="bg-gradient-to-br from-purple-600/20 via-pink-600/20 to-orange-500/20 backdrop-blur-xl p-6 rounded-3xl border-2 border-purple-500/30 shadow-2xl shadow-purple-500/20">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
-            <div className="flex items-center gap-5">
-              <div className="relative">
-                <div className="absolute inset-0 bg-gradient-to-br from-purple-500 to-pink-500 rounded-3xl blur-xl opacity-50 animate-pulse"></div>
-                <div className="relative w-16 h-16 bg-gradient-to-br from-purple-500 to-pink-500 rounded-3xl flex items-center justify-center flex-shrink-0 shadow-2xl">
-                  <Gift className="text-white" size={32} />
+        {/* ==================== REFERRAL PROMO CARD (MOBILE OPTIMIZED) ==================== */}
+        <div className="bg-gradient-to-br from-purple-600/20 via-pink-600/20 to-orange-500/20 backdrop-blur-xl p-4 md:p-6 rounded-2xl md:rounded-3xl border-2 border-purple-500/30 shadow-2xl shadow-purple-500/20">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 md:gap-6">
+            <div className="flex items-center gap-3 md:gap-5 w-full sm:w-auto">
+              <div className="relative flex-shrink-0">
+                <div className="absolute inset-0 bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl md:rounded-3xl blur-xl opacity-50 animate-pulse"></div>
+                <div className="relative w-14 h-14 md:w-16 md:h-16 bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl md:rounded-3xl flex items-center justify-center shadow-2xl">
+                  <Gift className="text-white" size={28} />
                 </div>
               </div>
-              <div>
-                <h3 className="text-white font-black text-xl mb-1">Refer Friends & Earn 25%! 🎁</h3>
-                <p className="text-gray-300 text-sm">
+              <div className="min-w-0 flex-1">
+                <h3 className="text-white font-black text-lg md:text-xl mb-1 truncate">Refer Friends & Earn 25%! 🎁</h3>
+                <p className="text-gray-300 text-sm truncate">
                   Earn 25% commission from your referral's first bet!
                 </p>
               </div>
             </div>
             <button
               onClick={goToReferralPage}
-              className="w-full sm:w-auto px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-2xl font-black transition-all flex items-center justify-center gap-3 shadow-2xl shadow-purple-500/40 transform hover:scale-105"
+              className="w-full sm:w-auto px-6 md:px-8 py-3 md:py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl md:rounded-2xl font-black transition-all flex items-center justify-center gap-2 md:gap-3 shadow-2xl shadow-purple-500/40 transform hover:scale-105 whitespace-nowrap"
             >
-              <Share2 size={20} />
+              <Share2 size={18} />
               Start Referring
-              <ChevronRight size={20} />
+              <ChevronRight size={18} />
             </button>
           </div>
         </div>
