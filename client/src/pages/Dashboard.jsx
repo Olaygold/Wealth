@@ -1,5 +1,4 @@
 
-// /src/components/Dashboard.jsx
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
@@ -42,13 +41,7 @@ import {
   Lock,
   Play,
   Eye,
-  History,
-  Percent,
-  Coins,
-  Calendar,
-  Bell,
-  Settings,
-  LogOut
+  History
 } from 'lucide-react';
 
 // ==================== HELPER FUNCTIONS ====================
@@ -73,63 +66,64 @@ const ReferralPromoPopup = ({ isOpen, onClose, onGoToReferral }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/95 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-300 overflow-y-auto">
-      <div className="bg-slate-900 rounded-3xl w-full max-w-md border border-purple-500/50 shadow-2xl shadow-purple-500/30 animate-in zoom-in-95 duration-300 my-8">
+    <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-300 overflow-y-auto">
+      <div className="bg-gradient-to-br from-slate-900 via-purple-900/20 to-slate-900 rounded-2xl w-full max-w-md border border-purple-500/20 shadow-2xl shadow-purple-500/10 animate-in zoom-in-95 duration-300 my-8">
         
-        <div className="relative bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 p-8 text-center overflow-hidden">
+        <div className="relative bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 p-6 text-center overflow-hidden rounded-t-2xl">
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 text-white/80 hover:text-white transition z-10 bg-white/10 rounded-full p-2 hover:bg-white/20"
+            className="absolute top-3 right-3 text-white/70 hover:text-white transition z-10 bg-white/10 rounded-full p-1.5 hover:bg-white/20"
           >
-            <X size={20} />
+            <X size={16} />
           </button>
 
-          <div className="relative z-10 pt-4">
-            <div className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce shadow-xl">
-              <Gift className="w-10 h-10 text-white" />
+          <div className="relative z-10">
+            <div className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3 shadow-xl">
+              <Gift className="w-7 h-7 text-white" />
             </div>
-            
-            <h2 className="text-3xl font-black text-white mb-2 tracking-tight">
-              🎁 Earn 25% Commission!
-            </h2>
-            <p className="text-white/90 text-base">
-              Refer friends & get paid instantly
-            </p>
+            <h2 className="text-xl font-black text-white mb-1">🎁 Earn 25% Commission!</h2>
+            <p className="text-white/80 text-xs">Don't miss out on FREE money!</p>
           </div>
         </div>
 
-        <div className="p-6">
-          <div className="space-y-3 mb-6">
-            {[
-              { icon: Sparkles, label: 'Instant Payouts', color: 'text-yellow-400' },
-              { icon: Users, label: 'Unlimited Referrals', color: 'text-blue-400' },
-              { icon: Zap, label: 'Auto Credited', color: 'text-green-400' }
-            ].map((item, idx) => (
-              <div key={idx} className="flex items-center gap-4 bg-slate-800/50 rounded-xl p-4 border border-slate-700">
-                <div className="flex-shrink-0 w-12 h-12 bg-slate-700/50 rounded-xl flex items-center justify-center">
-                  <item.icon className={item.color} size={24} />
-                </div>
-                <div>
-                  <p className="text-gray-300 text-sm">{item.label}</p>
-                  <p className="text-white font-bold">25% on first bet</p>
-                </div>
+        <div className="p-5">
+          <div className="text-center mb-4">
+            <p className="text-gray-300 text-sm leading-relaxed">
+              Refer friends and earn <span className="text-green-400 font-black text-base">25% commission</span> from their <span className="text-yellow-400 font-bold">first bet!</span>
+            </p>
+          </div>
+
+          <div className="bg-slate-800/40 rounded-xl p-4 mb-4 border border-slate-700/50 space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="flex-shrink-0 w-8 h-8 bg-green-500/10 rounded-full flex items-center justify-center">
+                <Sparkles className="text-green-400" size={14} />
               </div>
-            ))}
+              <p className="text-gray-300 text-sm"><span className="text-white font-semibold">Easy Money:</span> Share & get paid!</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex-shrink-0 w-8 h-8 bg-purple-500/10 rounded-full flex items-center justify-center">
+                <Users className="text-purple-400" size={14} />
+              </div>
+              <p className="text-gray-300 text-sm"><span className="text-white font-semibold">Unlimited:</span> No cap on earnings!</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex-shrink-0 w-8 h-8 bg-orange-500/10 rounded-full flex items-center justify-center">
+                <Zap className="text-orange-400" size={14} />
+              </div>
+              <p className="text-gray-300 text-sm"><span className="text-white font-semibold">Instant:</span> Auto-credited!</p>
+            </div>
           </div>
 
           <button
             onClick={onGoToReferral}
-            className="w-full py-4 bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 hover:from-purple-700 hover:via-pink-700 hover:to-orange-600 text-white rounded-xl font-black text-lg transition-all transform hover:scale-[1.02] shadow-xl shadow-purple-500/30 flex items-center justify-center gap-3"
+            className="w-full py-3 bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 hover:opacity-90 text-white rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg"
           >
-            <Gift size={24} />
-            Start Earning Now!
-            <ExternalLink size={20} />
+            <Gift size={16} />
+            Start Referring Now!
+            <ExternalLink size={14} />
           </button>
 
-          <button
-            onClick={onClose}
-            className="w-full mt-4 py-3 text-gray-400 hover:text-white transition font-medium"
-          >
+          <button onClick={onClose} className="w-full mt-3 py-2 text-gray-500 hover:text-gray-300 transition text-sm">
             Maybe later
           </button>
         </div>
@@ -138,7 +132,7 @@ const ReferralPromoPopup = ({ isOpen, onClose, onGoToReferral }) => {
   );
 };
 
-// ==================== FLOATING ACTION BUTTONS ====================
+// ==================== FLOATING REFERRAL BUTTON ====================
 const FloatingReferralButton = ({ onClick }) => {
   return (
     <button
@@ -147,20 +141,19 @@ const FloatingReferralButton = ({ onClick }) => {
       title="Refer Friends & Earn 25%"
     >
       <div className="relative">
-        <div className="absolute inset-0 bg-gradient-to-r from-purple-600 to-pink-600 rounded-full blur-xl opacity-60 group-hover:opacity-100 transition-opacity"></div>
-        
-        <div className="relative w-16 h-16 md:w-18 md:h-18 bg-gradient-to-r from-purple-600 to-pink-600 rounded-full flex items-center justify-center shadow-2xl shadow-purple-500/50 group-hover:scale-110 transition-transform border-2 border-white/20">
-          <Gift className="text-white" size={28} />
+        <div className="absolute inset-0 bg-gradient-to-r from-purple-600 to-pink-600 rounded-full blur-lg opacity-50 group-hover:opacity-80 transition-opacity"></div>
+        <div className="relative w-12 h-12 bg-gradient-to-r from-purple-600 to-pink-600 rounded-full flex items-center justify-center shadow-xl border border-white/10 group-hover:scale-110 transition-transform">
+          <Gift className="text-white" size={20} />
         </div>
-
-        <div className="absolute -top-1 -right-1 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center border-2 border-slate-900 animate-pulse">
-          <span className="text-white text-xs font-black">$</span>
+        <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full flex items-center justify-center border border-slate-900 animate-pulse">
+          <span className="text-white text-[8px] font-black">$</span>
         </div>
       </div>
     </button>
   );
 };
 
+// ==================== FLOATING SUPPORT BUTTON ====================
 const FloatingSupportButton = () => {
   return (
     <a
@@ -171,10 +164,9 @@ const FloatingSupportButton = () => {
       title="Contact Support"
     >
       <div className="relative">
-        <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full blur-xl opacity-50 group-hover:opacity-80 transition-opacity"></div>
-        
-        <div className="relative w-14 h-14 md:w-16 md:h-16 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full flex items-center justify-center shadow-2xl shadow-blue-500/40 group-hover:scale-110 transition-transform border-2 border-white/20">
-          <svg className="w-7 h-7 text-white" fill="currentColor" viewBox="0 0 24 24">
+        <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full blur-lg opacity-40 group-hover:opacity-70 transition-opacity"></div>
+        <div className="relative w-12 h-12 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full flex items-center justify-center shadow-xl border border-white/10 group-hover:scale-110 transition-transform">
+          <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
             <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221l-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.446 1.394c-.14.18-.357.295-.6.295-.002 0-.003 0-.005 0l.213-3.054 5.56-5.022c.24-.213-.054-.334-.373-.121l-6.869 4.326-2.96-.924c-.64-.203-.658-.64.135-.954l11.566-4.458c.538-.196 1.006.128.832.941z"/>
           </svg>
         </div>
@@ -184,7 +176,7 @@ const FloatingSupportButton = () => {
 };
 
 // ==================== TRADING CHART ====================
-const TradingChart = ({ priceHistory, startPrice, currentPrice, isLocked = false }) => {
+const TradingChart = ({ priceHistory, startPrice, currentPrice, isLocked = false, roundId }) => {
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null);
   const seriesRef = useRef(null);
@@ -198,7 +190,7 @@ const TradingChart = ({ priceHistory, startPrice, currentPrice, isLocked = false
       if (seriesRef.current) {
         seriesRef.current.applyOptions({
           lineColor: isLocked ? '#f59e0b' : '#6366f1',
-          topColor: isLocked ? 'rgba(245, 158, 11, 0.4)' : 'rgba(99, 102, 241, 0.4)',
+          topColor: isLocked ? 'rgba(245, 158, 11, 0.3)' : 'rgba(99, 102, 241, 0.3)',
           bottomColor: isLocked ? 'rgba(245, 158, 11, 0.0)' : 'rgba(99, 102, 241, 0.0)',
         });
       }
@@ -208,24 +200,25 @@ const TradingChart = ({ priceHistory, startPrice, currentPrice, isLocked = false
     const chart = createChart(chartContainerRef.current, {
       layout: {
         background: { type: ColorType.Solid, color: 'transparent' },
-        textColor: '#9ca3af',
+        textColor: '#6b7280',
+        fontSize: 11,
       },
       grid: {
         vertLines: { color: '#1e293b', style: 1, visible: true },
         horzLines: { color: '#1e293b', style: 1, visible: true },
       },
       width: chartContainerRef.current.clientWidth,
-      height: 280,
+      height: 240,
       timeScale: {
         timeVisible: true,
         secondsVisible: true,
-        borderColor: '#334155',
+        borderColor: '#1e293b',
         rightOffset: 5,
         barSpacing: 8,
         minBarSpacing: 4,
       },
       rightPriceScale: {
-        borderColor: '#334155',
+        borderColor: '#1e293b',
         scaleMargins: { top: 0.15, bottom: 0.15 },
         autoScale: true,
       },
@@ -240,13 +233,13 @@ const TradingChart = ({ priceHistory, startPrice, currentPrice, isLocked = false
 
     const areaSeries = chart.addAreaSeries({
       lineColor: isLocked ? '#f59e0b' : '#6366f1',
-      topColor: isLocked ? 'rgba(245, 158, 11, 0.4)' : 'rgba(99, 102, 241, 0.4)',
+      topColor: isLocked ? 'rgba(245, 158, 11, 0.3)' : 'rgba(99, 102, 241, 0.3)',
       bottomColor: isLocked ? 'rgba(245, 158, 11, 0.0)' : 'rgba(99, 102, 241, 0.0)',
-      lineWidth: 3,
+      lineWidth: 2,
       priceLineVisible: true,
       lastValueVisible: true,
       crosshairMarkerVisible: true,
-      crosshairMarkerRadius: 6,
+      crosshairMarkerRadius: 4,
       priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
     });
 
@@ -277,23 +270,27 @@ const TradingChart = ({ priceHistory, startPrice, currentPrice, isLocked = false
     if (seriesRef.current && chartRef.current) {
       seriesRef.current.applyOptions({
         lineColor: isLocked ? '#f59e0b' : '#6366f1',
-        topColor: isLocked ? 'rgba(245, 158, 11, 0.4)' : 'rgba(99, 102, 241, 0.4)',
+        topColor: isLocked ? 'rgba(245, 158, 11, 0.3)' : 'rgba(99, 102, 241, 0.3)',
         bottomColor: isLocked ? 'rgba(245, 158, 11, 0.0)' : 'rgba(99, 102, 241, 0.0)',
+      });
+      chartRef.current.applyOptions({
+        crosshair: {
+          vertLine: { color: isLocked ? '#f59e0b' : '#6366f1' },
+          horzLine: { color: isLocked ? '#f59e0b' : '#6366f1' },
+        },
       });
     }
   }, [isLocked]);
 
   useEffect(() => {
     if (!seriesRef.current || !startPrice || startPrice <= 0) return;
-
     if (priceLineRef.current) {
       seriesRef.current.removePriceLine(priceLineRef.current);
     }
-
     priceLineRef.current = seriesRef.current.createPriceLine({
       price: startPrice,
       color: '#f59e0b',
-      lineWidth: 2,
+      lineWidth: 1,
       lineStyle: 2,
       axisLabelVisible: true,
       title: 'Start',
@@ -301,22 +298,22 @@ const TradingChart = ({ priceHistory, startPrice, currentPrice, isLocked = false
   }, [startPrice]);
 
   useEffect(() => {
-    if (!seriesRef.current || !chartRef.current || !priceHistory || priceHistory.length === 0) return;
+    if (!seriesRef.current || !chartRef.current) return;
+    if (!priceHistory || priceHistory.length === 0) return;
 
     try {
       const chartData = priceHistory
-        .map((item) => ({
-          time: item.time 
+        .map((item) => {
+          const timestamp = item.time 
             ? (typeof item.time === 'number' ? Math.floor(item.time / 1000) : Math.floor(new Date(item.time).getTime() / 1000))
-            : Math.floor(Date.now() / 1000),
-          value: parseFloat(item.price) || 0,
-        }))
+            : Math.floor(Date.now() / 1000);
+          return { time: timestamp, value: parseFloat(item.price) || 0 };
+        })
         .filter(item => item.value > 0 && item.time > 0)
         .sort((a, b) => a.time - b.time);
 
       const uniqueData = [];
       const seenTimes = new Set();
-      
       for (let i = chartData.length - 1; i >= 0; i--) {
         if (!seenTimes.has(chartData[i].time)) {
           uniqueData.unshift(chartData[i]);
@@ -335,80 +332,129 @@ const TradingChart = ({ priceHistory, startPrice, currentPrice, isLocked = false
 
   return (
     <div className="relative">
-      <div ref={chartContainerRef} className="w-full h-[280px] rounded-xl overflow-hidden bg-slate-900/30" />
-      {!priceHistory || priceHistory.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-900/50 rounded-xl">
+      <div ref={chartContainerRef} className="w-full rounded-xl overflow-hidden" />
+      {(!priceHistory || priceHistory.length === 0) && (
+        <div className="absolute inset-0 flex items-center justify-center bg-slate-900/60 rounded-xl">
           <div className="text-center">
-            <Activity className="w-8 h-8 text-primary animate-pulse mx-auto mb-2" />
-            <p className="text-gray-400 text-sm">Loading market data...</p>
+            <Activity className="w-6 h-6 text-primary animate-pulse mx-auto mb-2" />
+            <p className="text-gray-500 text-xs">Waiting for price data...</p>
           </div>
         </div>
       )}
       {isLocked && (
-        <div className="absolute top-2 right-2 bg-amber-500/20 border border-amber-500/50 rounded-lg px-3 py-1.5 flex items-center gap-1.5">
-          <Lock size={14} className="text-amber-500" />
-          <span className="text-amber-500 text-xs font-bold tracking-wide">LOCKED</span>
+        <div className="absolute top-2 right-2 bg-amber-500/10 border border-amber-500/30 rounded-lg px-2 py-1 flex items-center gap-1">
+          <Lock size={10} className="text-amber-500" />
+          <span className="text-amber-500 text-[10px] font-semibold">Locked</span>
         </div>
       )}
     </div>
   );
 };
 
-// ==================== POOL INDICATOR (CLEANED UP) ====================
-const LivePoolIndicator = ({ totalUp, totalDown, isLocked = false }) => {
+// ==================== LIVE POOL INDICATOR (CLEAN - NO AMOUNTS, NO COUNTS) ====================
+const LivePoolIndicator = ({ totalUp, totalDown, isLocked = false, betAmount = 0 }) => {
   const total = totalUp + totalDown;
   const upPercent = total > 0 ? (totalUp / total) * 100 : 50;
   const downPercent = total > 0 ? (totalDown / total) * 100 : 50;
 
+  // Calculate multipliers
+  const calcUpMultiplier = () => {
+    if (totalDown === 0 || totalUp === 0) return null;
+    const simUp = totalUp + (betAmount > 0 ? betAmount : 0);
+    const simDown = totalDown;
+    return roundToTwo(1 + (simDown * 0.7) / simUp);
+  };
+
+  const calcDownMultiplier = () => {
+    if (totalUp === 0 || totalDown === 0) return null;
+    const simDown = totalDown + (betAmount > 0 ? betAmount : 0);
+    const simUp = totalUp;
+    return roundToTwo(1 + (simUp * 0.7) / simDown);
+  };
+
+  const upMultiplier = calcUpMultiplier();
+  const downMultiplier = calcDownMultiplier();
+
+  const upPayout = betAmount > 0 && upMultiplier ? roundToTwo(betAmount * upMultiplier) : null;
+  const downPayout = betAmount > 0 && downMultiplier ? roundToTwo(betAmount * downMultiplier) : null;
+
   return (
-    <div className="bg-slate-900/50 rounded-2xl p-5 shadow-lg border border-slate-700/30">
-      <div className="flex items-center justify-between mb-5">
-        <span className="text-sm text-white font-bold flex items-center gap-2">
-          <Activity size={16} className="text-primary" />
-          Market Pool
+    <div className="bg-slate-900/40 rounded-xl p-3 border border-slate-700/30">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-xs text-gray-400 font-medium flex items-center gap-1.5">
+          <Activity size={12} className="text-primary" />
+          {isLocked ? 'Final Distribution' : 'Live Distribution'}
         </span>
         {!isLocked && (
-          <span className="text-xs text-green-400 font-bold flex items-center gap-1.5 animate-pulse">
-            <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-            LIVE UPDATING
+          <span className="text-[10px] text-green-500 font-semibold flex items-center gap-1">
+            <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
+            LIVE
           </span>
         )}
       </div>
-      
-      {/* Visual Bar */}
-      <div className="h-3 bg-slate-700/50 rounded-full overflow-hidden flex mb-4 shadow-inner">
-        <div 
-          className="bg-gradient-to-r from-green-600 to-green-400 transition-all duration-500 ease-out"
+
+      {/* Percentage Bar */}
+      <div className="h-2 bg-slate-700/50 rounded-full overflow-hidden flex mb-3">
+        <div
+          className="bg-gradient-to-r from-green-600 to-green-400 transition-all duration-700 ease-out rounded-l-full"
           style={{ width: `${upPercent}%` }}
         />
-        <div 
-          className="bg-gradient-to-r from-red-400 to-red-600 transition-all duration-500 ease-out"
+        <div
+          className="bg-gradient-to-r from-red-400 to-red-600 transition-all duration-700 ease-out rounded-r-full"
           style={{ width: `${downPercent}%` }}
         />
       </div>
 
-      {/* Amount Cards */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="bg-green-500/10 p-4 rounded-xl border border-green-500/30">
-          <div className="flex items-center gap-2 mb-2">
-            <TrendingUp className="text-green-500" size={16} />
-            <span className="text-green-500 font-bold text-sm">UP SIDE</span>
+      {/* UP / DOWN Cards */}
+      <div className="grid grid-cols-2 gap-2">
+        {/* UP Side */}
+        <div className="bg-green-500/5 border border-green-500/20 rounded-xl p-3">
+          <div className="flex items-center gap-1.5 mb-2">
+            <TrendingUp size={12} className="text-green-500" />
+            <span className="text-green-500 text-xs font-semibold">UP</span>
+            <span className="text-green-400 text-xs font-bold ml-auto">{upPercent.toFixed(0)}%</span>
           </div>
-          <p className="text-green-500 font-black text-xl">₦{formatCurrency(totalUp)}</p>
-        </div>
-        
-        <div className="bg-red-500/10 p-4 rounded-xl border border-red-500/30">
-          <div className="flex items-center gap-2 mb-2">
-            <TrendingDown className="text-red-500" size={16} />
-            <span className="text-red-500 font-bold text-sm">DOWN SIDE</span>
-          </div>
-          <p className="text-red-500 font-black text-xl">₦{formatCurrency(totalDown)}</p>
-        </div>
-      </div>
 
-      <div className="mt-4 pt-4 border-t border-slate-700/50 text-center">
-        <span className="text-gray-400 text-sm">Total Pool: </span>
-        <span className="text-white font-black text-lg">₦{formatCurrency(total)}</span>
+          {upMultiplier ? (
+            <>
+              <div className="text-green-400 text-xl font-black leading-none mb-1">
+                {upMultiplier}x
+              </div>
+              {upPayout && (
+                <div className="text-[10px] text-gray-400">
+                  Win: <span className="text-green-400 font-semibold">₦{formatCurrency(upPayout)}</span>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="text-yellow-500 text-[10px] font-medium">No DOWN bets yet</div>
+          )}
+        </div>
+
+        {/* DOWN Side */}
+        <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-3">
+          <div className="flex items-center gap-1.5 mb-2">
+            <TrendingDown size={12} className="text-red-500" />
+            <span className="text-red-500 text-xs font-semibold">DOWN</span>
+            <span className="text-red-400 text-xs font-bold ml-auto">{downPercent.toFixed(0)}%</span>
+          </div>
+
+          {downMultiplier ? (
+            <>
+              <div className="text-red-400 text-xl font-black leading-none mb-1">
+                {downMultiplier}x
+              </div>
+              {downPayout && (
+                <div className="text-[10px] text-gray-400">
+                  Win: <span className="text-red-400 font-semibold">₦{formatCurrency(downPayout)}</span>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="text-yellow-500 text-[10px] font-medium">No UP bets yet</div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -417,44 +463,41 @@ const LivePoolIndicator = ({ totalUp, totalDown, isLocked = false }) => {
 // ==================== PREVIOUS ROUND CARD ====================
 const PreviousRoundCard = ({ round }) => {
   if (!round) return null;
-
   const priceChange = parseFloat(round.percentChange || 0);
 
   return (
-    <div className="bg-slate-800/60 rounded-2xl p-4 border border-slate-700 hover:border-slate-600 transition-all">
+    <div className="bg-slate-800/40 rounded-xl p-3.5 border border-slate-700/40 hover:border-slate-600/60 transition-all">
       <div className="flex justify-between items-start mb-3">
         <div>
-          <p className="text-xs text-gray-500">Round #{round.roundNumber}</p>
-          <p className="text-sm text-gray-400 mt-1">
+          <p className="text-[10px] text-gray-500 font-medium">Round #{round.roundNumber}</p>
+          <p className="text-xs text-gray-400 mt-0.5">
             {new Date(round.endTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
           </p>
         </div>
-        <div className={`px-2 py-1 rounded-lg font-bold text-xs ${
-          round.result === 'up'
-            ? 'bg-green-500/20 text-green-500'
-            : round.result === 'down'
-            ? 'bg-red-500/20 text-red-500'
-            : 'bg-yellow-500/20 text-yellow-500'
+        <div className={`px-2 py-1 rounded-lg font-semibold text-[10px] ${
+          round.result === 'up' ? 'bg-green-500/10 text-green-400' :
+          round.result === 'down' ? 'bg-red-500/10 text-red-400' :
+          'bg-yellow-500/10 text-yellow-400'
         }`}>
-          {round.result === 'up' ? '📈 UP' : round.result === 'down' ? '📉 DOWN' : '➖ TIE'}
+          {round.result === 'up' ? '↑ UP' : round.result === 'down' ? '↓ DOWN' : '— TIE'}
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 mb-3">
-        <div className="bg-slate-900/70 p-2 rounded-lg">
-          <p className="text-[10px] text-gray-500">Start</p>
-          <p className="text-sm font-bold text-white truncate">${parseFloat(round.startPrice || 0).toLocaleString()}</p>
+      <div className="grid grid-cols-2 gap-2 mb-2.5">
+        <div className="bg-slate-900/50 p-2 rounded-lg">
+          <p className="text-[9px] text-gray-500 mb-0.5">Start</p>
+          <p className="text-xs font-bold text-white truncate">${parseFloat(round.startPrice || 0).toLocaleString()}</p>
         </div>
-        <div className="bg-slate-900/70 p-2 rounded-lg">
-          <p className="text-[10px] text-gray-500">End</p>
-          <p className="text-sm font-bold text-white truncate">${parseFloat(round.endPrice || 0).toLocaleString()}</p>
+        <div className="bg-slate-900/50 p-2 rounded-lg">
+          <p className="text-[9px] text-gray-500 mb-0.5">End</p>
+          <p className="text-xs font-bold text-white truncate">${parseFloat(round.endPrice || 0).toLocaleString()}</p>
         </div>
       </div>
 
-      <div className={`text-center py-2 rounded-lg font-black ${
-        priceChange >= 0 ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'
+      <div className={`text-center py-1.5 rounded-lg font-bold text-xs ${
+        priceChange >= 0 ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
       }`}>
-        {priceChange >= 0 ? '+' : ''}{priceChange.toFixed(2)}%
+        {priceChange >= 0 ? '+' : ''}{priceChange.toFixed(3)}%
       </div>
     </div>
   );
@@ -466,86 +509,84 @@ const UserGuideModal = ({ isOpen, onClose }) => {
 
   const steps = [
     {
-      icon: <Target className="w-12 h-12 text-primary" />,
+      icon: <Target className="w-10 h-10 text-primary" />,
       title: "Welcome! 🎯",
       content: "Predict if Bitcoin price will go UP or DOWN in 5 minutes!",
-      tip: "Simple betting - just pick your direction!"
+      tip: "Just pick a direction and place your bet!"
     },
     {
-      icon: <Clock className="w-12 h-12 text-blue-500" />,
+      icon: <Clock className="w-10 h-10 text-blue-500" />,
       title: "How It Works ⏰",
-      content: "• Active Phase (5 min): Place bets\n• Locked Phase (5 min): Wait for result",
-      tip: "Always an active round ready!"
+      content: "• Active (5 min): Place bets\n• Locked (5 min): Wait for result",
+      tip: "There's always an active round!"
     },
     {
-      icon: <DollarSign className="w-12 h-12 text-green-500" />,
+      icon: <DollarSign className="w-10 h-10 text-green-500" />,
       title: "Place a Bet 💰",
-      content: "1. Select amount (min ₦100)\n2. Click UP or DOWN\n3. Watch results!",
-      tip: "Payouts calculated in real-time!"
+      content: "1. Select amount (min ₦100)\n2. Click UP or DOWN\n3. Wait for result!",
+      tip: "Payouts update in real-time!"
     },
     {
-      icon: <Coins className="w-12 h-12 text-yellow-500" />,
+      icon: <Trophy className="w-10 h-10 text-yellow-500" />,
       title: "Win Big! 🏆",
-      content: "Correct prediction = Your stake + shared pool!\nUp to 1.7x multiplier",
-      tip: "More opponents = Higher payouts!"
+      content: "Correct prediction = Your bet × multiplier!",
+      tip: "Higher multiplier = Bigger wins!"
     },
     {
-      icon: <Gift className="w-12 h-12 text-purple-500" />,
+      icon: <Gift className="w-10 h-10 text-purple-500" />,
       title: "Refer & Earn 🎁",
-      content: "Earn 25% commission from referrals' first bet!\nUnlimited earnings",
-      tip: "Share your link & grow passive income!"
+      content: "Earn 25% commission from referrals' first bet!",
+      tip: "Unlimited referrals = Unlimited earnings!"
     }
   ];
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-slate-900 rounded-3xl max-w-md w-full border border-slate-700 overflow-hidden my-8">
-        <div className="bg-gradient-to-r from-primary to-purple-600 p-6 text-center relative">
-          <button onClick={onClose} className="absolute top-4 right-4 text-white/80 hover:text-white">
-            <X size={24} />
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-slate-900 rounded-2xl max-w-sm w-full border border-slate-700/50 overflow-hidden my-8 shadow-2xl">
+        <div className="bg-gradient-to-r from-primary to-purple-600 p-5 text-center relative">
+          <button onClick={onClose} className="absolute top-3 right-3 text-white/70 hover:text-white">
+            <X size={20} />
           </button>
-          <div className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
+          <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3">
             {steps[currentStep].icon}
           </div>
-          <h2 className="text-2xl font-bold text-white">{steps[currentStep].title}</h2>
+          <h2 className="text-lg font-bold text-white">{steps[currentStep].title}</h2>
         </div>
 
-        <div className="p-6">
-          <p className="text-gray-300 whitespace-pre-line text-center mb-4">{steps[currentStep].content}</p>
-          
-          <div className="bg-primary/10 border border-primary/30 rounded-xl p-4 flex items-start gap-3">
-            <Info className="text-primary flex-shrink-0" size={20} />
-            <p className="text-sm text-primary">{steps[currentStep].tip}</p>
+        <div className="p-5">
+          <p className="text-gray-300 whitespace-pre-line text-center mb-4 text-sm">{steps[currentStep].content}</p>
+          <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 flex items-start gap-2">
+            <Info className="text-primary flex-shrink-0 mt-0.5" size={14} />
+            <p className="text-xs text-gray-300">{steps[currentStep].tip}</p>
           </div>
         </div>
 
-        <div className="flex justify-center gap-2 pb-4 px-6">
+        <div className="flex justify-center gap-1.5 pb-3">
           {steps.map((_, idx) => (
             <button
               key={idx}
               onClick={() => setCurrentStep(idx)}
-              className={`h-2 rounded-full transition-all ${idx === currentStep ? 'w-8 bg-primary' : 'w-2 bg-gray-600'}`}
+              className={`h-1.5 rounded-full transition-all ${idx === currentStep ? 'w-6 bg-primary' : 'w-1.5 bg-gray-600'}`}
             />
           ))}
         </div>
 
-        <div className="p-6 pt-0 flex gap-3">
+        <div className="p-4 pt-0 flex gap-2">
           {currentStep > 0 && (
-            <button onClick={() => setCurrentStep(prev => prev - 1)} className="flex-1 py-3 bg-slate-700 text-white rounded-xl font-bold">
+            <button onClick={() => setCurrentStep(prev => prev - 1)} className="flex-1 py-2.5 bg-slate-700/60 text-white rounded-xl font-semibold text-sm">
               ← Back
             </button>
           )}
-          
           {currentStep < steps.length - 1 ? (
-            <button onClick={() => setCurrentStep(prev => prev + 1)} className="flex-1 py-3 bg-primary text-white rounded-xl font-bold">
+            <button onClick={() => setCurrentStep(prev => prev + 1)} className="flex-1 py-2.5 bg-primary text-white rounded-xl font-semibold text-sm">
               Next →
             </button>
           ) : (
-            <button onClick={onClose} className="flex-1 py-3 bg-green-500 text-white rounded-xl font-bold flex items-center justify-center gap-2">
-              <CheckCircle size={20} />
-              Ready to Trade!
+            <button onClick={onClose} className="flex-1 py-2.5 bg-green-500 text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2">
+              <CheckCircle size={16} />
+              Start Trading!
             </button>
           )}
         </div>
@@ -560,7 +601,6 @@ const Dashboard = () => {
   const { socket, isConnected } = useSocket();
   const { user } = useAuth();
 
-  // ========== STATES ==========
   const [currentPrice, setCurrentPrice] = useState(0);
   const [priceHistory, setPriceHistory] = useState([]);
   const [lockedPriceHistory, setLockedPriceHistory] = useState([]);
@@ -579,14 +619,10 @@ const Dashboard = () => {
   const [walletData, setWalletData] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [showReferralPopup, setShowReferralPopup] = useState(false);
-  
-  const activeTimeLeftRef = useRef(0);
-  const lockedTimeLeftRef = useRef(0);
   const [activeTimeLeft, setActiveTimeLeft] = useState(0);
   const [lockedTimeLeft, setLockedTimeLeft] = useState(0);
   const timerIntervalRef = useRef(null);
 
-  // ========== CALCULATED VALUES ==========
   const walletBalance = parseFloat(walletData?.nairaBalance || 0);
   const lockedBalance = parseFloat(walletData?.lockedBalance || 0);
   const availableBalance = roundToTwo(walletBalance - lockedBalance);
@@ -595,10 +631,10 @@ const Dashboard = () => {
   const canBet = activeRound?.status === 'active' && activeTimeLeft >= 10;
 
   const slides = [
-    { id: 'previous', label: '📊 History' },
-    { id: 'locked', label: '🔒 Locked' },
-    { id: 'active', label: '🔴 LIVE' },
-    { id: 'upcoming', label: '⏳ Next' }
+    { id: 'previous', label: 'History' },
+    { id: 'locked', label: 'Locked' },
+    { id: 'active', label: 'Live' },
+    { id: 'upcoming', label: 'Next' }
   ];
 
   const goToReferralPage = () => {
@@ -606,7 +642,6 @@ const Dashboard = () => {
     navigate('/referrals');
   };
 
-  // ========== MULTIPLIER & PAYOUT CALCULATION ==========
   const calculatePotentialPayout = useCallback((prediction) => {
     if (!activeRound || betAmount <= 0) {
       return { payout: 0, profit: 0, multiplier: 1.7, hasOpponents: false };
@@ -637,24 +672,6 @@ const Dashboard = () => {
     return { payout, profit, multiplier, hasOpponents: true };
   }, [activeRound, betAmount]);
 
-  const getCurrentMultiplier = useCallback((prediction) => {
-    if (!activeRound) return { value: 1.7, display: '~1.7x' };
-
-    const totalUp = parseFloat(activeRound.totalUpAmount || 0);
-    const totalDown = parseFloat(activeRound.totalDownAmount || 0);
-
-    if (totalUp === 0 && totalDown === 0) return { value: 1.7, display: '~1.7x' };
-
-    if (prediction === 'up') {
-      if (totalUp === 0 || totalDown === 0) return { value: 1.0, display: totalDown === 0 ? 'N/A' : '~1.7x' };
-      return { value: roundToTwo(1 + (totalDown * 0.7) / totalUp), display: `${roundToTwo(1 + (totalDown * 0.7) / totalUp)}x` };
-    } else {
-      if (totalDown === 0 || totalUp === 0) return { value: 1.0, display: totalUp === 0 ? 'N/A' : '~1.7x' };
-      return { value: roundToTwo(1 + (totalUp * 0.7) / totalDown), display: `${roundToTwo(1 + (totalUp * 0.7) / totalDown)}x` };
-    }
-  }, [activeRound]);
-
-  // ========== INITIAL SETUP ==========
   useEffect(() => {
     const hasSeenGuide = localStorage.getItem('hasSeenTradingGuide');
     if (!hasSeenGuide && user) {
@@ -663,7 +680,6 @@ const Dashboard = () => {
     }
   }, [user]);
 
-  // ========== FETCH FUNCTIONS ==========
   const fetchWalletData = async () => {
     try {
       const data = await api.get('/wallet/balance');
@@ -676,20 +692,22 @@ const Dashboard = () => {
   const fetchAllRounds = async () => {
     try {
       const data = await api.get('/trading/rounds/all');
-
       if (data) {
         setPreviousRounds(data.previousRounds || []);
-        
         if (data.lockedRound) {
-          setLockedRound(prev => prev?.id === data.lockedRound.id ? { ...data.lockedRound } : data.lockedRound);
+          setLockedRound(prev => {
+            if (prev?.id === data.lockedRound.id) return { ...data.lockedRound };
+            return data.lockedRound;
+          });
           setLockedStartPrice(parseFloat(data.lockedRound.startPrice || 0));
         }
-        
         if (data.activeRound) {
-          setActiveRound(prev => prev?.id === data.activeRound.id ? { ...prev, ...data.activeRound } : data.activeRound);
+          setActiveRound(prev => {
+            if (prev?.id === data.activeRound.id) return { ...prev, ...data.activeRound };
+            return data.activeRound;
+          });
           setActiveStartPrice(parseFloat(data.activeRound.startPrice || 0));
         }
-        
         setUpcomingRound(data.upcomingRound || null);
       }
     } catch (err) {
@@ -719,7 +737,6 @@ const Dashboard = () => {
       const data = await api.get('/trading/my-bets/active');
       setMyActiveBets(data?.activeBets || []);
     } catch (err) {
-      console.error('Bets fetch error:', err);
       setMyActiveBets([]);
     }
   };
@@ -753,23 +770,20 @@ const Dashboard = () => {
     setRefreshing(true);
     await initDashboard();
     setRefreshing(false);
-    toast.success('Data refreshed!');
+    toast.success('Refreshed!');
   };
 
-  // ========== COUNTDOWN TIMER ==========
   useEffect(() => {
     if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
 
     timerIntervalRef.current = setInterval(() => {
       const now = Date.now();
-      
       if (activeRound?.lockTime) {
         const lockTime = new Date(activeRound.lockTime).getTime();
         setActiveTimeLeft(Math.max(0, Math.floor((lockTime - now) / 1000)));
       } else {
         setActiveTimeLeft(0);
       }
-      
       if (lockedRound?.endTime) {
         const endTime = new Date(lockedRound.endTime).getTime();
         setLockedTimeLeft(Math.max(0, Math.floor((endTime - now) / 1000)));
@@ -783,7 +797,6 @@ const Dashboard = () => {
     };
   }, [activeRound?.lockTime, lockedRound?.endTime]);
 
-  // ========== SOCKET LISTENERS ==========
   useEffect(() => {
     if (!socket || !isConnected) return;
 
@@ -801,7 +814,13 @@ const Dashboard = () => {
     socket.on('bet_placed', (data) => {
       setActiveRound(prev => {
         if (!prev || prev.id !== data.roundId) return prev;
-        return { ...prev, totalUpAmount: data.totalUpAmount, totalDownAmount: data.totalDownAmount, totalUpBets: data.totalUpBets, totalDownBets: data.totalDownBets };
+        return {
+          ...prev,
+          totalUpAmount: data.totalUpAmount,
+          totalDownAmount: data.totalDownAmount,
+          totalUpBets: data.totalUpBets,
+          totalDownBets: data.totalDownBets,
+        };
       });
     });
 
@@ -835,13 +854,21 @@ const Dashboard = () => {
     socket.on('bet_result', (data) => {
       fetchMyBets();
       fetchWalletData();
-      if (data.result === 'win') toast.success(`🎉 You WON ₦${data.payout?.toLocaleString()}!`, { duration: 5000 });
-      else if (data.result === 'loss') toast.error(`😢 You lost ₦${Math.abs(data.profit || data.amount)?.toLocaleString()}`, { duration: 4000 });
-      else if (data.result === 'refund') toast.success(`🔄 Refunded ₦${data.payout?.toLocaleString()}`, { duration: 4000 });
+      if (data.result === 'win') {
+        toast.success(`🎉 You WON ₦${data.payout?.toLocaleString()}!`, { duration: 5000 });
+      } else if (data.result === 'loss') {
+        toast.error(`😢 You lost ₦${Math.abs(data.profit || data.amount)?.toLocaleString()}`, { duration: 4000 });
+      } else if (data.result === 'refund') {
+        toast.success(`🔄 Refunded ₦${data.payout?.toLocaleString()}`, { duration: 4000 });
+      }
     });
 
     socket.on('balance_update', (data) => {
-      setWalletData(prev => ({ ...prev, nairaBalance: data.nairaBalance, lockedBalance: data.lockedBalance }));
+      setWalletData(prev => ({
+        ...prev,
+        nairaBalance: data.nairaBalance,
+        lockedBalance: data.lockedBalance
+      }));
     });
 
     return () => {
@@ -855,44 +882,44 @@ const Dashboard = () => {
     };
   }, [socket, isConnected]);
 
-  // ========== PLACE BET ==========
   const handlePlaceBet = async (prediction) => {
-    if (!activeRound) return toast.error('⏳ No active round.');
-    if (activeRound.status !== 'active') return toast.error('🔒 Round not accepting bets.');
-    if (activeTimeLeft < 10) return toast.error('⏰ Too late!');
-    if (!betAmount || betAmount < 100) return toast.error('💰 Minimum bet is ₦100');
-    if (betAmount > 100000) return toast.error('💰 Maximum bet is ₦100,000');
-    if (betAmount > availableBalance) return toast.error('❌ Insufficient balance!');
+    if (!activeRound) { toast.error('No active round.'); return; }
+    if (activeRound.status !== 'active') { toast.error('Round not accepting bets.'); return; }
+    if (activeTimeLeft < 10) { toast.error('Too late to bet!'); return; }
+    if (!betAmount || betAmount < 100) { toast.error('Minimum bet is ₦100'); return; }
+    if (betAmount > 100000) { toast.error('Maximum bet is ₦100,000'); return; }
+    if (betAmount > availableBalance) { toast.error('Insufficient balance!'); return; }
 
     setLoading(true);
     try {
-      await api.post('/trading/bet', { roundId: activeRound.id, prediction: prediction.toLowerCase(), amount: betAmount });
+      await api.post('/trading/bet', {
+        roundId: activeRound.id,
+        prediction: prediction.toLowerCase(),
+        amount: betAmount
+      });
       toast.success(`✅ Bet ₦${betAmount.toLocaleString()} on ${prediction.toUpperCase()}!`, { duration: 3000 });
       await Promise.all([fetchMyBets(), fetchAllRounds(), fetchWalletData()]);
     } catch (err) {
-      console.error('Bet error:', err);
       toast.error(err.message || 'Failed to place bet');
     } finally {
       setLoading(false);
     }
   };
 
-  // ========== LOADING STATE ==========
   if (dataLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
         <div className="text-center">
-          <div className="relative w-20 h-20 mx-auto mb-4">
-            <div className="absolute inset-0 border-4 border-primary/30 rounded-full"></div>
-            <div className="absolute inset-0 border-4 border-transparent border-t-primary rounded-full animate-spin"></div>
+          <div className="relative w-16 h-16 mx-auto mb-4">
+            <div className="absolute inset-0 border-2 border-primary/20 rounded-full"></div>
+            <div className="absolute inset-0 border-2 border-transparent border-t-primary rounded-full animate-spin"></div>
           </div>
-          <p className="text-gray-400 text-lg">Loading dashboard...</p>
+          <p className="text-gray-500 text-sm">Loading...</p>
         </div>
       </div>
     );
   }
 
-  // ========== RENDER ==========
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 pb-24 lg:pb-8">
       <UserGuideModal isOpen={showGuide} onClose={() => setShowGuide(false)} />
@@ -901,182 +928,193 @@ const Dashboard = () => {
       <FloatingSupportButton />
 
       {!isConnected && (
-        <div className="bg-yellow-500/10 border-b border-yellow-500/30 px-4 py-3 flex items-center justify-center gap-2">
-          <WifiOff className="text-yellow-500 animate-pulse" size={18} />
-          <p className="text-yellow-500 text-sm font-medium">Reconnecting...</p>
+        <div className="bg-yellow-500/5 border-b border-yellow-500/20 px-4 py-2 flex items-center justify-center gap-2">
+          <WifiOff className="text-yellow-500 animate-pulse" size={14} />
+          <p className="text-yellow-500 text-xs font-medium">Reconnecting...</p>
         </div>
       )}
 
-      <div className="p-3 md:p-4 lg:p-6 max-w-7xl mx-auto space-y-4">
-        
-        {/* HEADER */}
-        <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 backdrop-blur-xl rounded-2xl p-4 md:p-5 border border-slate-700/50 shadow-xl">
-          <div className="flex flex-col gap-4">
+      <div className="p-3 md:p-4 lg:p-6 max-w-7xl mx-auto space-y-3">
+
+        {/* ========== HEADER ========== */}
+        <div className="bg-slate-800/60 backdrop-blur-xl rounded-2xl p-4 border border-slate-700/30 shadow-xl">
+          <div className="flex flex-col gap-3">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-primary/20 rounded-xl">
-                <Activity className="text-primary animate-pulse" size={24} />
+              <div className="p-2 bg-primary/10 rounded-xl">
+                <Activity className="text-primary" size={20} />
               </div>
               <div className="flex-1 min-w-0">
-                <h1 className="text-xl md:text-2xl font-black text-white truncate">Wealth Trading</h1>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="text-xs text-gray-400">BTC/USD 5-Min</span>
+                <h1 className="text-lg font-bold text-white truncate">Wealth Trading</h1>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-[10px] text-gray-500">BTC/USD · 5-Min Rounds</span>
                   {isConnected ? (
-                    <span className="flex items-center gap-1 text-green-500 text-[10px] font-bold px-2 py-0.5 bg-green-500/10 rounded-full">
-                      <Wifi size={10} /> LIVE
+                    <span className="flex items-center gap-1 text-green-500 text-[10px] font-semibold px-1.5 py-0.5 bg-green-500/10 rounded-full">
+                      <Wifi size={8} /> LIVE
                     </span>
                   ) : (
-                    <span className="flex items-center gap-1 text-yellow-500 text-[10px] font-bold px-2 py-0.5 bg-yellow-500/10 rounded-full">
-                      <WifiOff size={10} /> ...
+                    <span className="flex items-center gap-1 text-yellow-500 text-[10px] font-semibold px-1.5 py-0.5 bg-yellow-500/10 rounded-full">
+                      <WifiOff size={8} /> ...
                     </span>
                   )}
                 </div>
               </div>
+              <div className="flex gap-1.5">
+                <button onClick={() => setShowGuide(true)} className="p-2 bg-slate-700/50 text-gray-400 hover:text-white rounded-xl border border-slate-600/30 transition-all">
+                  <HelpCircle size={16} />
+                </button>
+                <button onClick={() => setShowReferralPopup(true)} className="p-2 bg-gradient-to-br from-purple-600/80 to-pink-600/80 text-white rounded-xl">
+                  <Gift size={16} />
+                </button>
+                <button onClick={handleRefresh} disabled={refreshing} className="p-2 bg-slate-700/50 text-gray-400 hover:text-white rounded-xl border border-slate-600/30 transition-all">
+                  <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
+                </button>
+              </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-3">
-              <div className="flex-1 bg-gradient-to-br from-green-600/20 to-emerald-600/20 p-4 rounded-xl border border-green-500/30">
-                <div className="flex items-center gap-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[10px] text-gray-400 uppercase mb-1">Available Balance</p>
-                    <p className="text-xl md:text-2xl font-black text-green-400 truncate">₦{formatCurrency(availableBalance)}</p>
-                    {lockedBalance > 0 && (
-                      <p className="text-[10px] text-orange-400 mt-1 flex items-center gap-1">
-                        <Lock size={10} /> Locked: ₦{formatCurrency(lockedBalance)}
-                      </p>
-                    )}
-                  </div>
-                  <WalletIcon className="text-green-500" size={28} />
+            {/* Balance */}
+            <div className="bg-slate-900/40 p-3 rounded-xl border border-slate-700/20">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-0.5">Available Balance</p>
+                  <p className="text-2xl font-black text-white">₦{formatCurrency(availableBalance)}</p>
+                  {lockedBalance > 0 && (
+                    <p className="text-[10px] text-orange-400 mt-0.5 flex items-center gap-1">
+                      <Lock size={9} /> ₦{formatCurrency(lockedBalance)} locked
+                    </p>
+                  )}
                 </div>
-              </div>
-
-              <div className="flex gap-2 justify-center">
-                <button onClick={() => setShowGuide(true)} className="p-3 bg-slate-800/80 text-gray-400 hover:text-white rounded-xl border border-slate-700 transition-all">
-                  <HelpCircle size={20} />
-                </button>
-                <button onClick={() => setShowReferralPopup(true)} className="p-3 bg-gradient-to-br from-purple-600 to-pink-600 text-white rounded-xl shadow-lg">
-                  <Gift size={20} />
-                </button>
-                <button onClick={handleRefresh} disabled={refreshing} className="p-3 bg-slate-800/80 text-gray-400 hover:text-white rounded-xl border border-slate-700 transition-all">
-                  <RefreshCw size={20} className={refreshing ? 'animate-spin' : ''} />
-                </button>
+                <div className="p-2.5 bg-green-500/10 rounded-xl">
+                  <WalletIcon className="text-green-400" size={22} />
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* LIVE PRICE */}
-        <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 backdrop-blur-xl rounded-2xl p-4 border border-slate-700/50 shadow-xl">
-          <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-            <div className="flex items-center gap-3 w-full sm:w-auto">
-              <div className="p-2 bg-gradient-to-br from-orange-500/20 to-amber-500/20 rounded-xl text-orange-500">
-                <TrendUp size={24} />
+        {/* ========== LIVE PRICE ========== */}
+        <div className="bg-slate-800/60 backdrop-blur-xl rounded-2xl p-4 border border-slate-700/30 shadow-xl">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-orange-500/10 rounded-xl">
+                <TrendUp size={18} className="text-orange-400" />
               </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-[10px] text-gray-400 uppercase flex items-center gap-2 mb-1">
+              <div>
+                <p className="text-[10px] text-gray-500 uppercase tracking-wide flex items-center gap-1.5 mb-0.5">
                   Live BTC Price
-                  <span className="relative flex h-2 w-2">
+                  <span className="relative flex h-1.5 w-1.5">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-green-500"></span>
                   </span>
                 </p>
-                <h2 className="text-2xl md:text-3xl font-black text-white truncate">
+                <h2 className="text-2xl font-black text-white">
                   ${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </h2>
               </div>
             </div>
 
             {activeStartPrice > 0 && (
-              <div className={`flex items-center gap-2 px-4 py-3 rounded-xl w-full sm:w-auto justify-center ${
-                activePriceChange >= 0 
-                  ? 'bg-gradient-to-br from-green-500/20 to-emerald-500/20 border border-green-500/30' 
-                  : 'bg-gradient-to-br from-red-500/20 to-rose-500/20 border border-red-500/30'
+              <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-bold ${
+                activePriceChange >= 0
+                  ? 'bg-green-500/10 border border-green-500/20 text-green-400'
+                  : 'bg-red-500/10 border border-red-500/20 text-red-400'
               }`}>
-                {activePriceChange >= 0 ? <TrendingUp className="text-green-500" size={20} /> : <TrendingDown className="text-red-500" size={20} />}
-                <span className={`font-black text-xl ${activePriceChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                  {activePriceChange >= 0 ? '+' : ''}{activePriceChange.toFixed(2)}%
-                </span>
+                {activePriceChange >= 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
+                {activePriceChange >= 0 ? '+' : ''}{activePriceChange.toFixed(3)}%
               </div>
             )}
           </div>
         </div>
 
-        {/* SWIPEABLE ROUNDS */}
-        <div className="bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-xl rounded-2xl p-4 border border-slate-700/50 shadow-xl">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2 flex-1 min-w-0">
+        {/* ========== ROUNDS CAROUSEL ========== */}
+        <div className="bg-slate-800/60 backdrop-blur-xl rounded-2xl p-3 border border-slate-700/30 shadow-xl">
+          {/* Nav */}
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
               <button
                 onClick={() => setActiveSlide(prev => Math.max(0, prev - 1))}
                 disabled={activeSlide === 0}
-                className="p-2 bg-slate-800/80 rounded-xl text-gray-400 hover:text-white disabled:opacity-30"
+                className="p-1.5 bg-slate-700/50 rounded-lg text-gray-400 hover:text-white disabled:opacity-30 transition-all"
               >
-                <ChevronLeft size={18} />
+                <ChevronLeft size={16} />
               </button>
-              <span className="text-sm text-gray-300 text-center font-bold truncate px-2">{slides[activeSlide]?.label}</span>
+
+              <div className="flex gap-1">
+                {slides.map((slide, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setActiveSlide(i)}
+                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                      activeSlide === i
+                        ? i === 2
+                          ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                          : 'bg-primary/20 text-primary border border-primary/30'
+                        : 'text-gray-500 hover:text-gray-300'
+                    }`}
+                  >
+                    {i === 2 && activeSlide === i && (
+                      <span className="inline-block w-1.5 h-1.5 bg-red-500 rounded-full mr-1 animate-pulse"></span>
+                    )}
+                    {slide.label}
+                  </button>
+                ))}
+              </div>
+
               <button
                 onClick={() => setActiveSlide(prev => Math.min(3, prev + 1))}
                 disabled={activeSlide === 3}
-                className="p-2 bg-slate-800/80 rounded-xl text-gray-400 hover:text-white disabled:opacity-30"
+                className="p-1.5 bg-slate-700/50 rounded-lg text-gray-400 hover:text-white disabled:opacity-30 transition-all"
               >
-                <ChevronRight size={18} />
+                <ChevronRight size={16} />
               </button>
-            </div>
-
-            <div className="flex gap-1.5 flex-shrink-0 ml-2">
-              {slides.map((_, i) => (
-                <button
-                  key={i}
-                  onClick={() => setActiveSlide(i)}
-                  className={`h-2 rounded-full transition-all ${
-                    activeSlide === i 
-                      ? i === 2 ? 'w-8 bg-red-500' : 'w-8 bg-primary' 
-                      : 'w-2 bg-gray-600'
-                  }`}
-                />
-              ))}
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-2xl">
-            <div className="flex transition-transform duration-500 ease-out" style={{ transform: `translateX(-${activeSlide * 100}%)` }}>
-              
+          {/* Slides */}
+          <div className="overflow-hidden rounded-xl">
+            <div className="flex transition-transform duration-400 ease-out" style={{ transform: `translateX(-${activeSlide * 100}%)` }}>
+
               {/* SLIDE 0: Previous Rounds */}
-              <div className="min-w-full px-1">
-                <div className="flex items-center gap-2 mb-4">
-                  <History className="text-primary" size={20} />
-                  <h3 className="text-lg font-bold text-white">Recent Results</h3>
+              <div className="min-w-full">
+                <div className="flex items-center gap-2 mb-3">
+                  <History className="text-gray-400" size={16} />
+                  <h3 className="text-sm font-semibold text-gray-300">Previous Rounds</h3>
                 </div>
                 {previousRounds.length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    {previousRounds.map((round) => <PreviousRoundCard key={round.id} round={round} />)}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                    {previousRounds.map((round) => (
+                      <PreviousRoundCard key={round.id} round={round} />
+                    ))}
                   </div>
                 ) : (
-                  <div className="text-center py-12 bg-slate-800/30 rounded-2xl border border-dashed border-slate-700">
-                    <Trophy className="text-gray-600 mx-auto mb-3" size={40} />
-                    <p className="text-gray-400">No completed rounds yet</p>
+                  <div className="text-center py-10 bg-slate-900/30 rounded-xl border border-dashed border-slate-700/40">
+                    <Trophy className="text-gray-700 mx-auto mb-2" size={32} />
+                    <p className="text-gray-500 text-sm">No completed rounds yet</p>
                   </div>
                 )}
               </div>
 
               {/* SLIDE 1: Locked Round */}
-              <div className="min-w-full px-1">
+              <div className="min-w-full">
                 {lockedRound ? (
-                  <div className="bg-gradient-to-br from-amber-900/30 to-orange-900/30 rounded-2xl p-4 border-2 border-amber-500/50">
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+                  <div className="bg-amber-500/5 rounded-xl p-3 border border-amber-500/20">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-3">
                       <div className="flex items-center gap-2">
-                        <Lock className="text-amber-500" size={20} />
+                        <div className="p-1.5 bg-amber-500/10 rounded-lg">
+                          <Lock className="text-amber-500" size={16} />
+                        </div>
                         <div>
-                          <p className="text-xs text-amber-400 font-bold">Round #{lockedRound.roundNumber}</p>
-                          <h3 className="text-xl font-black text-white">Waiting for Result</h3>
+                          <p className="text-[10px] text-amber-400 font-medium">Round #{lockedRound.roundNumber}</p>
+                          <h3 className="text-base font-bold text-white">Awaiting Result</h3>
                         </div>
                       </div>
 
-                      <div className={`px-4 py-3 rounded-xl border-2 w-full sm:w-auto text-center ${
-                        lockedTimeLeft < 30 ? 'bg-red-500/20 border-red-500' :
-                        lockedTimeLeft < 60 ? 'bg-yellow-500/20 border-yellow-500' : 
-                        'bg-amber-500/20 border-amber-500'
+                      <div className={`px-4 py-2 rounded-xl border w-full sm:w-auto text-center ${
+                        lockedTimeLeft < 30 ? 'bg-red-500/10 border-red-500/30' :
+                        lockedTimeLeft < 60 ? 'bg-yellow-500/10 border-yellow-500/30' :
+                        'bg-amber-500/10 border-amber-500/30'
                       }`}>
-                        <p className="text-[10px] text-gray-400 uppercase">Result In</p>
-                        <p className={`text-3xl font-mono font-black ${
+                        <p className="text-[9px] text-gray-500 uppercase tracking-wide">Result In</p>
+                        <p className={`text-2xl font-mono font-black ${
                           lockedTimeLeft < 30 ? 'text-red-500 animate-pulse' :
                           lockedTimeLeft < 60 ? 'text-yellow-500' : 'text-amber-500'
                         }`}>
@@ -1085,72 +1123,75 @@ const Dashboard = () => {
                       </div>
                     </div>
 
-                    <div className="bg-slate-900/60 rounded-xl p-4 mb-4">
-                      <div className="grid grid-cols-2 gap-3 mb-3">
-                        <div className="bg-slate-800/50 p-3 rounded-lg">
-                          <p className="text-[10px] text-gray-400">Start Price</p>
-                          <p className="text-lg font-black text-white truncate">${lockedStartPrice.toLocaleString()}</p>
-                        </div>
-                        <div className="bg-slate-800/50 p-3 rounded-lg">
-                          <p className="text-[10px] text-gray-400">Current</p>
-                          <p className="text-lg font-black text-white truncate">${currentPrice.toLocaleString()}</p>
-                        </div>
+                    <div className="grid grid-cols-2 gap-2 mb-3">
+                      <div className="bg-slate-900/50 p-2.5 rounded-xl border border-slate-700/30">
+                        <p className="text-[9px] text-gray-500 mb-0.5">Start Price</p>
+                        <p className="text-sm font-bold text-white">${lockedStartPrice.toLocaleString()}</p>
                       </div>
-
-                      <div className="flex items-center justify-center gap-2 pt-3 border-t border-slate-700/50">
-                        <span className="text-gray-400 text-sm">Direction:</span>
-                        <span className={`font-black text-lg flex items-center gap-1 px-3 py-1 rounded-lg ${
-                          lockedPriceChange >= 0 ? 'text-green-500 bg-green-500/10' : 'text-red-500 bg-red-500/10'
-                        }`}>
-                          {lockedPriceChange >= 0 ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
-                          {lockedPriceChange >= 0 ? '+' : ''}{lockedPriceChange.toFixed(2)}%
-                        </span>
+                      <div className="bg-slate-900/50 p-2.5 rounded-xl border border-slate-700/30">
+                        <p className="text-[9px] text-gray-500 mb-0.5">Current Price</p>
+                        <p className="text-sm font-bold text-white">${currentPrice.toLocaleString()}</p>
                       </div>
                     </div>
 
-                    <div className="bg-slate-900/60 rounded-xl p-2 mb-4">
-                      <TradingChart priceHistory={lockedPriceHistory.length > 0 ? lockedPriceHistory : priceHistory} startPrice={lockedStartPrice} currentPrice={currentPrice} isLocked={true} />
+                    <div className={`flex items-center justify-center gap-2 py-2 rounded-xl mb-3 text-sm font-bold ${
+                      lockedPriceChange >= 0 ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
+                    }`}>
+                      {lockedPriceChange >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+                      {lockedPriceChange >= 0 ? '+' : ''}{lockedPriceChange.toFixed(3)}%
                     </div>
 
-                    <LivePoolIndicator totalUp={parseFloat(lockedRound.totalUpAmount || 0)} totalDown={parseFloat(lockedRound.totalDownAmount || 0)} isLocked={true} />
+                    <div className="bg-slate-900/50 rounded-xl p-2 mb-3">
+                      <TradingChart
+                        priceHistory={lockedPriceHistory.length > 0 ? lockedPriceHistory : priceHistory}
+                        startPrice={lockedStartPrice}
+                        currentPrice={currentPrice}
+                        isLocked={true}
+                        roundId={lockedRound.id}
+                      />
+                    </div>
+
+                    <LivePoolIndicator
+                      totalUp={parseFloat(lockedRound.totalUpAmount || 0)}
+                      totalDown={parseFloat(lockedRound.totalDownAmount || 0)}
+                      isLocked={true}
+                      betAmount={betAmount}
+                    />
                   </div>
                 ) : (
-                  <div className="bg-slate-800/20 rounded-2xl p-12 border-2 border-dashed border-slate-700 text-center">
-                    <Lock className="text-gray-600 mx-auto mb-3" size={40} />
-                    <p className="text-gray-400">No locked round</p>
+                  <div className="text-center py-10 bg-slate-900/30 rounded-xl border border-dashed border-slate-700/40">
+                    <Lock className="text-gray-700 mx-auto mb-2" size={32} />
+                    <p className="text-gray-500 text-sm">No locked round</p>
                   </div>
                 )}
               </div>
 
               {/* SLIDE 2: Active Round */}
-              <div className="min-w-full px-1">
+              <div className="min-w-full">
                 {activeRound ? (
-                  <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-4 border-2 border-primary/50">
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+                  <div className="bg-primary/5 rounded-xl p-3 border border-primary/20">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-3">
                       <div className="flex items-center gap-2">
-                        <div className="relative">
-                          <div className="absolute inset-0 bg-red-500 rounded-full blur-lg opacity-50 animate-pulse"></div>
-                          <Activity className="relative text-red-500" size={24} />
+                        <div className="relative p-1.5 bg-red-500/10 rounded-lg">
+                          <Activity className="text-red-500" size={16} />
+                          <span className="absolute top-0 right-0 w-1.5 h-1.5 bg-red-500 rounded-full animate-ping"></span>
                         </div>
                         <div>
-                          <p className="text-xs text-primary font-bold flex items-center gap-2">
-                            <span className="relative flex h-2 w-2">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-                            </span>
+                          <p className="text-[10px] text-primary font-medium flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse"></span>
                             Round #{activeRound.roundNumber}
                           </p>
-                          <h3 className="text-xl font-black text-white">Place Your Bets!</h3>
+                          <h3 className="text-base font-bold text-white">Place Your Bet</h3>
                         </div>
                       </div>
 
-                      <div className={`px-4 py-3 rounded-xl border-2 w-full sm:w-auto text-center ${
-                        activeTimeLeft < 30 ? 'bg-red-500/20 border-red-500' :
-                        activeTimeLeft < 60 ? 'bg-yellow-500/20 border-yellow-500' : 
-                        'bg-slate-900/80 border-slate-700'
+                      <div className={`px-4 py-2 rounded-xl border w-full sm:w-auto text-center ${
+                        activeTimeLeft < 30 ? 'bg-red-500/10 border-red-500/30' :
+                        activeTimeLeft < 60 ? 'bg-yellow-500/10 border-yellow-500/30' :
+                        'bg-slate-900/60 border-slate-700/30'
                       }`}>
-                        <p className="text-[10px] text-gray-400 uppercase">Betting Ends</p>
-                        <p className={`text-3xl font-mono font-black ${
+                        <p className="text-[9px] text-gray-500 uppercase tracking-wide">Betting Closes</p>
+                        <p className={`text-2xl font-mono font-black ${
                           activeTimeLeft < 30 ? 'text-red-500 animate-pulse' :
                           activeTimeLeft < 60 ? 'text-yellow-500' : 'text-primary'
                         }`}>
@@ -1159,71 +1200,78 @@ const Dashboard = () => {
                       </div>
                     </div>
 
-                    <div className="bg-slate-900/60 rounded-xl p-4 mb-4">
-                      <div className="grid grid-cols-2 gap-3 mb-3">
-                        <div className="bg-slate-800/50 p-3 rounded-lg">
-                          <p className="text-[10px] text-gray-400">Start Price</p>
-                          <p className="text-lg font-black text-white truncate">${activeStartPrice.toLocaleString()}</p>
-                        </div>
-                        <div className="bg-slate-800/50 p-3 rounded-lg">
-                          <p className="text-[10px] text-gray-400">Current</p>
-                          <p className="text-lg font-black text-white truncate">${currentPrice.toLocaleString()}</p>
-                        </div>
+                    <div className="grid grid-cols-2 gap-2 mb-3">
+                      <div className="bg-slate-900/50 p-2.5 rounded-xl border border-slate-700/30">
+                        <p className="text-[9px] text-gray-500 mb-0.5">Start Price</p>
+                        <p className="text-sm font-bold text-white">${activeStartPrice.toLocaleString()}</p>
                       </div>
-
-                      <div className="flex items-center justify-center gap-2 pt-3 border-t border-slate-700/50">
-                        <span className="text-gray-400 text-sm">Direction:</span>
-                        <span className={`font-black text-lg flex items-center gap-1 px-3 py-1 rounded-lg ${
-                          activePriceChange >= 0 ? 'text-green-500 bg-green-500/10' : 'text-red-500 bg-red-500/10'
-                        }`}>
-                          {activePriceChange >= 0 ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
-                          {activePriceChange >= 0 ? '+' : ''}{activePriceChange.toFixed(2)}%
-                        </span>
+                      <div className="bg-slate-900/50 p-2.5 rounded-xl border border-slate-700/30">
+                        <p className="text-[9px] text-gray-500 mb-0.5">Current Price</p>
+                        <p className="text-sm font-bold text-white">${currentPrice.toLocaleString()}</p>
                       </div>
                     </div>
 
-                    <div className="bg-slate-900/60 rounded-xl p-2 mb-4">
-                      <TradingChart priceHistory={priceHistory} startPrice={activeStartPrice} currentPrice={currentPrice} />
+                    <div className={`flex items-center justify-center gap-2 py-2 rounded-xl mb-3 text-sm font-bold ${
+                      activePriceChange >= 0 ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
+                    }`}>
+                      {activePriceChange >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+                      {activePriceChange >= 0 ? '+' : ''}{activePriceChange.toFixed(3)}%
                     </div>
 
-                    <div className="mb-4">
-                      <LivePoolIndicator totalUp={parseFloat(activeRound.totalUpAmount || 0)} totalDown={parseFloat(activeRound.totalDownAmount || 0)} />
+                    <div className="bg-slate-900/50 rounded-xl p-2 mb-3">
+                      <TradingChart
+                        priceHistory={priceHistory}
+                        startPrice={activeStartPrice}
+                        currentPrice={currentPrice}
+                        roundId={activeRound.id}
+                      />
                     </div>
 
-                    {/* BETTING BUTTONS - UPDATED TO HIDE BET COUNTS */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                    {/* Pool Indicator */}
+                    <div className="mb-3">
+                      <LivePoolIndicator
+                        totalUp={parseFloat(activeRound.totalUpAmount || 0)}
+                        totalDown={parseFloat(activeRound.totalDownAmount || 0)}
+                        betAmount={betAmount}
+                      />
+                    </div>
+
+                    {/* Bet Buttons */}
+                    <div className="grid grid-cols-2 gap-2 mb-3">
                       {/* UP */}
                       {(() => {
                         const upCalc = calculatePotentialPayout('up');
-                        const currentMult = getCurrentMultiplier('up');
                         return (
                           <button
                             onClick={() => handlePlaceBet('up')}
                             disabled={loading || !canBet}
-                            className="relative bg-gradient-to-br from-green-500/10 to-emerald-500/10 hover:from-green-500/20 hover:to-emerald-500/20 border-2 border-green-500/50 hover:border-green-500 p-5 rounded-xl transition-all disabled:opacity-40"
+                            className="relative group bg-green-500/5 hover:bg-green-500/10 border border-green-500/20 hover:border-green-500/40 p-4 rounded-xl transition-all disabled:opacity-40"
                           >
-                            <div className="p-2 bg-green-500/20 rounded-xl w-fit mx-auto mb-2">
-                              <ArrowUpRight size={28} className="text-green-500" />
-                            </div>
-                            <p className="text-lg font-black text-green-500 mb-1">PREDICT UP</p>
-                            <p className="text-xs text-gray-400 mb-3">Multiplier: <span className="text-green-400 font-bold">{currentMult.display}</span></p>
-                            
-                            <div className="mt-3 pt-3 border-t border-green-500/30 space-y-1">
+                            <div className="flex flex-col items-center gap-1.5">
+                              <div className="p-2 bg-green-500/10 rounded-xl group-hover:bg-green-500/20 transition-all">
+                                <ArrowUpRight size={22} className="text-green-400" />
+                              </div>
+                              <p className="text-sm font-bold text-green-400">UP</p>
+
                               {betAmount > 0 && upCalc.hasOpponents ? (
-                                <>
-                                  <p className="text-xs text-green-400 font-bold tracking-wide">{upCalc.multiplier}x POTENTIAL</p>
-                                  <p className="text-xl font-black text-green-500 truncate">₦{formatCurrency(upCalc.payout)}</p>
-                                  <p className="text-xs text-green-400">+₦{formatCurrency(upCalc.profit)} PROFIT</p>
-                                </>
+                                <div className="text-center mt-1 pt-1.5 border-t border-green-500/20 w-full">
+                                  <p className="text-xs text-gray-400">Multiplier</p>
+                                  <p className="text-xl font-black text-green-400">{upCalc.multiplier}x</p>
+                                  <p className="text-[10px] text-gray-400">Win <span className="text-green-400 font-semibold">₦{formatCurrency(upCalc.payout)}</span></p>
+                                </div>
                               ) : betAmount > 0 ? (
-                                <p className="text-xs text-yellow-400">No opposite bets yet</p>
+                                <div className="text-center mt-1 pt-1.5 border-t border-green-500/20 w-full">
+                                  <p className="text-[10px] text-yellow-400">No opponents yet</p>
+                                </div>
                               ) : (
-                                <p className="text-xs text-gray-400">Select amount</p>
+                                <div className="text-center mt-1 pt-1.5 border-t border-green-500/20 w-full">
+                                  <p className="text-[10px] text-gray-500">Set amount</p>
+                                </div>
                               )}
                             </div>
                             {loading && (
-                              <div className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-xl">
-                                <Loader2 className="w-8 h-8 text-green-500 animate-spin" />
+                              <div className="absolute inset-0 bg-black/40 flex items-center justify-center rounded-xl">
+                                <Loader2 className="w-6 h-6 text-green-400 animate-spin" />
                               </div>
                             )}
                           </button>
@@ -1233,35 +1281,37 @@ const Dashboard = () => {
                       {/* DOWN */}
                       {(() => {
                         const downCalc = calculatePotentialPayout('down');
-                        const currentMult = getCurrentMultiplier('down');
                         return (
                           <button
                             onClick={() => handlePlaceBet('down')}
                             disabled={loading || !canBet}
-                            className="relative bg-gradient-to-br from-red-500/10 to-rose-500/10 hover:from-red-500/20 hover:to-rose-500/20 border-2 border-red-500/50 hover:border-red-500 p-5 rounded-xl transition-all disabled:opacity-40"
+                            className="relative group bg-red-500/5 hover:bg-red-500/10 border border-red-500/20 hover:border-red-500/40 p-4 rounded-xl transition-all disabled:opacity-40"
                           >
-                            <div className="p-2 bg-red-500/20 rounded-xl w-fit mx-auto mb-2">
-                              <ArrowDownRight size={28} className="text-red-500" />
-                            </div>
-                            <p className="text-lg font-black text-red-500 mb-1">PREDICT DOWN</p>
-                            <p className="text-xs text-gray-400 mb-3">Multiplier: <span className="text-red-400 font-bold">{currentMult.display}</span></p>
-                            
-                            <div className="mt-3 pt-3 border-t border-red-500/30 space-y-1">
+                            <div className="flex flex-col items-center gap-1.5">
+                              <div className="p-2 bg-red-500/10 rounded-xl group-hover:bg-red-500/20 transition-all">
+                                <ArrowDownRight size={22} className="text-red-400" />
+                              </div>
+                              <p className="text-sm font-bold text-red-400">DOWN</p>
+
                               {betAmount > 0 && downCalc.hasOpponents ? (
-                                <>
-                                  <p className="text-xs text-red-400 font-bold tracking-wide">{downCalc.multiplier}x POTENTIAL</p>
-                                  <p className="text-xl font-black text-red-500 truncate">₦{formatCurrency(downCalc.payout)}</p>
-                                  <p className="text-xs text-red-400">+₦{formatCurrency(downCalc.profit)} PROFIT</p>
-                                </>
+                                <div className="text-center mt-1 pt-1.5 border-t border-red-500/20 w-full">
+                                  <p className="text-xs text-gray-400">Multiplier</p>
+                                  <p className="text-xl font-black text-red-400">{downCalc.multiplier}x</p>
+                                  <p className="text-[10px] text-gray-400">Win <span className="text-red-400 font-semibold">₦{formatCurrency(downCalc.payout)}</span></p>
+                                </div>
                               ) : betAmount > 0 ? (
-                                <p className="text-xs text-yellow-400">No opposite bets yet</p>
+                                <div className="text-center mt-1 pt-1.5 border-t border-red-500/20 w-full">
+                                  <p className="text-[10px] text-yellow-400">No opponents yet</p>
+                                </div>
                               ) : (
-                                <p className="text-xs text-gray-400">Select amount</p>
+                                <div className="text-center mt-1 pt-1.5 border-t border-red-500/20 w-full">
+                                  <p className="text-[10px] text-gray-500">Set amount</p>
+                                </div>
                               )}
                             </div>
                             {loading && (
-                              <div className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-xl">
-                                <Loader2 className="w-8 h-8 text-red-500 animate-spin" />
+                              <div className="absolute inset-0 bg-black/40 flex items-center justify-center rounded-xl">
+                                <Loader2 className="w-6 h-6 text-red-400 animate-spin" />
                               </div>
                             )}
                           </button>
@@ -1270,72 +1320,74 @@ const Dashboard = () => {
                     </div>
 
                     {!canBet && activeTimeLeft < 10 && activeTimeLeft > 0 && (
-                      <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-center">
-                        <p className="text-red-500 font-bold flex items-center justify-center gap-2 text-sm">
-                          <AlertCircle size={16} /> Round ending - Betting disabled
+                      <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-3 text-center">
+                        <p className="text-red-400 font-semibold flex items-center justify-center gap-2 text-xs">
+                          <AlertCircle size={14} /> Betting closed — round ending
                         </p>
                       </div>
                     )}
 
                     {activeTimeLeft === 0 && (
-                      <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 text-center">
-                        <p className="text-yellow-500 font-bold flex items-center justify-center gap-2 text-sm">
-                          <Clock size={16} /> Round locking... New round starting!
+                      <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-xl p-3 text-center">
+                        <p className="text-yellow-400 font-semibold flex items-center justify-center gap-2 text-xs">
+                          <Clock size={14} /> Locking round... New round starting soon
                         </p>
                       </div>
                     )}
                   </div>
                 ) : (
-                  <div className="bg-slate-800/20 rounded-2xl p-12 border-2 border-dashed border-slate-700 text-center">
-                    <Clock className="text-gray-600 animate-pulse mx-auto mb-3" size={40} />
-                    <p className="text-gray-400 mb-4">Waiting for next round...</p>
-                    <button onClick={handleRefresh} className="px-6 py-3 bg-primary text-white rounded-xl font-bold flex items-center gap-2 mx-auto">
-                      <RefreshCw size={18} /> Refresh
+                  <div className="text-center py-10 bg-slate-900/30 rounded-xl border border-dashed border-slate-700/40">
+                    <Clock className="text-gray-700 animate-pulse mx-auto mb-2" size={32} />
+                    <p className="text-gray-500 text-sm mb-4">Waiting for next round...</p>
+                    <button onClick={handleRefresh} className="px-5 py-2.5 bg-primary/20 text-primary rounded-xl text-sm font-semibold flex items-center gap-2 mx-auto border border-primary/30">
+                      <RefreshCw size={14} /> Refresh
                     </button>
                   </div>
                 )}
               </div>
 
-              {/* SLIDE 3: Upcoming Round */}
-              <div className="min-w-full px-1">
+              {/* SLIDE 3: Upcoming */}
+              <div className="min-w-full">
                 {upcomingRound ? (
-                  <div className="bg-gradient-to-br from-slate-800/60 to-slate-900/60 rounded-2xl p-4 border border-slate-700/50">
-                    <div className="flex items-center gap-2 mb-6">
-                      <Timer className="text-blue-500" size={20} />
+                  <div className="bg-blue-500/5 rounded-xl p-4 border border-blue-500/20">
+                    <div className="flex items-center gap-2 mb-5">
+                      <div className="p-1.5 bg-blue-500/10 rounded-lg">
+                        <Timer className="text-blue-400" size={16} />
+                      </div>
                       <div>
-                        <p className="text-xs text-blue-400">Round #{upcomingRound.roundNumber}</p>
-                        <h3 className="text-xl font-black text-white">Next Round</h3>
+                        <p className="text-[10px] text-blue-400 font-medium">Round #{upcomingRound.roundNumber}</p>
+                        <h3 className="text-base font-bold text-white">Next Round</h3>
                       </div>
                     </div>
 
-                    <div className="text-center py-8">
-                      <div className="relative w-24 h-24 mx-auto mb-6">
-                        <div className="absolute inset-0 bg-blue-500/20 rounded-full blur-2xl animate-pulse"></div>
-                        <div className="relative bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-full flex items-center justify-center w-full h-full border-2 border-blue-500/30">
-                          <Play className="text-blue-500" size={40} />
+                    <div className="text-center py-6">
+                      <div className="relative w-16 h-16 mx-auto mb-4">
+                        <div className="absolute inset-0 bg-blue-500/10 rounded-full blur-xl animate-pulse"></div>
+                        <div className="relative bg-blue-500/10 rounded-full flex items-center justify-center w-full h-full border border-blue-500/20">
+                          <Play className="text-blue-400" size={28} />
                         </div>
                       </div>
-                      <p className="text-gray-300 text-lg mb-2">Starts automatically</p>
-                      <p className="text-gray-400 text-sm mb-6">when current round locks</p>
+                      <p className="text-gray-400 text-sm mb-1">Starts automatically</p>
+                      <p className="text-gray-500 text-xs mb-4">when current round locks</p>
 
-                      <div className="bg-slate-900/60 p-4 rounded-xl inline-block">
-                        <p className="text-[10px] text-gray-400 uppercase mb-1">Scheduled</p>
-                        <p className="text-xl font-black text-white">
+                      <div className="bg-slate-900/40 px-5 py-2.5 rounded-xl inline-block border border-slate-700/30">
+                        <p className="text-[9px] text-gray-500 uppercase tracking-wide mb-0.5">Scheduled</p>
+                        <p className="text-base font-bold text-white">
                           {new Date(upcomingRound.startTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                         </p>
                       </div>
                     </div>
 
-                    <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
-                      <p className="text-blue-400 text-sm text-center flex items-center justify-center gap-2">
-                        <Zap size={16} /> Prepare your bet amount!
+                    <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-3 text-center">
+                      <p className="text-blue-400 text-xs font-medium flex items-center justify-center gap-1.5">
+                        <Zap size={12} /> Prepare your bet amount now!
                       </p>
                     </div>
                   </div>
                 ) : (
-                  <div className="bg-slate-800/20 rounded-2xl p-12 border-2 border-dashed border-slate-700 text-center">
-                    <Timer className="text-gray-600 mx-auto mb-3" size={40} />
-                    <p className="text-gray-400">No upcoming round</p>
+                  <div className="text-center py-10 bg-slate-900/30 rounded-xl border border-dashed border-slate-700/40">
+                    <Timer className="text-gray-700 mx-auto mb-2" size={32} />
+                    <p className="text-gray-500 text-sm">No upcoming round</p>
                   </div>
                 )}
               </div>
@@ -1343,30 +1395,30 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* BET AMOUNT SELECTOR */}
-        <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 backdrop-blur-xl p-4 rounded-2xl border border-slate-700/50 shadow-xl">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+        {/* ========== BET AMOUNT ========== */}
+        <div className="bg-slate-800/60 backdrop-blur-xl p-4 rounded-2xl border border-slate-700/30 shadow-xl">
+          <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <DollarSign className="text-primary" size={20} />
-              <p className="text-white font-bold">Bet Amount</p>
+              <DollarSign className="text-primary" size={16} />
+              <p className="text-sm font-semibold text-white">Bet Amount</p>
             </div>
-            <p className="text-xs text-gray-400">
-              Available: <span className="text-green-400 font-black">₦{formatCurrency(availableBalance)}</span>
+            <p className="text-[10px] text-gray-500">
+              Available: <span className="text-green-400 font-bold">₦{formatCurrency(availableBalance)}</span>
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2 mb-4">
+          <div className="flex flex-wrap gap-1.5 mb-3">
             {[100, 500, 1000, 2000, 5000, 10000, 50000].map(amt => (
               <button
                 key={amt}
                 onClick={() => setBetAmount(amt)}
                 disabled={amt > availableBalance}
-                className={`px-3 py-2 rounded-xl font-bold text-sm transition-all ${
+                className={`px-3 py-1.5 rounded-lg font-semibold text-xs transition-all ${
                   betAmount === amt
-                    ? 'bg-gradient-to-r from-primary to-purple-600 text-white scale-105 shadow-lg'
+                    ? 'bg-primary/20 text-primary border border-primary/40'
                     : amt > availableBalance
-                    ? 'bg-slate-800/50 text-gray-600 cursor-not-allowed'
-                    : 'bg-slate-800/80 text-gray-300 hover:bg-slate-700'
+                    ? 'bg-slate-800/30 text-gray-600 cursor-not-allowed'
+                    : 'bg-slate-700/40 text-gray-300 hover:bg-slate-700/60 border border-slate-600/20'
                 }`}
               >
                 ₦{amt.toLocaleString()}
@@ -1379,37 +1431,39 @@ const Dashboard = () => {
               value={betAmount || ''}
               min="100"
               max={availableBalance}
-              className="bg-slate-900/80 border-2 border-slate-700 focus:border-primary rounded-xl px-3 py-2 text-white w-28 focus:outline-none text-sm"
+              className="bg-slate-900/50 border border-slate-700/30 focus:border-primary/50 rounded-lg px-3 py-1.5 text-white w-24 focus:outline-none text-xs"
               onChange={(e) => setBetAmount(Number(e.target.value) || 0)}
             />
           </div>
 
-          <div className="flex flex-wrap gap-3 text-xs text-gray-400 bg-slate-900/50 p-3 rounded-lg">
-            <span className="flex items-center gap-1"><Info size={12} className="text-blue-400" /> Min: ₦100</span>
-            <span>•</span>
-            <span className="flex items-center gap-1"><Info size={12} className="text-blue-400" /> Max: ₦100,000</span>
-            <span>•</span>
-            <span className="text-primary font-bold flex items-center gap-1"><Shield size={12} /> No fees!</span>
+          <div className="flex flex-wrap gap-3 text-[10px] text-gray-500 pt-2 border-t border-slate-700/20">
+            <span className="flex items-center gap-1"><Info size={10} className="text-blue-400" /> Min ₦100</span>
+            <span>·</span>
+            <span className="flex items-center gap-1"><Info size={10} className="text-blue-400" /> Max ₦100,000</span>
+            <span>·</span>
+            <span className="text-primary flex items-center gap-1"><Shield size={10} /> No fees</span>
           </div>
         </div>
 
-        {/* MY ACTIVE BETS */}
-        <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 backdrop-blur-xl p-4 rounded-2xl border border-slate-700/50 shadow-xl">
-          <div className="flex items-center justify-between mb-4">
+        {/* ========== MY ACTIVE BETS ========== */}
+        <div className="bg-slate-800/60 backdrop-blur-xl p-4 rounded-2xl border border-slate-700/30 shadow-xl">
+          <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <Activity className="text-primary" size={20} />
-              <h3 className="text-lg font-black text-white">Your Active Bets</h3>
+              <Activity className="text-primary" size={16} />
+              <h3 className="text-sm font-semibold text-white">Active Bets</h3>
             </div>
-            <span className="bg-primary/20 text-primary px-3 py-1 rounded-xl text-xs font-black">{myActiveBets.length}</span>
+            <span className="bg-primary/10 text-primary border border-primary/20 px-2.5 py-0.5 rounded-lg text-xs font-semibold">
+              {myActiveBets.length}
+            </span>
           </div>
 
           {myActiveBets.length === 0 ? (
-            <div className="text-center py-12 bg-slate-800/30 rounded-2xl border border-dashed border-slate-700">
-              <Activity size={40} className="text-gray-600 mx-auto mb-3 opacity-20" />
-              <p className="text-gray-400">No active bets</p>
+            <div className="text-center py-8 bg-slate-900/20 rounded-xl border border-dashed border-slate-700/30">
+              <Activity size={28} className="text-gray-700 mx-auto mb-2" />
+              <p className="text-gray-500 text-xs">No active bets</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
               {myActiveBets.map(bet => {
                 const betAmountValue = parseFloat(bet.stakeAmount || bet.amount);
                 const multiplier = bet.currentMultiplierRaw || 1.7;
@@ -1419,34 +1473,34 @@ const Dashboard = () => {
                 return (
                   <div
                     key={bet.id}
-                    className={`bg-slate-900/70 p-4 rounded-xl border-2 transition-all ${
-                      bet.prediction === 'up' ? 'border-green-500/30' : 'border-red-500/30'
+                    className={`bg-slate-900/40 p-3 rounded-xl border transition-all ${
+                      bet.prediction === 'up' ? 'border-green-500/20' : 'border-red-500/20'
                     }`}
                   >
-                    <div className="flex justify-between items-start mb-3">
+                    <div className="flex justify-between items-start mb-2.5">
                       <div>
-                        <p className={`text-xs font-black uppercase flex items-center gap-1 mb-1 ${
-                          bet.prediction === 'up' ? 'text-green-500' : 'text-red-500'
+                        <p className={`text-[10px] font-semibold uppercase flex items-center gap-1 mb-1 ${
+                          bet.prediction === 'up' ? 'text-green-400' : 'text-red-400'
                         }`}>
-                          {bet.prediction === 'up' ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
+                          {bet.prediction === 'up' ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
                           {bet.prediction}
                         </p>
-                        <p className="text-white font-black text-lg">₦{formatCurrency(bet.amount || bet.stakeAmount)}</p>
+                        <p className="text-white font-bold text-base">₦{formatCurrency(bet.amount || bet.stakeAmount)}</p>
                       </div>
                       <div className="text-right">
-                        <p className="text-[10px] text-gray-500">Potential Win</p>
-                        <p className="text-base font-black text-primary">₦{formatCurrency(potentialPayout)}</p>
-                        <p className="text-[10px] text-green-400">+₦{formatCurrency(potentialProfit)}</p>
+                        <p className="text-[9px] text-gray-500 mb-0.5">Potential Win</p>
+                        <p className="text-sm font-bold text-primary">₦{formatCurrency(potentialPayout)}</p>
+                        <p className="text-[9px] text-green-400">+₦{formatCurrency(potentialProfit)}</p>
                       </div>
                     </div>
 
-                    <div className="flex justify-between items-center text-xs pt-3 border-t border-slate-700">
+                    <div className="flex justify-between items-center text-[10px] pt-2 border-t border-slate-700/30">
                       <span className="text-gray-500 flex items-center gap-1">
-                        {bet.roundStatus === 'locked' && <Lock size={10} className="text-amber-500" />}
+                        {bet.roundStatus === 'locked' && <Lock size={9} className="text-amber-400" />}
                         Round #{bet.roundNumber}
                       </span>
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wide ${
-                        bet.prediction === 'up' ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                        bet.prediction === 'up' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
                       }`}>
                         {multiplier}x
                       </span>
@@ -1458,23 +1512,23 @@ const Dashboard = () => {
           )}
         </div>
 
-        {/* REFERRAL PROMO */}
-        <div className="bg-gradient-to-br from-purple-600/20 via-pink-600/20 to-orange-500/20 p-4 rounded-2xl border-2 border-purple-500/30">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+        {/* ========== REFERRAL PROMO BANNER ========== */}
+        <div className="bg-gradient-to-r from-purple-600/10 via-pink-600/10 to-orange-500/10 p-4 rounded-2xl border border-purple-500/20">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl flex items-center justify-center">
-                <Gift className="text-white" size={24} />
+              <div className="w-10 h-10 bg-gradient-to-br from-purple-500/80 to-pink-500/80 rounded-xl flex items-center justify-center flex-shrink-0">
+                <Gift className="text-white" size={18} />
               </div>
               <div>
-                <h3 className="text-white font-black text-lg">Refer & Earn 25%! 🎁</h3>
-                <p className="text-gray-300 text-sm">Earn from referral's first bet!</p>
+                <h3 className="text-white font-bold text-sm">Refer & Earn 25% 🎁</h3>
+                <p className="text-gray-400 text-xs">Commission from referral's first bet</p>
               </div>
             </div>
             <button
               onClick={goToReferralPage}
-              className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl font-black flex items-center justify-center gap-2 shadow-lg"
+              className="w-full sm:w-auto px-5 py-2 bg-gradient-to-r from-purple-600/80 to-pink-600/80 hover:from-purple-600 hover:to-pink-600 text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all border border-purple-500/30"
             >
-              <Share2 size={18} /> Start Referring <ChevronRight size={18} />
+              <Share2 size={14} /> Start Referring
             </button>
           </div>
         </div>
