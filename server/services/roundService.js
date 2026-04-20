@@ -1,6 +1,5 @@
 
 // server/services/roundService.js
-const cron = require('node-cron');
 const { Round, Bet, Wallet, Transaction, User } = require('../models');
 const { Op } = require('sequelize');
 const priceService = require('./priceService');
@@ -31,7 +30,6 @@ const safeProcessReferral = async (type, userId, betAmount, betId, transaction) 
       }
       return result;
     }
-    
     if (type === 'influencer' && processInfluencerCommission) {
       const result = await processInfluencerCommission(userId, betAmount, betId, transaction);
       if (result?.success && !result.alreadyProcessed) {
@@ -39,12 +37,61 @@ const safeProcessReferral = async (type, userId, betAmount, betId, transaction) 
       }
       return result;
     }
-    
     return null;
   } catch (error) {
     console.error(`   ⚠️ Referral ${type} error (non-fatal):`, error.message);
     return null;
   }
+};
+
+// ==================== WALL-CLOCK HELPERS ====================
+
+/**
+ * Get the exact wall-clock slot start time for a given timestamp.
+ * e.g. if TOTAL_ROUND = 10 min, slots are :00, :10, :20, :30, :40, :50
+ * if TOTAL_ROUND = 5 min (but we use BETTING=5 + LOCKED=5 = 10 min total),
+ * we align to the BETTING_DURATION interval on the clock.
+ *
+ * BETTING_DURATION = 5 min means rounds lock every 5 min.
+ * Each "slot" = BETTING_DURATION minutes.
+ * Slot 0 starts at :00, slot 1 at :05, slot 2 at :10, etc.
+ */
+const getSlotStart = (timestamp, bettingMinutes) => {
+  const ms = bettingMinutes * 60 * 1000;
+  return Math.floor(timestamp / ms) * ms;
+};
+
+const getSlotEnd = (slotStart, bettingMinutes) => {
+  return slotStart + bettingMinutes * 60 * 1000;
+};
+
+/**
+ * Returns the current slot start (wall-clock aligned).
+ */
+const getCurrentSlotStart = (bettingMinutes) => {
+  return getSlotStart(Date.now(), bettingMinutes);
+};
+
+/**
+ * Returns the next slot start after the current one.
+ */
+const getNextSlotStart = (bettingMinutes) => {
+  const current = getCurrentSlotStart(bettingMinutes);
+  return current + bettingMinutes * 60 * 1000;
+};
+
+/**
+ * Get ALL slot starts between two timestamps (inclusive of start, exclusive of end).
+ */
+const getSlotsBetween = (fromTs, toTs, bettingMinutes) => {
+  const ms = bettingMinutes * 60 * 1000;
+  const slots = [];
+  let slot = Math.ceil(fromTs / ms) * ms;
+  while (slot < toTs) {
+    slots.push(slot);
+    slot += ms;
+  }
+  return slots;
 };
 
 class RoundService {
@@ -54,37 +101,42 @@ class RoundService {
     this.checkInterval = null;
     this.isChecking = false;
     this.lastCheckTime = null;
-    
+
     // ✅ CACHE
     this.cachedActiveRound = null;
     this.cachedLockedRound = null;
     this.cacheExpiry = null;
     this.CACHE_DURATION = 5000;
-    
+
     // ✅ ROUND DURATIONS
+    // BETTING_DURATION = how long users can bet (5 min)
+    // LOCKED_DURATION  = how long price is locked / resolving (5 min)
+    // So a round is 10 min total, but the "slot" on the clock is every 5 min
+    // because a NEW round starts every BETTING_DURATION minutes.
     this.BETTING_DURATION = parseInt(process.env.BETTING_DURATION_MINUTES) || 5;
-    this.LOCKED_DURATION = parseInt(process.env.LOCKED_DURATION_MINUTES) || 5;
+    this.LOCKED_DURATION  = parseInt(process.env.LOCKED_DURATION_MINUTES)  || 5;
     this.TOTAL_ROUND_DURATION = this.BETTING_DURATION + this.LOCKED_DURATION;
-    
+
     // 🔒 PREVENT DUPLICATE PROCESSING
     this.processingRounds = new Set();
-    this.creatingRound = false; // Prevent concurrent round creation
+    this.creatingRound    = false;
   }
 
+  // ==================== START MANAGER ====================
   async startRoundManager(io) {
     this.io = io;
-    console.log('🎮 Starting Round Manager...');
-    console.log(`   ⏱️ Betting Period: ${this.BETTING_DURATION} minutes`);
-    console.log(`   🔒 Locked Period: ${this.LOCKED_DURATION} minutes`);
-    console.log(`   📊 Total Round: ${this.TOTAL_ROUND_DURATION} minutes`);
+    console.log('🎮 Starting Round Manager (Wall-Clock Aligned)...');
+    console.log(`   ⏱️  Betting Period : ${this.BETTING_DURATION} min`);
+    console.log(`   🔒 Locked Period  : ${this.LOCKED_DURATION} min`);
+    console.log(`   📊 Total Round    : ${this.TOTAL_ROUND_DURATION} min`);
+    console.log(`   🕐 Slots align to every ${this.BETTING_DURATION} min on the clock`);
 
     try {
       await new Promise(resolve => setTimeout(resolve, 2000));
       await this.initializeRounds();
 
-      this.checkInterval = setInterval(async () => {
-        await this.checkAndUpdateRounds();
-      }, 10000);
+      // Check every 10 seconds
+      this.checkInterval = setInterval(() => this.checkAndUpdateRounds(), 10000);
 
       console.log('✅ Round Manager started successfully');
     } catch (error) {
@@ -92,673 +144,777 @@ class RoundService {
     }
   }
 
-  // ==================== INITIALIZE ROUNDS ====================
+  // ==================== INITIALIZE ====================
   async initializeRounds() {
     try {
       console.log('🔄 Initializing round system...');
-      
-      const now = new Date();
-      
-      // Clean up any orphaned rounds
-      await this.cleanupOrphanedRounds();
-      
-      // Get current system state
-      const activeRound = await Round.findOne({
-        where: { status: 'active' },
-        order: [['roundNumber', 'DESC']]
-      });
 
-      const lockedRound = await Round.findOne({
-        where: { status: 'locked' },
-        order: [['roundNumber', 'DESC']]
-      });
+      await this.cleanupStaleRounds();
 
-      const upcomingRound = await Round.findOne({
-        where: { status: 'upcoming' },
-        order: [['roundNumber', 'ASC']]
-      });
+      const now = Date.now();
 
-      console.log(`📊 Current State:`);
-      console.log(`   Active: ${activeRound ? `#${activeRound.roundNumber}` : 'NONE'}`);
-      console.log(`   Locked: ${lockedRound ? `#${lockedRound.roundNumber}` : 'NONE'}`);
-      console.log(`   Upcoming: ${upcomingRound ? `#${upcomingRound.roundNumber}` : 'NONE'}`);
+      // ── Check what's already in DB ──
+      const activeRound  = await Round.findOne({ where: { status: 'active'  }, order: [['roundNumber', 'DESC']] });
+      const lockedRound  = await Round.findOne({ where: { status: 'locked'  }, order: [['roundNumber', 'DESC']] });
 
-      // ✅ Process overdue rounds FIRST
-      if (lockedRound && now > new Date(lockedRound.endTime)) {
-        console.log('⚠️ Locked round overdue, completing now...');
+      console.log(`   Active : ${activeRound  ? `#${activeRound.roundNumber}`  : 'NONE'}`);
+      console.log(`   Locked : ${lockedRound  ? `#${lockedRound.roundNumber}`  : 'NONE'}`);
+
+      // ── Process overdue rounds ──
+      if (lockedRound && now > new Date(lockedRound.endTime).getTime()) {
+        console.log('⚠️  Overdue locked round – completing now...');
         await this.endRound(lockedRound);
       }
 
-      if (activeRound && now > new Date(activeRound.lockTime)) {
-        console.log('⚠️ Active round overdue, locking now...');
+      if (activeRound && now > new Date(activeRound.lockTime).getTime()) {
+        console.log('⚠️  Overdue active round – locking now...');
         await this.lockRound(activeRound);
       }
 
-      // ✅ Re-check state after transitions
-      const currentActive = await Round.findOne({
-        where: { status: 'active' },
-        order: [['roundNumber', 'DESC']]
-      });
+      // ── Re-check after transitions ──
+      const currentActive = await Round.findOne({ where: { status: 'active' }, order: [['roundNumber', 'DESC']] });
 
-      const currentLocked = await Round.findOne({
-        where: { status: 'locked' },
-        order: [['roundNumber', 'DESC']]
-      });
-
-      // ✅ Ensure we have an active round
       if (!currentActive) {
-        console.log('📊 No active round found. Creating first round...');
-        await this.createNewRound(true);
+        console.log('📊 No active round – aligning to wall-clock slot...');
+        await this.alignAndCreateRounds();
       } else {
-        this.currentRound = currentActive;
+        this.currentRound      = currentActive;
         this.cachedActiveRound = currentActive;
-        console.log(`✅ Active round #${currentActive.roundNumber} ready`);
+        this.cacheExpiry       = Date.now() + this.CACHE_DURATION;
+        console.log(`✅ Active round #${currentActive.roundNumber} is ready`);
+        await this.ensureUpcomingExists();
       }
 
+      const currentLocked = await Round.findOne({ where: { status: 'locked' }, order: [['roundNumber', 'DESC']] });
       if (currentLocked) {
         this.cachedLockedRound = currentLocked;
-        console.log(`🔒 Locked round #${currentLocked.roundNumber} waiting for result`);
+        console.log(`🔒 Locked round #${currentLocked.roundNumber} is waiting for result`);
       }
 
-      // ✅ Ensure upcoming round exists
-      const hasUpcoming = await Round.findOne({
-        where: { status: 'upcoming' }
+      console.log('✅ Round system initialized');
+    } catch (error) {
+      console.error('❌ Init error:', error.message);
+      try { await this.alignAndCreateRounds(); } catch (e) { console.error('❌ Recovery failed:', e.message); }
+    }
+  }
+
+  // ==================== ALIGN TO WALL CLOCK ====================
+  /**
+   * Called when there is NO active round.
+   * Figures out which wall-clock slot we are currently in
+   * and creates/finds a round for it, plus the next upcoming slot.
+   */
+  async alignAndCreateRounds() {
+    try {
+      const now     = Date.now();
+      const bm      = this.BETTING_DURATION;
+      const lm      = this.LOCKED_DURATION;
+      const slotMs  = bm * 60 * 1000;
+
+      // Current slot boundaries
+      const slotStart = getSlotStart(now, bm);            // e.g. 10:00:00
+      const slotLock  = slotStart + slotMs;               // e.g. 10:05:00  ← betting ends
+      const slotEnd   = slotLock  + lm * 60 * 1000;      // e.g. 10:10:00  ← result
+
+      // Next slot
+      const nextStart = slotLock;                         // new round opens at 10:05
+      const nextLock  = nextStart + slotMs;               // 10:10
+      const nextEnd   = nextLock  + lm * 60 * 1000;      // 10:15
+
+      console.log(`⏰ Wall-clock alignment:`);
+      console.log(`   Current slot : ${new Date(slotStart).toLocaleTimeString()} – ${new Date(slotLock).toLocaleTimeString()}`);
+      console.log(`   Next slot    : ${new Date(nextStart).toLocaleTimeString()} – ${new Date(nextLock).toLocaleTimeString()}`);
+
+      // Get the last round number in DB
+      const lastRound = await Round.findOne({
+        where: { status: { [Op.in]: ['completed', 'active', 'locked', 'cancelled'] } },
+        order: [['roundNumber', 'DESC']]
       });
+      let nextNum = lastRound ? lastRound.roundNumber + 1 : 1;
 
-      if (!hasUpcoming) {
-        console.log('📅 Creating upcoming round...');
-        await this.ensureUpcomingRound();
-      }
-
-      this.cacheExpiry = Date.now() + this.CACHE_DURATION;
-      
-      console.log('✅ Round system initialized successfully');
-
-    } catch (error) {
-      console.error('❌ Error initializing rounds:', error);
-      try {
-        await this.createNewRound(true);
-      } catch (createError) {
-        console.error('❌ Failed to create initial round:', createError);
-      }
-    }
-  }
-
-  // ==================== CLEANUP ORPHANED ROUNDS ====================
-  async cleanupOrphanedRounds() {
-    try {
-      const now = new Date();
-      const fifteenMinutesAgo = new Date(now.getTime() - 15 * 60 * 1000);
-
-      // Cancel stuck locked rounds
-      const stuckLocked = await Round.update(
-        { status: 'cancelled', result: 'cancelled', isProcessed: true },
-        {
-          where: {
-            status: 'locked',
-            endTime: { [Op.lt]: fifteenMinutesAgo }
-          }
-        }
-      );
-
-      // Cancel stuck active rounds
-      const stuckActive = await Round.update(
-        { status: 'cancelled', result: 'cancelled', isProcessed: true },
-        {
-          where: {
-            status: 'active',
-            lockTime: { [Op.lt]: fifteenMinutesAgo }
-          }
-        }
-      );
-
-      if (stuckLocked[0] > 0 || stuckActive[0] > 0) {
-        console.log(`🧹 Cleaned up ${stuckLocked[0]} stuck locked, ${stuckActive[0]} stuck active rounds`);
-      }
-    } catch (error) {
-      console.error('⚠️ Cleanup error:', error.message);
-    }
-  }
-
-  // ==================== CREATE NEW ROUND (FIXED - NO MORE DUPLICATES) ====================
-  async createNewRound(startImmediately = false) {
-    // 🔒 PREVENT CONCURRENT CREATION
-    if (this.creatingRound) {
-      console.log('⏳ Round creation already in progress, waiting...');
-      await new Promise(resolve => setTimeout(resolve, 500));
-      return await this.getActiveRound();
-    }
-
-    this.creatingRound = true;
-    const transaction = await sequelize.transaction();
-    
-    try {
-      const now = new Date();
-      
-      // 🔥 CRITICAL FIX: Get last valid round from completed/active/locked ONLY
-      const lastValidRound = await Round.findOne({
+      // ── Create / activate the CURRENT slot round ──
+      let activeRound = await Round.findOne({
         where: {
-          status: {
-            [Op.in]: ['completed', 'active', 'locked']
-          }
-        },
-        order: [['roundNumber', 'DESC']],
-        lock: transaction.LOCK.UPDATE,
-        transaction
-      });
-      
-      const nextRoundNumber = lastValidRound ? lastValidRound.roundNumber + 1 : 1;
-
-      console.log(`📝 Creating round #${nextRoundNumber} (last valid: #${lastValidRound?.roundNumber || 'none'})`);
-
-      // ✅ Check if round already exists
-      const existing = await Round.findOne({
-        where: { roundNumber: nextRoundNumber },
-        transaction
-      });
-
-      if (existing) {
-        console.log(`⚠️ Round #${nextRoundNumber} already exists (${existing.status}), using it`);
-        await transaction.rollback();
-        this.creatingRound = false;
-        
-        // If it's upcoming and we need it active, start it
-        if (existing.status === 'upcoming' && startImmediately) {
-          const startPrice = priceService.getPrice();
-          await existing.update({
-            status: 'active',
-            startPrice: startPrice,
-            startTime: now
-          });
-          
-          this.currentRound = existing;
-          this.cachedActiveRound = existing;
-          this.cacheExpiry = Date.now() + this.CACHE_DURATION;
-          
-          if (this.io) {
-            this.io.emit('round_start', {
-              roundId: existing.id,
-              roundNumber: existing.roundNumber,
-              startPrice: startPrice,
-              startTime: existing.startTime,
-              lockTime: existing.lockTime,
-              endTime: existing.endTime
-            });
-          }
+          status: { [Op.in]: ['active', 'upcoming'] },
+          startTime: { [Op.lte]: new Date(slotLock) },
+          lockTime:  { [Op.gte]: new Date(now) }
         }
-        
-        return existing;
-      }
+      });
 
-      let startTime, lockTime, endTime;
-
-      if (startImmediately) {
-        startTime = now;
-        lockTime = new Date(now.getTime() + (this.BETTING_DURATION * 60 * 1000));
-        endTime = new Date(now.getTime() + (this.TOTAL_ROUND_DURATION * 60 * 1000));
-      } else {
-        const currentActive = await Round.findOne({
-          where: { status: 'active' },
-          order: [['startTime', 'DESC']],
-          transaction
+      if (!activeRound) {
+        const startPrice = priceService.getPrice();
+        activeRound = await Round.create({
+          roundNumber : nextNum++,
+          status      : 'active',
+          startTime   : new Date(slotStart),
+          lockTime    : new Date(slotLock),
+          endTime     : new Date(slotEnd),
+          startPrice  : startPrice
         });
-        
-        if (currentActive) {
-          startTime = new Date(currentActive.lockTime.getTime() + 1000);
-        } else {
-          startTime = new Date(now.getTime() + 10000);
-        }
-        lockTime = new Date(startTime.getTime() + (this.BETTING_DURATION * 60 * 1000));
-        endTime = new Date(startTime.getTime() + (this.TOTAL_ROUND_DURATION * 60 * 1000));
-      }
+        console.log(`✅ Created active round #${activeRound.roundNumber} (${new Date(slotStart).toLocaleTimeString()} – ${new Date(slotLock).toLocaleTimeString()})`);
 
-      const round = await Round.create({
-        roundNumber: nextRoundNumber,
-        status: startImmediately ? 'active' : 'upcoming',
-        startTime,
-        lockTime,
-        endTime,
-        startPrice: startImmediately ? priceService.getPrice() : null
-      }, { transaction });
-
-      await transaction.commit();
-      this.creatingRound = false;
-
-      console.log(`✅ Created round #${round.roundNumber} (${round.status})`);
-      console.log(`   Start: ${startTime.toLocaleTimeString()}`);
-      console.log(`   Lock: ${lockTime.toLocaleTimeString()}`);
-      console.log(`   End: ${endTime.toLocaleTimeString()}`);
-
-      if (startImmediately) {
-        this.currentRound = round;
-        this.cachedActiveRound = round;
-        this.cacheExpiry = Date.now() + this.CACHE_DURATION;
-        
         if (this.io) {
           this.io.emit('round_start', {
-            roundId: round.id,
-            roundNumber: round.roundNumber,
-            startPrice: round.startPrice,
-            startTime: round.startTime,
-            lockTime: round.lockTime,
-            endTime: round.endTime
+            roundId    : activeRound.id,
+            roundNumber: activeRound.roundNumber,
+            startPrice,
+            startTime  : activeRound.startTime,
+            lockTime   : activeRound.lockTime,
+            endTime    : activeRound.endTime
+          });
+        }
+      } else if (activeRound.status === 'upcoming') {
+        const startPrice = priceService.getPrice();
+        await activeRound.update({ status: 'active', startPrice, startTime: new Date(slotStart) });
+        console.log(`✅ Promoted upcoming → active round #${activeRound.roundNumber}`);
+
+        if (this.io) {
+          this.io.emit('round_start', {
+            roundId    : activeRound.id,
+            roundNumber: activeRound.roundNumber,
+            startPrice,
+            startTime  : activeRound.startTime,
+            lockTime   : activeRound.lockTime,
+            endTime    : activeRound.endTime
           });
         }
       }
 
-      return round;
-    } catch (error) {
-      await transaction.rollback();
-      this.creatingRound = false;
-      console.error('❌ Error creating round:', error.message);
-      
-      // If it's a duplicate error, fetch existing
-      if (error.name === 'SequelizeUniqueConstraintError') {
-        const existing = await Round.findOne({
-          where: {
-            status: {
-              [Op.in]: ['active', 'upcoming']
-            }
-          },
-          order: [['roundNumber', 'DESC']]
+      this.currentRound      = activeRound;
+      this.cachedActiveRound = activeRound;
+      this.cacheExpiry       = Date.now() + this.CACHE_DURATION;
+
+      // ── Ensure upcoming round exists for NEXT slot ──
+      let upcomingRound = await Round.findOne({ where: { status: 'upcoming' } });
+      if (!upcomingRound) {
+        upcomingRound = await Round.create({
+          roundNumber : nextNum,
+          status      : 'upcoming',
+          startTime   : new Date(nextStart),
+          lockTime    : new Date(nextLock),
+          endTime     : new Date(nextEnd),
+          startPrice  : null
         });
-        
-        if (existing) {
-          console.log(`✅ Using existing round #${existing.roundNumber}`);
-          return existing;
-        }
+        console.log(`📅 Created upcoming round #${upcomingRound.roundNumber} (${new Date(nextStart).toLocaleTimeString()})`);
       }
-      
+    } catch (error) {
+      console.error('❌ alignAndCreateRounds error:', error.message);
       throw error;
     }
   }
 
-  // ==================== ENSURE UPCOMING ROUND ====================
-  async ensureUpcomingRound() {
+  // ==================== CLEANUP STALE ROUNDS ====================
+  async cleanupStaleRounds() {
     try {
-      const upcomingRound = await Round.findOne({
-        where: { status: 'upcoming' },
-        order: [['startTime', 'ASC']]
-      });
+      const fifteenAgo = new Date(Date.now() - 15 * 60 * 1000);
 
-      if (!upcomingRound) {
-        console.log('📊 Creating upcoming round...');
-        await this.createNewRound(false);
+      const [sl] = await Round.update(
+        { status: 'cancelled', result: 'cancelled', isProcessed: true },
+        { where: { status: 'locked', endTime: { [Op.lt]: fifteenAgo } } }
+      );
+
+      const [sa] = await Round.update(
+        { status: 'cancelled', result: 'cancelled', isProcessed: true },
+        { where: { status: 'active', lockTime: { [Op.lt]: fifteenAgo } } }
+      );
+
+      if (sl > 0 || sa > 0) {
+        console.log(`🧹 Cleaned up ${sl} stuck-locked + ${sa} stuck-active rounds`);
       }
     } catch (error) {
-      console.error('❌ Error ensuring upcoming round:', error);
+      console.error('⚠️  Cleanup error:', error.message);
+    }
+  }
+
+  // ==================== ENSURE UPCOMING EXISTS ====================
+  async ensureUpcomingExists() {
+    try {
+      const upcoming = await Round.findOne({ where: { status: 'upcoming' } });
+      if (upcoming) return;
+
+      const bm = this.BETTING_DURATION;
+      const lm = this.LOCKED_DURATION;
+
+      // Active round tells us when the next slot starts
+      const active = await Round.findOne({ where: { status: 'active' }, order: [['lockTime', 'DESC']] });
+
+      let nextStart, nextLock, nextEnd;
+
+      if (active) {
+        nextStart = new Date(active.lockTime);
+        nextLock  = new Date(nextStart.getTime() + bm * 60 * 1000);
+        nextEnd   = new Date(nextStart.getTime() + (bm + lm) * 60 * 1000);
+      } else {
+        // Fallback to next wall-clock slot
+        const slotMs  = bm * 60 * 1000;
+        nextStart = new Date(getNextSlotStart(bm));
+        nextLock  = new Date(nextStart.getTime() + slotMs);
+        nextEnd   = new Date(nextStart.getTime() + (bm + lm) * 60 * 1000);
+      }
+
+      const lastRound = await Round.findOne({
+        where: { status: { [Op.in]: ['completed', 'active', 'locked', 'cancelled', 'upcoming'] } },
+        order: [['roundNumber', 'DESC']]
+      });
+      const nextNum = lastRound ? lastRound.roundNumber + 1 : 1;
+
+      await Round.create({
+        roundNumber : nextNum,
+        status      : 'upcoming',
+        startTime   : nextStart,
+        lockTime    : nextLock,
+        endTime     : nextEnd,
+        startPrice  : null
+      });
+
+      console.log(`📅 Upcoming round #${nextNum} created (${nextStart.toLocaleTimeString()} → ${nextLock.toLocaleTimeString()})`);
+    } catch (error) {
+      console.error('❌ ensureUpcomingExists error:', error.message);
     }
   }
 
   // ==================== CHECK AND UPDATE ROUNDS ====================
   async checkAndUpdateRounds() {
-    if (this.isChecking) {
-      return;
-    }
+    if (this.isChecking) return;
 
-    this.isChecking = true;
+    this.isChecking    = true;
     this.lastCheckTime = new Date();
-    const now = new Date();
+    const now          = new Date();
 
     try {
-      // ✅ Get rounds that need action
       const roundsNeedingAction = await Round.findAll({
         where: {
           [Op.or]: [
-            { status: 'locked', endTime: { [Op.lte]: now } },
-            { status: 'active', lockTime: { [Op.lte]: now } },
+            { status: 'locked',   endTime  : { [Op.lte]: now } },
+            { status: 'active',   lockTime : { [Op.lte]: now } },
             { status: 'upcoming', startTime: { [Op.lte]: now } }
           ]
         },
         order: [
-          ['status', 'DESC'], // locked first, then active, then upcoming
+          ['status', 'DESC'],   // locked → active → upcoming
           ['roundNumber', 'ASC']
         ]
       });
 
-      // ✅ Process rounds IN SEQUENCE
       for (const round of roundsNeedingAction) {
-        const roundKey = `${round.id}-${round.status}`;
-        
-        if (this.processingRounds.has(roundKey)) {
-          continue;
+        const key = `${round.id}-${round.status}`;
+        if (this.processingRounds.has(key)) continue;
+
+        this.processingRounds.add(key);
+        try {
+          if (round.status === 'locked'   && new Date(round.endTime)   <= now) await this.endRound(round);
+          else if (round.status === 'active'   && new Date(round.lockTime)  <= now) await this.lockRound(round);
+          else if (round.status === 'upcoming' && new Date(round.startTime) <= now) await this.startRound(round);
+        } finally {
+          this.processingRounds.delete(key);
         }
 
-        this.processingRounds.add(roundKey);
-        
-        try {
-          if (round.status === 'locked' && new Date(round.endTime) <= now) {
-            console.log(`🔄 Completing Round #${round.roundNumber}...`);
-            await this.endRound(round);
-          } 
-          else if (round.status === 'active' && new Date(round.lockTime) <= now) {
-            console.log(`🔄 Locking Round #${round.roundNumber}...`);
-            await this.lockRound(round);
-          } 
-          else if (round.status === 'upcoming' && new Date(round.startTime) <= now) {
-            console.log(`🔄 Starting Round #${round.roundNumber}...`);
-            await this.startRound(round);
-          }
-        } finally {
-          this.processingRounds.delete(roundKey);
-        }
-        
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise(r => setTimeout(r, 100));
       }
 
-      // ✅ BOT CHECK
+      // Bot check
       const activeRound = await this.getActiveRound();
-      if (activeRound && activeRound.status === 'active') {
+      if (activeRound?.status === 'active') {
         await botService.checkAndPlaceBets(activeRound, this.io);
       }
-
     } catch (error) {
-      console.error('❌ Error in round check cycle:', error.message);
+      console.error('❌ checkAndUpdateRounds error:', error.message);
     } finally {
       this.isChecking = false;
     }
   }
 
-  // ==================== START ROUND ====================
+  // ==================== START ROUND (upcoming → active) ====================
   async startRound(round) {
-    const transaction = await sequelize.transaction();
-    
+    const t = await sequelize.transaction();
     try {
-      const freshRound = await Round.findByPk(round.id, {
-        transaction,
-        lock: transaction.LOCK.UPDATE
-      });
-
-      if (!freshRound || freshRound.status !== 'upcoming') {
-        await transaction.rollback();
-        return;
-      }
+      const fresh = await Round.findByPk(round.id, { transaction: t, lock: t.LOCK.UPDATE });
+      if (!fresh || fresh.status !== 'upcoming') { await t.rollback(); return; }
 
       const startPrice = priceService.getPrice();
+      await fresh.update({ status: 'active', startPrice, startTime: new Date() }, { transaction: t });
+      await t.commit();
 
-      await freshRound.update({ 
-        status: 'active', 
-        startPrice,
-        startTime: new Date()
-      }, { transaction });
+      this.currentRound      = fresh;
+      this.cachedActiveRound = fresh;
+      this.cacheExpiry       = Date.now() + this.CACHE_DURATION;
 
-      await transaction.commit();
-
-      this.currentRound = freshRound;
-      this.cachedActiveRound = freshRound;
-      this.cacheExpiry = Date.now() + this.CACHE_DURATION;
-
-      console.log(`🟢 Round #${freshRound.roundNumber} STARTED at $${startPrice.toLocaleString()}`);
+      console.log(`🟢 Round #${fresh.roundNumber} STARTED at $${startPrice.toLocaleString()}`);
 
       if (this.io) {
         this.io.emit('round_start', {
-          roundId: freshRound.id,
-          roundNumber: freshRound.roundNumber,
+          roundId    : fresh.id,
+          roundNumber: fresh.roundNumber,
           startPrice,
-          startTime: freshRound.startTime,
-          lockTime: freshRound.lockTime,
-          endTime: freshRound.endTime
+          startTime  : fresh.startTime,
+          lockTime   : fresh.lockTime,
+          endTime    : fresh.endTime
         });
       }
 
-      await this.ensureUpcomingRound();
+      await this.ensureUpcomingExists();
     } catch (error) {
-      await transaction.rollback();
-      console.error('❌ Error starting round:', error.message);
+      await t.rollback();
+      console.error('❌ startRound error:', error.message);
     }
   }
 
-  // ==================== LOCK ROUND (BULLETPROOF VERSION) ====================
+  // ==================== LOCK ROUND ====================
   async lockRound(round) {
-    const transaction = await sequelize.transaction();
-    
+    const t = await sequelize.transaction();
     try {
-      // ✅ Re-fetch with lock
-      const freshRound = await Round.findByPk(round.id, {
-        transaction,
-        lock: transaction.LOCK.UPDATE
-      });
-
-      if (!freshRound || freshRound.status !== 'active') {
-        await transaction.rollback();
-        return;
-      }
+      const fresh = await Round.findByPk(round.id, { transaction: t, lock: t.LOCK.UPDATE });
+      if (!fresh || fresh.status !== 'active') { await t.rollback(); return; }
 
       const lockPrice = priceService.getPrice();
-      
-      console.log(`🔒 LOCKING Round #${freshRound.roundNumber}...`);
-      
-      // ✅ STEP 1: Lock current round
-      await freshRound.update({ 
-        status: 'locked',
-        lockPrice: lockPrice
-      }, { transaction });
+      console.log(`🔒 Locking Round #${fresh.roundNumber}...`);
 
-      console.log(`   ✅ Round #${freshRound.roundNumber} locked at $${lockPrice.toLocaleString()}`);
+      await fresh.update({ status: 'locked', lockPrice }, { transaction: t });
 
-      // ✅ STEP 2: Find specific upcoming round
-      const upcomingRound = await Round.findOne({
-        where: { 
-          status: 'upcoming',
-          roundNumber: freshRound.roundNumber + 1
+      // Find the exact upcoming round scheduled for the next slot
+      const upcoming = await Round.findOne({
+        where: {
+          status     : 'upcoming',
+          roundNumber: fresh.roundNumber + 1
         },
-        transaction,
-        lock: transaction.LOCK.UPDATE
+        transaction: t,
+        lock       : t.LOCK.UPDATE
       });
 
-      if (!upcomingRound) {
-        console.log(`⚠️ No upcoming round #${freshRound.roundNumber + 1}, will create after commit`);
-        await transaction.commit();
-        
-        // Create new round outside transaction
-        await this.createNewRound(true);
+      if (!upcoming) {
+        await t.commit();
+        console.log('⚠️  No upcoming round found after lock – aligning now...');
+        await this.alignAndCreateRounds();
         return;
       }
 
-      // ✅ STEP 3: Start upcoming round
       const startPrice = priceService.getPrice();
-      const now = new Date();
-      
-      await upcomingRound.update({ 
-        status: 'active',
-        startPrice: startPrice,
-        startTime: now
-      }, { transaction });
+      const now        = new Date();
 
-      console.log(`🚀 Round #${upcomingRound.roundNumber} started at $${startPrice.toLocaleString()}`);
+      // ── Upcoming becomes active at the exact wall-clock start time ──
+      // If we are past its startTime, start it now; otherwise keep its scheduled time.
+      const effectiveStart = now >= new Date(upcoming.startTime) ? now : new Date(upcoming.startTime);
 
-      // ✅ STEP 4: Create next upcoming round
-      const nextRoundNumber = upcomingRound.roundNumber + 1;
-      
-      const existingNext = await Round.findOne({
-        where: { roundNumber: nextRoundNumber },
-        transaction
-      });
+      await upcoming.update({
+        status    : 'active',
+        startPrice,
+        startTime : effectiveStart
+      }, { transaction: t });
+
+      // ── Ensure next upcoming slot round exists ──
+      const nextNum     = upcoming.roundNumber + 1;
+      const existingNext = await Round.findOne({ where: { roundNumber: nextNum }, transaction: t });
 
       if (!existingNext) {
-        const nextStartTime = new Date(upcomingRound.lockTime.getTime() + 1000);
-        const nextLockTime = new Date(nextStartTime.getTime() + (this.BETTING_DURATION * 60 * 1000));
-        const nextEndTime = new Date(nextStartTime.getTime() + (this.TOTAL_ROUND_DURATION * 60 * 1000));
+        const bm         = this.BETTING_DURATION;
+        const lm         = this.LOCKED_DURATION;
+        const nextStart  = new Date(upcoming.lockTime);            // wall-clock slot
+        const nextLock   = new Date(nextStart.getTime() + bm * 60 * 1000);
+        const nextEnd    = new Date(nextStart.getTime() + (bm + lm) * 60 * 1000);
 
         await Round.create({
-          roundNumber: nextRoundNumber,
-          status: 'upcoming',
-          startTime: nextStartTime,
-          lockTime: nextLockTime,
-          endTime: nextEndTime,
-          startPrice: null
-        }, { transaction });
+          roundNumber: nextNum,
+          status     : 'upcoming',
+          startTime  : nextStart,
+          lockTime   : nextLock,
+          endTime    : nextEnd,
+          startPrice : null
+        }, { transaction: t });
 
-        console.log(`📅 Created upcoming Round #${nextRoundNumber}`);
+        console.log(`📅 Created upcoming round #${nextNum} (${nextStart.toLocaleTimeString()})`);
       }
 
-      // ✅ COMMIT
-      await transaction.commit();
+      await t.commit();
 
-      // ✅ Update cache
-      this.cachedActiveRound = upcomingRound;
-      this.cachedLockedRound = freshRound;
-      this.cacheExpiry = Date.now() + this.CACHE_DURATION;
-      this.currentRound = upcomingRound;
+      this.cachedActiveRound = upcoming;
+      this.cachedLockedRound = fresh;
+      this.cacheExpiry       = Date.now() + this.CACHE_DURATION;
+      this.currentRound      = upcoming;
 
-      // ✅ Emit events
+      console.log(`🚀 Round #${upcoming.roundNumber} started at $${startPrice.toLocaleString()}`);
+
       if (this.io) {
         this.io.emit('round_locked', {
-          roundId: freshRound.id,
-          roundNumber: freshRound.roundNumber,
-          lockPrice: lockPrice,
-          startPrice: freshRound.startPrice,
-          endTime: freshRound.endTime
+          roundId    : fresh.id,
+          roundNumber: fresh.roundNumber,
+          lockPrice,
+          startPrice : fresh.startPrice,
+          endTime    : fresh.endTime
         });
-
         this.io.emit('round_start', {
-          roundId: upcomingRound.id,
-          roundNumber: upcomingRound.roundNumber,
-          startPrice: startPrice,
-          startTime: upcomingRound.startTime,
-          lockTime: upcomingRound.lockTime,
-          endTime: upcomingRound.endTime
+          roundId    : upcoming.id,
+          roundNumber: upcoming.roundNumber,
+          startPrice,
+          startTime  : upcoming.startTime,
+          lockTime   : upcoming.lockTime,
+          endTime    : upcoming.endTime
         });
       }
-
     } catch (error) {
-      await transaction.rollback();
-      console.error('❌ Error locking round:', error.message);
-      
-      // Emergency recovery
+      await t.rollback();
+      console.error('❌ lockRound error:', error.message);
       try {
         const hasActive = await Round.findOne({ where: { status: 'active' } });
-        if (!hasActive) {
-          await this.createNewRound(true);
-        }
-      } catch (emergencyError) {
-        console.error('❌ Emergency recovery failed:', emergencyError.message);
+        if (!hasActive) await this.alignAndCreateRounds();
+      } catch (e) {
+        console.error('❌ Emergency recovery failed:', e.message);
       }
     }
   }
 
   // ==================== END ROUND ====================
   async endRound(round) {
-    const transaction = await sequelize.transaction();
-
+    const t = await sequelize.transaction();
     try {
-      const freshRound = await Round.findByPk(round.id, {
-        transaction,
-        lock: transaction.LOCK.UPDATE
-      });
+      const fresh = await Round.findByPk(round.id, { transaction: t, lock: t.LOCK.UPDATE });
+      if (!fresh || fresh.status !== 'locked') { await t.rollback(); return; }
 
-      if (!freshRound || freshRound.status !== 'locked') {
-        await transaction.rollback();
-        return;
-      }
+      console.log(`🏁 ENDING Round #${fresh.roundNumber}...`);
 
-      console.log(`🏁 ENDING Round #${freshRound.roundNumber}...`);
-      
-      const endPrice = priceService.getPrice();
-      const startPrice = parseFloat(freshRound.startPrice);
+      const endPrice   = priceService.getPrice();
+      const startPrice = parseFloat(fresh.startPrice);
+      const priceDiff  = endPrice - startPrice;
+      const pctChange  = (priceDiff / startPrice) * 100;
+      const result     = priceDiff === 0 ? 'tie' : priceDiff > 0 ? 'up' : 'down';
 
-      let result;
-      const priceDiff = endPrice - startPrice;
-      const percentChange = (priceDiff / startPrice) * 100;
+      await fresh.update({ status: 'completed', endPrice, result }, { transaction: t });
 
-      if (endPrice === startPrice) {
-        result = 'tie';
-      } else if (priceDiff > 0) {
-        result = 'up';
-      } else {
-        result = 'down';
-      }
-
-      await freshRound.update({ 
-        status: 'completed', 
-        endPrice, 
-        result 
-      }, { transaction });
-
-      console.log(`   💰 Start: $${startPrice.toLocaleString()} → End: $${endPrice.toLocaleString()}`);
-      console.log(`   📊 Change: ${priceDiff > 0 ? '+' : ''}${priceDiff.toFixed(2)} (${percentChange.toFixed(3)}%)`);
+      console.log(`   💰 $${startPrice.toLocaleString()} → $${endPrice.toLocaleString()} (${pctChange.toFixed(3)}%)`);
       console.log(`   🎯 Result: ${result.toUpperCase()}`);
 
-      await this.processBets(freshRound, result, transaction);
+      await this.processBets(fresh, result, t);
+      await t.commit();
 
-      await transaction.commit();
-      console.log(`   ✅ Round #${freshRound.roundNumber} completed`);
+      console.log(`   ✅ Round #${fresh.roundNumber} completed`);
 
       this.cachedLockedRound = null;
-      botService.cleanupRound(freshRound.id);
+      botService.cleanupRound(fresh.id);
 
       if (this.io) {
         this.io.emit('round_completed', {
-          roundId: freshRound.id,
-          roundNumber: freshRound.roundNumber,
+          roundId      : fresh.id,
+          roundNumber  : fresh.roundNumber,
           startPrice,
           endPrice,
           result,
-          priceChange: priceDiff,
-          percentChange: percentChange.toFixed(3)
+          priceChange  : priceDiff,
+          percentChange: pctChange.toFixed(3)
         });
       }
-
     } catch (error) {
-      await transaction.rollback();
-      console.error('❌ Error ending round:', error.message);
-      
+      await t.rollback();
+      console.error('❌ endRound error:', error.message);
       try {
-        await Round.update(
-          { status: 'cancelled' },
-          { where: { id: round.id } }
-        );
-      } catch (updateError) {
-        console.error('❌ Failed to mark round as cancelled');
+        await Round.update({ status: 'cancelled' }, { where: { id: round.id } });
+      } catch (e) {
+        console.error('❌ Failed to mark round cancelled:', e.message);
       }
     }
   }
 
-  // ==================== GET ACTIVE ROUND ====================
+  // ==================== ADMIN: CANCEL ROUND ====================
+  /**
+   * Cancel any round (upcoming / active / locked).
+   * After cancellation the system waits for the NEXT natural wall-clock slot
+   * to start – no immediate forced round. Bets are refunded.
+   */
+  async cancelRound(roundId, reason = 'Admin cancelled') {
+    const t = await sequelize.transaction();
+    try {
+      const round = await Round.findByPk(roundId, { transaction: t, lock: t.LOCK.UPDATE });
+
+      if (!round) {
+        await t.rollback();
+        throw new Error('Round not found');
+      }
+      if (round.status === 'completed' || round.status === 'cancelled') {
+        await t.rollback();
+        throw new Error(`Round is already ${round.status}`);
+      }
+
+      console.log(`❌ Admin cancelling Round #${round.roundNumber} (${round.status}) – ${reason}`);
+
+      // ── Refund all pending bets (no User join needed) ──
+      const bets = await Bet.findAll({
+        where: { roundId: round.id, result: 'pending' },
+        transaction: t,
+        lock: t.LOCK.UPDATE
+      });
+
+      console.log(`   📋 ${bets.length} pending bet(s) to refund`);
+
+      for (const bet of bets) {
+        const betAmount = parseFloat(bet.stakeAmount || bet.amount || 0);
+        if (betAmount <= 0) continue;
+
+        // Always mark the bet as refunded
+        await bet.update({ result: 'refund', payout: betAmount, profit: 0, isPaid: true }, { transaction: t });
+
+        if (bet.isBot) {
+          console.log(`   🤖 Bot refund: ₦${betAmount}`);
+          continue;
+        }
+
+        const wallet = await Wallet.findOne({
+          where: { userId: bet.userId },
+          transaction: t,
+          lock: t.LOCK.UPDATE
+        });
+
+        if (!wallet) {
+          console.error(`   ❌ Wallet not found for user ${bet.userId}`);
+          continue;
+        }
+
+        const currentBalance = parseFloat(wallet.nairaBalance  || 0);
+        const currentLocked  = parseFloat(wallet.lockedBalance || 0);
+        const newLocked      = roundToTwo(Math.max(0, currentLocked - betAmount));
+
+        await wallet.update({ lockedBalance: newLocked }, { transaction: t });
+
+        await Transaction.create({
+          userId       : bet.userId,
+          type         : 'refund',
+          method       : 'internal',
+          amount       : betAmount,
+          status       : 'completed',
+          description  : `Refund ₦${betAmount.toLocaleString()} – Round #${round.roundNumber} cancelled (${reason})`,
+          metadata     : { betId: bet.id, roundId: round.id, reason, cancelledBy: 'admin' },
+          balanceBefore: currentBalance,
+          balanceAfter : currentBalance   // nairaBalance unchanged; only locked reduced
+        }, { transaction: t });
+
+        console.log(`   🔄 User ${bet.userId}: refunded ₦${betAmount} (locked ${currentLocked} → ${newLocked})`);
+
+        if (this.io) {
+          this.io.to(String(bet.userId)).emit('bet_result', {
+            betId  : bet.id, result: 'refund',
+            amount : betAmount, payout: betAmount, profit: 0,
+            newBalance: currentBalance
+          });
+          this.io.to(String(bet.userId)).emit('balance_update', {
+            nairaBalance : currentBalance,
+            lockedBalance: newLocked
+          });
+        }
+      }
+
+      // ── Cancel the round itself ──
+      await round.update({ status: 'cancelled', result: 'cancelled', isProcessed: true }, { transaction: t });
+
+      await t.commit();
+
+      // ── Clear cache ──
+      this.cachedActiveRound = null;
+      this.cachedLockedRound = null;
+      this.cacheExpiry       = null;
+
+      // ── Broadcast cancellation ──
+      if (this.io) {
+        this.io.emit('round_cancelled', {
+          roundId     : round.id,
+          roundNumber : round.roundNumber,
+          reason,
+          refundedBets: bets.filter(b => !b.isBot).length
+        });
+      }
+
+      console.log(`✅ Round #${round.roundNumber} cancelled – waiting for next wall-clock slot`);
+
+      // ── DO NOT force-start a round. Just make sure upcoming slot is prepared. ──
+      await this._repairUpcomingSlots();
+
+      const refunded = bets.filter(b => !b.isBot).length;
+      return {
+        success: true,
+        message : `Round #${round.roundNumber} cancelled. ${refunded} user bet(s) refunded. Next round will start at the next ${this.BETTING_DURATION}-minute mark.`
+      };
+    } catch (error) {
+      try { await t.rollback(); } catch (_) {}
+      console.error('❌ cancelRound error:', error.message);
+      throw error;
+    }
+  }
+
+  // ==================== ADMIN: MANUAL END ROUND ====================
+  async manualEndRound(roundId) {
+    try {
+      const round = await Round.findByPk(roundId);
+      if (!round)                                          throw new Error('Round not found');
+      if (['completed', 'cancelled'].includes(round.status)) throw new Error('Round already ended');
+
+      // If still active, promote to locked first so endRound accepts it
+      if (round.status === 'active') {
+        await round.update({ status: 'locked', lockPrice: priceService.getPrice() });
+      }
+
+      const fresh = await Round.findByPk(roundId);
+      console.log(`🛑 Admin manually ending round #${fresh.roundNumber}`);
+      await this.endRound(fresh);
+
+      // After manual end there may be no locked round – that is fine.
+      // The upcoming round will become active at the correct wall-clock time.
+      await this._repairUpcomingSlots();
+
+      return { success: true, message: `Round #${fresh.roundNumber} ended successfully` };
+    } catch (error) {
+      console.error('❌ manualEndRound error:', error.message);
+      throw error;
+    }
+  }
+
+  // ==================== ADMIN: FORCE START NEW ROUND ====================
+  async forceStartNewRound() {
+    try {
+      console.log('🔄 Admin force-starting new round...');
+
+      const activeRounds = await Round.findAll({
+        where: { status: { [Op.in]: ['active', 'locked'] } }
+      });
+
+      for (const r of activeRounds) {
+        await this.cancelRound(r.id, 'Force new round by admin');
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Align to current wall-clock slot (creates active + upcoming)
+      await this.alignAndCreateRounds();
+
+      const newActive = await this.getActiveRound();
+      return {
+        success: true,
+        message: `New round #${newActive?.roundNumber} started`,
+        round  : newActive
+      };
+    } catch (error) {
+      console.error('❌ forceStartNewRound error:', error.message);
+      throw error;
+    }
+  }
+
+  // ==================== REPAIR UPCOMING SLOTS ====================
+  /**
+   * After any admin action make sure we have:
+   *  - An active round   (if we are within a betting window)
+   *  - An upcoming round (for the next slot)
+   * Uses wall-clock alignment – never creates a "random" round.
+   */
+  async _repairUpcomingSlots() {
+    try {
+      await new Promise(r => setTimeout(r, 500));   // let DB settle
+
+      const bm  = this.BETTING_DURATION;
+      const lm  = this.LOCKED_DURATION;
+      const now = Date.now();
+
+      const currentSlotStart = getSlotStart(now, bm);
+      const currentSlotLock  = currentSlotStart + bm * 60 * 1000;
+      const currentSlotEnd   = currentSlotLock  + lm * 60 * 1000;
+
+      const nextSlotStart    = currentSlotLock;
+      const nextSlotLock     = nextSlotStart + bm * 60 * 1000;
+      const nextSlotEnd      = nextSlotLock  + lm * 60 * 1000;
+
+      const activeRound   = await Round.findOne({ where: { status: 'active'   } });
+      const lockedRound   = await Round.findOne({ where: { status: 'locked'   } });
+      const upcomingRound = await Round.findOne({ where: { status: 'upcoming' } });
+
+      const lastRound = await Round.findOne({
+        where: { status: { [Op.in]: ['completed', 'active', 'locked', 'cancelled', 'upcoming'] } },
+        order: [['roundNumber', 'DESC']]
+      });
+      let nextNum = lastRound ? lastRound.roundNumber + 1 : 1;
+
+      // ── If we are still inside a betting window but no active round, create one ──
+      const insideBettingWindow = now < currentSlotLock;
+
+      if (!activeRound && insideBettingWindow) {
+        // Check there isn't already a cancelled/completed round for this exact slot
+        const slotRound = await Round.findOne({
+          where: {
+            startTime: new Date(currentSlotStart),
+            lockTime : new Date(currentSlotLock)
+          }
+        });
+
+        if (!slotRound) {
+          const startPrice = priceService.getPrice();
+          const created    = await Round.create({
+            roundNumber: nextNum++,
+            status     : 'active',
+            startTime  : new Date(currentSlotStart),
+            lockTime   : new Date(currentSlotLock),
+            endTime    : new Date(currentSlotEnd),
+            startPrice
+          });
+
+          this.cachedActiveRound = created;
+          this.cacheExpiry       = Date.now() + this.CACHE_DURATION;
+
+          console.log(`✅ Repair: Created active round #${created.roundNumber} for current slot`);
+
+          if (this.io) {
+            this.io.emit('round_start', {
+              roundId    : created.id,
+              roundNumber: created.roundNumber,
+              startPrice,
+              startTime  : created.startTime,
+              lockTime   : created.lockTime,
+              endTime    : created.endTime
+            });
+          }
+        } else {
+          console.log(`ℹ️  Slot already used by round #${slotRound.roundNumber} (${slotRound.status}) – not replacing`);
+        }
+      }
+
+      // ── Ensure upcoming slot round exists ──
+      if (!upcomingRound) {
+        const nextSlotRound = await Round.findOne({
+          where: {
+            startTime: new Date(nextSlotStart),
+            lockTime : new Date(nextSlotLock)
+          }
+        });
+
+        if (!nextSlotRound) {
+          const created = await Round.create({
+            roundNumber: nextNum,
+            status     : 'upcoming',
+            startTime  : new Date(nextSlotStart),
+            lockTime   : new Date(nextSlotLock),
+            endTime    : new Date(nextSlotEnd),
+            startPrice : null
+          });
+          console.log(`📅 Repair: Created upcoming round #${created.roundNumber} (${new Date(nextSlotStart).toLocaleTimeString()})`);
+        }
+      }
+    } catch (error) {
+      console.error('❌ _repairUpcomingSlots error:', error.message);
+    }
+  }
+
+  // ==================== GETTERS ====================
   async getActiveRound() {
     if (this.cachedActiveRound && this.cacheExpiry && Date.now() < this.cacheExpiry) {
-      if (this.cachedActiveRound.status === 'active') {
-        return this.cachedActiveRound;
-      }
+      if (this.cachedActiveRound.status === 'active') return this.cachedActiveRound;
     }
-
-    const round = await Round.findOne({
-      where: { status: 'active' },
-      order: [['startTime', 'DESC']]
-    });
-
-    if (round) {
-      this.cachedActiveRound = round;
-      this.cacheExpiry = Date.now() + this.CACHE_DURATION;
-    }
-
+    const round = await Round.findOne({ where: { status: 'active' }, order: [['startTime', 'DESC']] });
+    if (round) { this.cachedActiveRound = round; this.cacheExpiry = Date.now() + this.CACHE_DURATION; }
     return round;
   }
 
   async getLockedRound() {
-    const round = await Round.findOne({
-      where: { status: 'locked' },
-      order: [['lockTime', 'DESC']]
-    });
-
-    return round;
+    return Round.findOne({ where: { status: 'locked' }, order: [['lockTime', 'DESC']] });
   }
 
   async getPreviousRounds(limit = 3) {
-    const rounds = await Round.findAll({
-      where: { status: 'completed' },
-      order: [['endTime', 'DESC']],
-      limit: limit
-    });
-
-    return rounds;
+    return Round.findAll({ where: { status: 'completed' }, order: [['endTime', 'DESC']], limit });
   }
 
   async getUpcomingRound() {
-    return await Round.findOne({
-      where: { status: 'upcoming' },
-      order: [['startTime', 'ASC']]
-    });
+    return Round.findOne({ where: { status: 'upcoming' }, order: [['startTime', 'ASC']] });
   }
 
   async getAllRoundsData() {
@@ -768,354 +924,164 @@ class RoundService {
       this.getPreviousRounds(3),
       this.getUpcomingRound()
     ]);
-
-    return {
-      activeRound,
-      lockedRound,
-      previousRounds,
-      upcomingRound
-    };
+    return { activeRound, lockedRound, previousRounds, upcomingRound };
   }
 
-  // ==================== ADMIN FUNCTIONS ====================
-  async manualEndRound(roundId) {
-    try {
-      const round = await Round.findByPk(roundId);
-      if (!round) {
-        throw new Error('Round not found');
-      }
-      
-      if (round.status === 'completed' || round.status === 'cancelled') {
-        throw new Error('Round already ended');
-      }
-
-      console.log(`🛑 Admin manually ending round #${round.roundNumber}`);
-      await this.endRound(round);
-      
-      return { success: true, message: `Round #${round.roundNumber} ended successfully` };
-    } catch (error) {
-      console.error('❌ Manual end round error:', error.message);
-      throw error;
-    }
+  async getCurrentRound() {
+    return this.getActiveRound();
   }
 
-  async cancelRound(roundId, reason = 'Admin cancelled') {
-    const transaction = await sequelize.transaction();
-    
-    try {
-      const round = await Round.findByPk(roundId, { transaction });
-      if (!round) {
-        throw new Error('Round not found');
-      }
-
-      if (round.status === 'completed' || round.status === 'cancelled') {
-        throw new Error('Round already ended or cancelled');
-      }
-
-      const bets = await Bet.findAll({
-        where: { roundId: round.id, result: 'pending' },
-        include: [{ 
-          model: User, 
-          as: 'user', 
-          attributes: ['id', 'username'],
-          required: false
-        }],
-        transaction
-      });
-
-      if (bets.length > 0) {
-        console.log(`   🔄 Refunding ${bets.length} bets...`);
-        await this.refundAllBets(round, bets, transaction, reason);
-      }
-
-      await round.update({ 
-        status: 'cancelled',
-        result: 'cancelled'
-      }, { transaction });
-
-      await transaction.commit();
-
-      this.cachedActiveRound = null;
-      this.cachedLockedRound = null;
-      this.cacheExpiry = null;
-
-      console.log(`❌ Round #${round.roundNumber} CANCELLED - ${reason}`);
-
-      if (this.io) {
-        this.io.emit('round_cancelled', {
-          roundId: round.id,
-          roundNumber: round.roundNumber,
-          reason: reason
-        });
-      }
-
-      return { success: true, message: `Round #${round.roundNumber} cancelled and ${bets.length} bets refunded` };
-    } catch (error) {
-      await transaction.rollback();
-      console.error('❌ Cancel round error:', error.message);
-      throw error;
-    }
-  }
-
-  async forceStartNewRound() {
-    try {
-      const activeRounds = await Round.findAll({
-        where: { status: { [Op.in]: ['active', 'locked'] } }
-      });
-
-      for (const round of activeRounds) {
-        await this.cancelRound(round.id, 'Force new round started');
-      }
-
-      const newRound = await this.createNewRound(true);
-      
-      return { success: true, message: `New round #${newRound.roundNumber} started`, round: newRound };
-    } catch (error) {
-      console.error('❌ Force start new round error:', error.message);
-      throw error;
-    }
+  getServerTime() {
+    return { serverTime: new Date().toISOString(), timestamp: Date.now() };
   }
 
   // ==================== PROCESS BETS ====================
   async processBets(round, result, transaction) {
     try {
       const bets = await Bet.findAll({
-        where: { roundId: round.id, result: 'pending' },
-        include: [{ 
-          model: User, 
-          as: 'user', 
-          attributes: ['id', 'username', 'referredBy', 'hasPlacedFirstBet'],
-          required: false
-        }],
+        where  : { roundId: round.id, result: 'pending' },
+        include: [{ model: User, as: 'user', attributes: ['id', 'username', 'referredBy', 'hasPlacedFirstBet'], required: false }],
         transaction
       });
 
       if (bets.length === 0) {
-        console.log('   ℹ️ No bets placed in this round');
+        console.log('   ℹ️  No bets in this round');
         await round.update({ isProcessed: true }, { transaction });
         return;
       }
 
-      const realBets = bets.filter(bet => !bet.isBot);
-      const botBets = bets.filter(bet => bet.isBot);
+      const upBets   = bets.filter(b => b.prediction === 'up');
+      const downBets = bets.filter(b => b.prediction === 'down');
 
-      console.log(`   📊 Processing ${bets.length} bets (${realBets.length} real, ${botBets.length} bot)...`);
+      const totalUp   = upBets.reduce  ((s, b) => s + parseFloat(b.stakeAmount), 0);
+      const totalDown = downBets.reduce((s, b) => s + parseFloat(b.stakeAmount), 0);
 
-      const upBets = bets.filter(bet => bet.prediction === 'up');
-      const downBets = bets.filter(bet => bet.prediction === 'down');
-
-      const totalUpPool = upBets.reduce((sum, bet) => sum + parseFloat(bet.stakeAmount), 0);
-      const totalDownPool = downBets.reduce((sum, bet) => sum + parseFloat(bet.stakeAmount), 0);
-
-      console.log(`   📈 UP bets: ${upBets.length} (₦${totalUpPool.toLocaleString()})`);
-      console.log(`   📉 DOWN bets: ${downBets.length} (₦${totalDownPool.toLocaleString()})`);
+      console.log(`   📈 UP  : ${upBets.length}   bets  ₦${totalUp.toLocaleString()}`);
+      console.log(`   📉 DOWN: ${downBets.length} bets  ₦${totalDown.toLocaleString()}`);
 
       if (result === 'tie') {
-        console.log('   ➖ TIE - Refunding all bets');
-        await this.refundAllBets(round, bets, transaction, 'TIE - Price unchanged');
+        console.log('   ➖ TIE – refunding all');
+        await this.refundAllBets(round, bets, transaction, 'TIE');
         return;
       }
 
-      let winners, losers, winnerPool, loserPool;
+      const winners    = result === 'up' ? upBets   : downBets;
+      const losers     = result === 'up' ? downBets : upBets;
+      const winnerPool = result === 'up' ? totalUp  : totalDown;
+      const loserPool  = result === 'up' ? totalDown: totalUp;
 
-      if (result === 'up') {
-        winners = upBets;
-        losers = downBets;
-        winnerPool = totalUpPool;
-        loserPool = totalDownPool;
-      } else {
-        winners = downBets;
-        losers = upBets;
-        winnerPool = totalDownPool;
-        loserPool = totalUpPool;
-      }
-
-      console.log(`   ✅ Winners: ${winners.length} (₦${winnerPool.toLocaleString()})`);
-      console.log(`   ❌ Losers: ${losers.length} (₦${loserPool.toLocaleString()})`);
-
-      if (winners.length === 0 && losers.length > 0) {
-        console.log('   ❌ EVERYONE PREDICTED WRONG - All lose!');
+      if (winners.length === 0) {
+        console.log('   ❌ All predicted wrong – everyone loses');
         await this.processAllAsLosers(round, losers, transaction);
         return;
       }
 
-      if (winners.length > 0 && losers.length === 0) {
-        console.log('   🎯 NO OPPONENTS - Refunding winners');
+      if (losers.length === 0) {
+        console.log('   🎯 No opponents – refunding winners');
         await this.refundAllBets(round, winners, transaction, 'No opposing bets');
         return;
       }
 
-      console.log('   🎮 NORMAL CASE - Processing payouts');
-      
       const platformFee = roundToTwo(loserPool * 0.30);
-      const prizePool = roundToTwo(loserPool * 0.70);
+      const prizePool   = roundToTwo(loserPool * 0.70);
 
-      await round.update({
-        platformFee: platformFee,
-        prizePool: prizePool,
-        isProcessed: true
-      }, { transaction });
+      await round.update({ platformFee, prizePool, isProcessed: true }, { transaction });
 
-      console.log(`   💰 Losers Pool: ₦${loserPool.toLocaleString()}`);
-      console.log(`   🏦 Platform (30%): ₦${platformFee.toLocaleString()}`);
-      console.log(`   🎁 Prize Pool (70%): ₦${prizePool.toLocaleString()}`);
+      console.log(`   🏦 Platform 30%: ₦${platformFee.toLocaleString()}`);
+      console.log(`   🎁 Prize Pool 70%: ₦${prizePool.toLocaleString()}`);
 
-      // PROCESS WINNERS
+      // ── Winners ──
       for (const bet of winners) {
-        const betAmount = parseFloat(bet.stakeAmount);
-        const shareRatio = betAmount / winnerPool;
-        const prizeShare = prizePool * shareRatio;
-        const payout = roundToTwo(betAmount + prizeShare);
-        const profit = roundToTwo(prizeShare);
+        const betAmount  = parseFloat(bet.stakeAmount);
+        const share      = betAmount / winnerPool;
+        const prize      = prizePool * share;
+        const payout     = roundToTwo(betAmount + prize);
+        const profit     = roundToTwo(prize);
         const multiplier = roundToTwo(payout / betAmount);
 
-        await bet.update({
-          result: 'win',
-          payout: payout,
-          profit: profit,
-          isPaid: true
-        }, { transaction });
+        await bet.update({ result: 'win', payout, profit, isPaid: true }, { transaction });
 
-        if (bet.isBot) {
-          console.log(`   🤖 Bot WIN: ${bet.prediction.toUpperCase()} ₦${betAmount} → ₦${payout} (${multiplier}x)`);
-          continue;
-        }
+        if (bet.isBot) { console.log(`   🤖 Bot WIN ₦${betAmount} → ₦${payout}`); continue; }
 
-        const wallet = await Wallet.findOne({
-          where: { userId: bet.userId },
-          transaction,
-          lock: transaction.LOCK.UPDATE
-        });
+        const wallet = await Wallet.findOne({ where: { userId: bet.userId }, transaction, lock: transaction.LOCK.UPDATE });
+        if (!wallet) { console.error(`   ❌ Wallet not found: ${bet.userId}`); continue; }
 
-        if (!wallet) {
-          console.error(`   ❌ Wallet not found for user ${bet.userId}`);
-          continue;
-        }
-
-        const currentBalance = parseFloat(wallet.nairaBalance || 0);
-        const currentLocked = parseFloat(wallet.lockedBalance || 0);
-
-        const newLockedBalance = roundToTwo(Math.max(0, currentLocked - betAmount));
-        const newBalance = roundToTwo(currentBalance - betAmount + payout);
+        const bal    = parseFloat(wallet.nairaBalance  || 0);
+        const locked = parseFloat(wallet.lockedBalance || 0);
+        const newLocked = roundToTwo(Math.max(0, locked - betAmount));
+        const newBal    = roundToTwo(bal - betAmount + payout);
 
         await wallet.update({
-          nairaBalance: newBalance,
-          lockedBalance: newLockedBalance,
+          nairaBalance: newBal,
+          lockedBalance: newLocked,
           totalWon: roundToTwo(parseFloat(wallet.totalWon || 0) + payout)
         }, { transaction });
 
         await Transaction.create({
-          userId: bet.userId,
-          type: 'bet_win',
-          method: 'internal',
-          amount: payout,
-          status: 'completed',
-          description: `Won ₦${payout.toLocaleString()} in Round #${round.roundNumber} (${multiplier}x)`,
-          metadata: { 
-            betId: bet.id, 
-            roundId: round.id,
-            betAmount: betAmount,
-            prizeShare: roundToTwo(prizeShare),
-            profit: profit,
-            multiplier: multiplier
-          },
-          balanceBefore: currentBalance,
-          balanceAfter: newBalance
+          userId: bet.userId, type: 'bet_win', method: 'internal',
+          amount: payout, status: 'completed',
+          description: `Won ₦${payout.toLocaleString()} Round #${round.roundNumber} (${multiplier}x)`,
+          metadata: { betId: bet.id, roundId: round.id, betAmount, prize: roundToTwo(prize), profit, multiplier },
+          balanceBefore: bal, balanceAfter: newBal
         }, { transaction });
 
-        console.log(`   ✅ ${bet.user?.username || bet.userId}: Bet ₦${betAmount} → Won ₦${payout} (${multiplier}x)`);
+        console.log(`   ✅ ${bet.user?.username || bet.userId}: ₦${betAmount} → ₦${payout} (${multiplier}x)`);
 
         if (bet.user?.referredBy && !bet.user?.hasPlacedFirstBet) {
           await safeProcessReferral('first_bet', bet.userId, betAmount, bet.id, transaction);
         }
 
         if (this.io) {
-          this.io.to(bet.userId).emit('bet_result', {
-            betId: bet.id,
-            result: 'win',
-            amount: betAmount,
-            payout: payout,
-            profit: profit,
-            multiplier: multiplier,
-            newBalance: newBalance
+          this.io.to(String(bet.userId)).emit('bet_result', {
+            betId: bet.id, result: 'win', amount: betAmount, payout, profit, multiplier, newBalance: newBal
           });
         }
       }
 
-      // PROCESS LOSERS
+      // ── Losers ──
       for (const bet of losers) {
         const betAmount = parseFloat(bet.stakeAmount);
-        
-        await bet.update({
-          result: 'loss',
-          payout: 0,
-          profit: -betAmount,
-          isPaid: true
-        }, { transaction });
 
-        if (bet.isBot) {
-          console.log(`   🤖 Bot LOSS: ${bet.prediction.toUpperCase()} ₦${betAmount}`);
-          continue;
-        }
+        await bet.update({ result: 'loss', payout: 0, profit: -betAmount, isPaid: true }, { transaction });
 
-        const wallet = await Wallet.findOne({
-          where: { userId: bet.userId },
-          transaction,
-          lock: transaction.LOCK.UPDATE
-        });
+        if (bet.isBot) { console.log(`   🤖 Bot LOSS ₦${betAmount}`); continue; }
 
-        if (!wallet) {
-          console.error(`   ❌ Wallet not found for user ${bet.userId}`);
-          continue;
-        }
+        const wallet = await Wallet.findOne({ where: { userId: bet.userId }, transaction, lock: transaction.LOCK.UPDATE });
+        if (!wallet) { console.error(`   ❌ Wallet not found: ${bet.userId}`); continue; }
 
-        const currentBalance = parseFloat(wallet.nairaBalance || 0);
-        const currentLocked = parseFloat(wallet.lockedBalance || 0);
-
-        const newLockedBalance = roundToTwo(Math.max(0, currentLocked - betAmount));
-        const newBalance = roundToTwo(currentBalance - betAmount);
+        const bal    = parseFloat(wallet.nairaBalance  || 0);
+        const locked = parseFloat(wallet.lockedBalance || 0);
+        const newLocked = roundToTwo(Math.max(0, locked - betAmount));
+        const newBal    = roundToTwo(bal - betAmount);
 
         await wallet.update({
-          nairaBalance: newBalance,
-          lockedBalance: newLockedBalance,
+          nairaBalance: newBal, lockedBalance: newLocked,
           totalLost: roundToTwo(parseFloat(wallet.totalLost || 0) + betAmount)
         }, { transaction });
 
         await Transaction.create({
-          userId: bet.userId,
-          type: 'bet_loss',
-          method: 'internal',
-          amount: betAmount,
-          status: 'completed',
-          description: `Lost ₦${betAmount.toLocaleString()} in Round #${round.roundNumber}`,
+          userId: bet.userId, type: 'bet_loss', method: 'internal',
+          amount: betAmount, status: 'completed',
+          description: `Lost ₦${betAmount.toLocaleString()} Round #${round.roundNumber}`,
           metadata: { betId: bet.id, roundId: round.id },
-          balanceBefore: currentBalance,
-          balanceAfter: newBalance
+          balanceBefore: bal, balanceAfter: newBal
         }, { transaction });
 
         console.log(`   ❌ ${bet.user?.username || bet.userId}: Lost ₦${betAmount}`);
 
         if (bet.user?.referredBy) {
-          if (!bet.user.hasPlacedFirstBet) {
-            await safeProcessReferral('first_bet', bet.userId, betAmount, bet.id, transaction);
-          }
+          if (!bet.user.hasPlacedFirstBet) await safeProcessReferral('first_bet', bet.userId, betAmount, bet.id, transaction);
           await safeProcessReferral('influencer', bet.userId, betAmount, bet.id, transaction);
         }
 
         if (this.io) {
-          this.io.to(bet.userId).emit('bet_result', {
-            betId: bet.id,
-            result: 'loss',
-            amount: betAmount,
-            payout: 0,
-            profit: -betAmount,
-            newBalance: newBalance
+          this.io.to(String(bet.userId)).emit('bet_result', {
+            betId: bet.id, result: 'loss', amount: betAmount, payout: 0, profit: -betAmount, newBalance: newBal
           });
         }
       }
-
     } catch (error) {
-      console.error('❌ Error processing bets:', error);
+      console.error('❌ processBets error:', error);
       throw error;
     }
   }
@@ -1126,81 +1092,45 @@ class RoundService {
     for (const bet of losers) {
       const betAmount = parseFloat(bet.stakeAmount);
       totalLost += betAmount;
-      
-      await bet.update({
-        result: 'loss',
-        payout: 0,
-        profit: -betAmount,
-        isPaid: true
-      }, { transaction });
 
-      if (bet.isBot) {
-        console.log(`   🤖 Bot LOSS: ${bet.prediction.toUpperCase()} ₦${betAmount}`);
-        continue;
-      }
+      await bet.update({ result: 'loss', payout: 0, profit: -betAmount, isPaid: true }, { transaction });
 
-      const wallet = await Wallet.findOne({
-        where: { userId: bet.userId },
-        transaction,
-        lock: transaction.LOCK.UPDATE
-      });
+      if (bet.isBot) { console.log(`   🤖 Bot LOSS ₦${betAmount}`); continue; }
 
-      if (!wallet) {
-        console.error(`   ❌ Wallet not found for user ${bet.userId}`);
-        continue;
-      }
+      const wallet = await Wallet.findOne({ where: { userId: bet.userId }, transaction, lock: transaction.LOCK.UPDATE });
+      if (!wallet) continue;
 
-      const currentBalance = parseFloat(wallet.nairaBalance || 0);
-      const currentLocked = parseFloat(wallet.lockedBalance || 0);
-
-      const newLockedBalance = roundToTwo(Math.max(0, currentLocked - betAmount));
-      const newBalance = roundToTwo(currentBalance - betAmount);
+      const bal    = parseFloat(wallet.nairaBalance  || 0);
+      const locked = parseFloat(wallet.lockedBalance || 0);
+      const newLocked = roundToTwo(Math.max(0, locked - betAmount));
+      const newBal    = roundToTwo(bal - betAmount);
 
       await wallet.update({
-        nairaBalance: newBalance,
-        lockedBalance: newLockedBalance,
+        nairaBalance: newBal, lockedBalance: newLocked,
         totalLost: roundToTwo(parseFloat(wallet.totalLost || 0) + betAmount)
       }, { transaction });
 
       await Transaction.create({
-        userId: bet.userId,
-        type: 'bet_loss',
-        method: 'internal',
-        amount: betAmount,
-        status: 'completed',
-        description: `Lost ₦${betAmount.toLocaleString()} in Round #${round.roundNumber} (all predicted wrong)`,
+        userId: bet.userId, type: 'bet_loss', method: 'internal',
+        amount: betAmount, status: 'completed',
+        description: `Lost ₦${betAmount.toLocaleString()} Round #${round.roundNumber} (all wrong)`,
         metadata: { betId: bet.id, roundId: round.id },
-        balanceBefore: currentBalance,
-        balanceAfter: newBalance
+        balanceBefore: bal, balanceAfter: newBal
       }, { transaction });
 
-      console.log(`   ❌ ${bet.user?.username || bet.userId}: Lost ₦${betAmount}`);
-
       if (bet.user?.referredBy) {
-        if (!bet.user.hasPlacedFirstBet) {
-          await safeProcessReferral('first_bet', bet.userId, betAmount, bet.id, transaction);
-        }
+        if (!bet.user.hasPlacedFirstBet) await safeProcessReferral('first_bet', bet.userId, betAmount, bet.id, transaction);
         await safeProcessReferral('influencer', bet.userId, betAmount, bet.id, transaction);
       }
 
       if (this.io) {
-        this.io.to(bet.userId).emit('bet_result', {
-          betId: bet.id,
-          result: 'loss',
-          amount: betAmount,
-          payout: 0,
-          profit: -betAmount,
-          newBalance: newBalance
+        this.io.to(String(bet.userId)).emit('bet_result', {
+          betId: bet.id, result: 'loss', amount: betAmount, payout: 0, profit: -betAmount, newBalance: newBal
         });
       }
     }
 
-    await round.update({ 
-      platformFee: roundToTwo(totalLost),
-      prizePool: 0,
-      isProcessed: true 
-    }, { transaction });
-
+    await round.update({ platformFee: roundToTwo(totalLost), prizePool: 0, isProcessed: true }, { transaction });
     console.log(`   🏦 Platform collected: ₦${totalLost.toLocaleString()}`);
   }
 
@@ -1208,86 +1138,44 @@ class RoundService {
     for (const bet of bets) {
       const betAmount = parseFloat(bet.stakeAmount);
 
-      await bet.update({
-        result: 'refund',
-        payout: betAmount,
-        profit: 0,
-        isPaid: true
-      }, { transaction });
+      await bet.update({ result: 'refund', payout: betAmount, profit: 0, isPaid: true }, { transaction });
 
-      if (bet.isBot) {
-        console.log(`   🤖 Bot REFUND: ${bet.prediction.toUpperCase()} ₦${betAmount}`);
-        continue;
-      }
+      if (bet.isBot) { console.log(`   🤖 Bot REFUND ₦${betAmount}`); continue; }
 
-      const wallet = await Wallet.findOne({
-        where: { userId: bet.userId },
-        transaction,
-        lock: transaction.LOCK.UPDATE
-      });
+      const wallet = await Wallet.findOne({ where: { userId: bet.userId }, transaction, lock: transaction.LOCK.UPDATE });
+      if (!wallet) continue;
 
-      if (!wallet) {
-        console.error(`   ❌ Wallet not found for user ${bet.userId}`);
-        continue;
-      }
+      const bal    = parseFloat(wallet.nairaBalance  || 0);
+      const locked = parseFloat(wallet.lockedBalance || 0);
+      const newLocked = roundToTwo(Math.max(0, locked - betAmount));
 
-      const currentBalance = parseFloat(wallet.nairaBalance || 0);
-      const currentLocked = parseFloat(wallet.lockedBalance || 0);
-
-      const newLockedBalance = roundToTwo(Math.max(0, currentLocked - betAmount));
-
-      await wallet.update({
-        lockedBalance: newLockedBalance
-      }, { transaction });
+      await wallet.update({ lockedBalance: newLocked }, { transaction });
 
       await Transaction.create({
-        userId: bet.userId,
-        type: 'refund',
-        method: 'internal',
-        amount: betAmount,
-        status: 'completed',
-        description: `Refund ₦${betAmount.toLocaleString()} - Round #${round.roundNumber} (${reason})`,
+        userId: bet.userId, type: 'refund', method: 'internal',
+        amount: betAmount, status: 'completed',
+        description: `Refund ₦${betAmount.toLocaleString()} Round #${round.roundNumber} (${reason})`,
         metadata: { betId: bet.id, roundId: round.id, reason },
-        balanceBefore: currentBalance,
-        balanceAfter: currentBalance
+        balanceBefore: bal, balanceAfter: bal
       }, { transaction });
 
-      console.log(`   🔄 ${bet.user?.username || bet.userId}: Refunded ₦${betAmount}`);
+      console.log(`   🔄 Refunded ₦${betAmount} to user ${bet.userId}`);
 
       if (bet.user?.referredBy && !bet.user?.hasPlacedFirstBet) {
         await safeProcessReferral('first_bet', bet.userId, betAmount, bet.id, transaction);
       }
 
       if (this.io) {
-        this.io.to(bet.userId).emit('bet_result', {
-          betId: bet.id,
-          result: 'refund',
-          amount: betAmount,
-          payout: betAmount,
-          profit: 0,
-          newBalance: currentBalance
+        this.io.to(String(bet.userId)).emit('bet_result', {
+          betId: bet.id, result: 'refund', amount: betAmount, payout: betAmount, profit: 0, newBalance: bal
         });
       }
     }
 
-    await round.update({ 
-      platformFee: 0,
-      prizePool: 0,
-      isProcessed: true 
-    }, { transaction });
+    await round.update({ platformFee: 0, prizePool: 0, isProcessed: true }, { transaction });
   }
 
-  async getCurrentRound() {
-    return await this.getActiveRound();
-  }
-
-  getServerTime() {
-    return {
-      serverTime: new Date().toISOString(),
-      timestamp: Date.now()
-    };
-  }
-
+  // ==================== CLEANUP ====================
   cleanup() {
     if (this.checkInterval) {
       clearInterval(this.checkInterval);
